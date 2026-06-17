@@ -1,0 +1,10 @@
+{
+  "name": "Relatório de Manutenção Remaf",
+  "description": "Aplicativo PWA de Controle de Manutenção Remaf. Funciona 100% offline, instalável, com armazenamento local robusto via IndexedDB para fotos e relatórios de protocolos.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

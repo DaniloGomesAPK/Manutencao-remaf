@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Relatório de Manutenção Remaf</title>
+    
+    <!-- PWA configuration and mobile icons styling tags -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#003366" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="apple-touch-icon" href="/icons/icon-512.png" />
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    
+    <!-- Service Worker Progressive Registration Script -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then((registration) => {
+              console.log('PWA Service Worker registered successfully under scope:', registration.scope);
+            })
+            .catch((error) => {
+              console.error('PWA Service Worker registration failed:', error);
+            });
+        });
+      }
+    </script>
+  </body>
+</html>
+
