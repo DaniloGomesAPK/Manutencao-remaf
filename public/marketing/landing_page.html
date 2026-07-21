@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DG Gestão Automotiva — Plataforma de Alta Performance B2B</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            display: ['Outfit', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace']
+          },
+          colors: {
+            dg: {
+              imperial: '#001f3f',
+              slate: '#003366',
+              active: '#FF6600',
+              teal: '#00E5FF',
+              dark: '#0f172a'
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased selection:bg-orange-600 selection:text-white">
+
+  <!-- TOP DECORATIVE BANNER -->
+  <div class="h-1.5 w-full bg-gradient-to-r from-orange-600 via-sky-400 to-indigo-900"></div>
+
+  <!-- NAVIGATION -->
+  <nav class="sticky top-0 z-50 bg-slate-950/80 backdrop-blur border-b border-slate-900">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-[#FF6600] flex items-center justify-center font-display font-black text-white text-lg tracking-tighter">
+          DG
+        </div>
+        <div>
+          <span class="font-display font-black text-lg tracking-tight uppercase block text-white leading-none">DG GESTÃO</span>
+          <span class="text-[9px] font-mono tracking-widest text-[#00E5FF] uppercase block">AUTOMOTIVA</span>
+        </div>
+      </div>
+      
+      <div class="hidden md:flex items-center gap-8 text-xs font-semibold uppercase tracking-wider text-slate-300">
+        <a href="#solucoes" class="hover:text-[#FF6600] transition">Soluções</a>
+        <a href="#roi" class="hover:text-[#FF6600] transition">Calculadora ROI</a>
+        <a href="#valores" class="hover:text-[#FF6600] transition">Planos</a>
+      </div>
+
+      <div>
+        <a href="catalogo_comercial.html" class="bg-[#FF6600] hover:bg-orange-500 text-white text-xs font-black uppercase tracking-wider px-5 py-3 rounded-xl shadow-lg shadow-orange-950/35 transition">
+          Ver Catálogo
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- HERO SECTION -->
+  <header class="relative overflow-hidden py-24 px-6">
+    <!-- Ambient Blur Background glows -->
+    <div class="absolute top-20 left-1/4 w-96 h-96 bg-[#FF6600]/10 blur-[150px] rounded-full pointer-events-none"></div>
+    <div class="absolute bottom-10 right-1/4 w-[500px] h-[500px] bg-[#00E5FF]/10 blur-[180px] rounded-full pointer-events-none"></div>
+
+    <div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
+      <!-- Left text area -->
+      <div class="lg:col-span-5 space-y-8">
+        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800">
+          <span class="w-2 h-2 rounded-full bg-[#FF6600] animate-ping"></span>
+          <span class="text-[9px] font-mono uppercase tracking-widest text-slate-300">Nova Tecnologia PWA - 100% Offline</span>
+        </div>
+        
+        <h1 class="font-display font-black text-3xl sm:text-4xl md:text-5xl text-white tracking-tight uppercase leading-[1.1]">
+          Controle toda a <br/>
+          <span class="text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-[#FF6600]">operação da sua oficina</span> <br/>
+          em um único sistema
+        </h1>
+        
+        <p class="text-base text-slate-400 max-w-xl leading-relaxed">
+          O DG Gestão Automotiva é a plataforma definitiva de gestão para oficinas mecânicas. Tenha controle absoluto de pátio, otimize a produtividade da sua equipe, agilize o envio de ordens de serviço e garanta a lucratividade do seu negócio em segundos.
+        </p>
+
+        <div class="flex flex-wrap gap-4 pt-2">
+          <a href="#valores" class="bg-[#FF6600] hover:bg-orange-500 text-white font-extrabold px-8 py-4.5 rounded-2xl text-xs uppercase tracking-wider shadow-lg shadow-orange-950/40 transition">
+            Ver Nossos Planos
+          </a>
+          <a href="catalogo_comercial.html" class="border border-slate-800 bg-slate-900 hover:bg-slate-850 hover:border-slate-700 text-slate-300 font-extrabold px-8 py-4.5 rounded-2xl text-xs uppercase tracking-wider transition">
+            Ver Apresentação Comercial
+          </a>
+        </div>
+
+        <!-- Social Proof Stats Row -->
+        <div class="grid grid-cols-3 gap-4 pt-8 border-t border-slate-900">
+          <div>
+            <strong class="text-2xl sm:text-3xl font-display font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-amber-500 block">+24%</strong>
+            <span class="text-[9px] font-bold text-[#FF6600] uppercase tracking-wider block mt-1">Ticket Médio</span>
+            <p class="text-[9px] text-slate-500 leading-normal mt-1">
+              Checklist Fotográfico preventivo direto no pátio <span class="text-slate-600 block">(Média de Referência*)</span>
+            </p>
+          </div>
+          <div>
+            <strong class="text-2xl sm:text-3xl font-display font-black text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-[#00E5FF] block">100%</strong>
+            <span class="text-[9px] font-bold text-[#00E5FF] uppercase tracking-wider block mt-1">PWA Offline</span>
+            <p class="text-[9px] text-slate-500 leading-normal mt-1">
+              Disponibilidade total mesmo sem Wi-Fi ou sinal de internet
+            </p>
+          </div>
+          <div>
+            <strong class="text-2xl sm:text-3xl font-display font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-green-500 block">&lt; 10 min</strong>
+            <span class="text-[9px] font-bold text-emerald-400 uppercase tracking-wider block mt-1">Aprovação OS</span>
+            <p class="text-[9px] text-slate-500 leading-normal mt-1">
+              Agilidade no envio de orçamentos direto pelo WhatsApp
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right image showcase (Modern Notebook + Smartphone Mockup) -->
+      <div class="lg:col-span-7 relative flex items-center justify-center pt-8 lg:pt-0">
+        <!-- Ambient Blur Background glow behind mockup -->
+        <div class="absolute inset-0 bg-gradient-to-tr from-[#FF6600]/20 via-[#00E5FF]/20 to-indigo-900/30 blur-[120px] rounded-full scale-105 pointer-events-none"></div>
+        
+        <div class="relative w-full max-w-full lg:w-[115%] xl:w-[122%] lg:-mr-20 flex items-center justify-center transition-all duration-500">
+          <!-- Notebook Mockup (Dashboard screen) -->
+          <div class="relative z-10 w-full transition-transform duration-500 hover:scale-[1.01]">
+            <img src="/marketing/assets/mockup_notebook.png" alt="Dashboard Real do Gestor DG no Notebook" class="w-full">
+          </div>
+          <!-- Smartphone Mockup (Ordem de serviço) overlapping -->
+          <div class="absolute -bottom-6 -right-2 md:-right-6 w-[34%] z-20 transition-transform duration-500 hover:scale-[1.05] hover:rotate-1">
+            <img src="/marketing/assets/mockup_smartphone_1.png" alt="Ordem de Serviço DG App no Smartphone" class="w-full">
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- FEATURES BENTO GRID -->
+  <section id="solucoes" class="py-24 px-6 max-w-7xl mx-auto border-t border-slate-900">
+    <div class="text-center max-w-2xl mx-auto mb-20 space-y-3">
+      <span class="text-[10px] font-mono tracking-widest uppercase text-[#FF6600]">Desenvolvido para Resultados</span>
+      <h2 class="font-display font-black text-3xl md:text-4xl text-white uppercase tracking-tight">Arquitetura de Alta Performance</h2>
+      <p class="text-xs text-slate-400 leading-relaxed">Focamos nas dores crônicas das oficinas mecânicas para construir soluções definitivas de gestão, marketing e caixa.</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-8">
+      <!-- Card 1: Checklist -->
+      <div class="md:col-span-8 bg-slate-900/60 border border-slate-900 hover:border-slate-800 p-8 rounded-3xl transition duration-300 flex flex-col justify-between">
+        <div class="space-y-4">
+          <div class="w-12 h-12 bg-orange-950/40 rounded-xl border border-orange-500/20 flex items-center justify-center text-[#FF6600]">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path></svg>
+          </div>
+          <h3 class="font-display font-bold text-xl text-white">Checklist Fotográfico & Prontuário de Placas</h3>
+          <p class="text-xs text-slate-400 leading-relaxed max-w-xl">
+            Tire fotos dos problemas reais do automóvel no elevador ou pátio diretamente do celular. O sistema anexa as imagens à ordem de serviço do cliente e cria um histórico vitalício de manutenções baseado na placa do veículo.
+          </p>
+        </div>
+        <div class="mt-8 pt-6 border-t border-slate-950 flex items-center justify-between text-xs font-semibold uppercase text-[#FF6600]">
+          <span>Garante transparência operacional</span>
+          <span class="text-[10px] font-mono text-slate-500">Módulo Ativo</span>
+        </div>
+      </div>
+
+      <!-- Card 2: Offline-First -->
+      <div class="md:col-span-4 bg-slate-900/60 border border-slate-900 hover:border-slate-800 p-8 rounded-3xl transition duration-300 flex flex-col justify-between">
+        <div class="space-y-4">
+          <div class="w-12 h-12 bg-sky-950/40 rounded-xl border border-sky-500/20 flex items-center justify-center text-[#00E5FF]">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+          </div>
+          <h3 class="font-display font-bold text-xl text-white">Tecnologia PWA Offline</h3>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            Se a internet falhar ou a cobertura Wi-Fi não alcançar o fundo da sua oficina, o DG não para. Toda a operação é armazenada no dispositivo de forma segura e sincronizada assim que a internet voltar.
+          </p>
+        </div>
+        <div class="mt-8 pt-6 border-t border-slate-950 flex items-center justify-between text-xs font-semibold uppercase text-[#00E5FF]">
+          <span>Faturamento Ininterrupto</span>
+          <span class="text-[10px] font-mono text-slate-500">Módulo Ativo</span>
+        </div>
+      </div>
+
+      <!-- Card 3: Pricing intelligence -->
+      <div class="md:col-span-4 bg-slate-900/60 border border-slate-900 hover:border-slate-800 p-8 rounded-3xl transition duration-300 flex flex-col justify-between">
+        <div class="space-y-4">
+          <div class="w-12 h-12 bg-emerald-950/40 rounded-xl border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+          </div>
+          <h3 class="font-display font-bold text-xl text-white">Central de Precificação</h3>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            Proteja a saúde financeira da sua oficina. Calcule os custos reais de peças e impostos de sua empresa para gerar o Markup Técnico sugerido instantaneamente, garantindo a lucratividade desejada de sua oficina.
+          </p>
+        </div>
+        <div class="mt-8 pt-6 border-t border-slate-950 flex items-center justify-between text-xs font-semibold uppercase text-emerald-400">
+          <span>Controle de Margem de Lucro</span>
+          <span class="text-[10px] font-mono text-slate-500">Módulo Ativo</span>
+        </div>
+      </div>
+
+      <!-- Card 4: Reports -->
+      <div class="md:col-span-8 bg-slate-900/60 border border-slate-900 hover:border-slate-800 p-8 rounded-3xl transition duration-300 flex flex-col justify-between">
+        <div class="space-y-4">
+          <div class="w-12 h-12 bg-indigo-950/40 rounded-xl border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.003 9.003 0 1020.945 13H11V3.055z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"></path></svg>
+          </div>
+          <h3 class="font-display font-bold text-xl text-white">Relatórios Financeiros e Produtividade</h3>
+          <p class="text-xs text-slate-400 leading-relaxed max-w-xl">
+            Tenha em suas mãos gráficos inteligentes do faturamento de sua oficina mecânica. Veja quais colaboradores produzem mais, quais marcas de veículos mais frequentam seu estabelecimento e como está seu fluxo de caixa mensal.
+          </p>
+        </div>
+        <div class="mt-8 pt-6 border-t border-slate-950 flex items-center justify-between text-xs font-semibold uppercase text-indigo-400">
+          <span>Indicadores de Gestão Executiva</span>
+          <span class="text-[10px] font-mono text-slate-500">Módulo Ativo</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BENEFITS LIST SECTION -->
+  <section class="py-20 px-6 max-w-7xl mx-auto border-t border-slate-900">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+      <div class="lg:col-span-5 space-y-6">
+        <span class="text-[10px] font-mono tracking-widest uppercase text-[#FF6600]">Resultados Práticos</span>
+        <h2 class="font-display font-black text-3xl md:text-4xl text-white uppercase tracking-tight">O que você recebe ao implementar o DG Gestão</h2>
+        <p class="text-xs text-slate-400 leading-relaxed">
+          Nossa plataforma foi planejada por quem entende o dia a dia de uma oficina mecânica de verdade. Chega de sistemas cheios de burocracia: entregamos os benefícios reais que o seu negócio precisa para faturar mais e organizar sua equipe.
+        </p>
+      </div>
+      <div class="lg:col-span-7">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="bg-slate-900/40 border border-slate-900 p-6 rounded-2xl flex items-start gap-4 hover:border-orange-500/30 transition duration-300">
+            <span class="text-2xl text-[#FF6600] font-black leading-none">✓</span>
+            <div>
+              <strong class="text-sm text-white block">Organize todas as Ordens de Serviço</strong>
+              <p class="text-[11px] text-slate-400 mt-1 leading-normal">Acompanhe cada carro no pátio, desde a entrada até a entrega final com alertas de status.</p>
+            </div>
+          </div>
+          <div class="bg-slate-900/40 border border-slate-900 p-6 rounded-2xl flex items-start gap-4 hover:border-orange-500/30 transition duration-300">
+            <span class="text-2xl text-[#FF6600] font-black leading-none">✓</span>
+            <div>
+              <strong class="text-sm text-white block">Histórico completo dos equipamentos</strong>
+              <p class="text-[11px] text-slate-400 mt-1 leading-normal">Pesquisa instantânea por placa com prontuário vitalício de todas as manutenções anteriores.</p>
+            </div>
+          </div>
+          <div class="bg-slate-900/40 border border-slate-900 p-6 rounded-2xl flex items-start gap-4 hover:border-orange-500/30 transition duration-300">
+            <span class="text-2xl text-[#FF6600] font-black leading-none">✓</span>
+            <div>
+              <strong class="text-sm text-white block">Precificação inteligente</strong>
+              <p class="text-[11px] text-slate-400 mt-1 leading-normal">Composição técnica de Markup sugerido baseado em custos reais de peças e tributação.</p>
+            </div>
+          </div>
+          <div class="bg-slate-900/40 border border-slate-900 p-6 rounded-2xl flex items-start gap-4 hover:border-orange-500/30 transition duration-300">
+            <span class="text-2xl text-[#FF6600] font-black leading-none">✓</span>
+            <div>
+              <strong class="text-sm text-white block">Relatórios automáticos</strong>
+              <p class="text-[11px] text-slate-400 mt-1 leading-normal">Gráficos gerenciais de faturamento de sua oficina, ticket médio e fluxo de caixa.</p>
+            </div>
+          </div>
+          <div class="bg-slate-900/40 border border-slate-900 p-6 rounded-2xl flex items-start gap-4 hover:border-orange-500/30 transition duration-300">
+            <span class="text-2xl text-[#FF6600] font-black leading-none">✓</span>
+            <div>
+              <strong class="text-sm text-white block">Importação</strong>
+              <p class="text-[11px] text-slate-400 mt-1 leading-normal">Facilidade total para migrar cadastros de clientes e equipamentos.</p>
+            </div>
+          </div>
+          <div class="bg-slate-900/40 border border-slate-900 p-6 rounded-2xl flex items-start gap-4 hover:border-orange-500/30 transition duration-300">
+            <span class="text-2xl text-[#FF6600] font-black leading-none">✓</span>
+            <div>
+              <strong class="text-sm text-white block">Controle financeiro da manutenção</strong>
+              <p class="text-[11px] text-slate-400 mt-1 leading-normal">Controle de entradas, saídas e contas a pagar do dia a dia da sua oficina mecânica.</p>
+            </div>
+          </div>
+          <div class="bg-slate-900/40 border border-slate-900 p-6 rounded-2xl flex items-start gap-4 hover:border-orange-500/30 transition duration-300 col-span-1 sm:col-span-2">
+            <span class="text-2xl text-[#FF6600] font-black leading-none">✓</span>
+            <div>
+              <strong class="text-sm text-white block">Gestão completa da oficina</strong>
+              <p class="text-[11px] text-slate-400 mt-1 leading-normal">De ponta a ponta: do checklist fotográfico no pátio até o faturamento e envio de orçamentos pelo WhatsApp.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INTERACTIVE ROI CALCULATOR SECTION (PURA CRAFT OPERACIONAL) -->
+  <section id="roi" class="py-24 px-6 max-w-5xl mx-auto bg-slate-900/20 border border-slate-900 rounded-3xl relative overflow-hidden">
+    <div class="absolute top-0 right-0 w-80 h-80 bg-[#FF6600]/5 blur-[120px] pointer-events-none rounded-full"></div>
+    <div class="absolute bottom-0 left-0 w-80 h-80 bg-teal-500/5 blur-[120px] pointer-events-none rounded-full"></div>
+    
+    <div class="text-center mb-16 space-y-3">
+      <span class="text-[10px] font-mono tracking-widest uppercase text-[#FF6600]">Inteligência de Caixa</span>
+      <h2 class="font-display font-black text-3xl md:text-4xl text-white uppercase tracking-tight">Simulador Interativo de Retorno de Orçamentos</h2>
+      <p class="text-xs text-slate-400 max-w-lg mx-auto">Calcule o ganho mensal estimado na sua oficina ao adotar checklists fotográficos estruturados enviados direto no WhatsApp dos clientes.</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+      <!-- Input fields form -->
+      <div class="bg-slate-950/60 p-8 rounded-2xl border border-slate-900 space-y-6">
+        <div>
+          <label class="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-2">1. Quantos orçamentos você abre por mês?</label>
+          <input type="number" id="roi-os" value="80" class="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-sm font-mono text-white focus:outline-none focus:border-[#FF6600] transition">
+        </div>
+        <div>
+          <label class="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-2">2. Qual o Ticket Médio de cada serviço? (R$)</label>
+          <input type="number" id="roi-ticket" value="650" class="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-sm font-mono text-white focus:outline-none focus:border-[#FF6600] transition">
+        </div>
+        <div>
+          <label class="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-2">3. Taxa atual de aprovação estimada (%)</label>
+          <select id="roi-taxa" class="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-sm font-mono text-white focus:outline-none focus:border-[#FF6600] transition">
+            <option value="50">50% (Aprova metade)</option>
+            <option value="60" selected>60% (Padrão das oficinas tradicionais)</option>
+            <option value="70">70% (Eficiência operacional aceitável)</option>
+          </select>
+        </div>
+        
+        <button onclick="calculateLandingROI()" class="w-full bg-gradient-to-r from-orange-600 to-[#FF6600] hover:from-orange-500 hover:to-orange-600 text-white font-black py-4 rounded-xl text-xs uppercase tracking-widest transition">
+          Simular Novo Lucro Mensal
+        </button>
+      </div>
+
+      <!-- Results panel -->
+      <div class="space-y-6">
+        <div class="bg-gradient-to-br from-emerald-950/15 to-emerald-900/5 border border-emerald-500/20 p-8 rounded-3xl">
+          <span class="text-[9px] font-mono text-emerald-400 uppercase tracking-widest font-bold block mb-1">Crescimento Financeiro Estimado</span>
+          <strong id="roi-res-ganho" class="text-4xl md:text-5xl font-display font-black text-emerald-400 font-mono block">R$ 10.400,00</strong>
+          <p class="text-xs text-slate-400 mt-4 leading-relaxed">
+            Ao modernizar a recepção com provas visuais e descrições claras, a média geral de aprovações atinge <strong class="text-white">80%</strong>. Isso se traduz em mais lucro líquido sem precisar captar mais carros!
+          </p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div class="bg-slate-950 p-4 rounded-xl border border-slate-900">
+            <span class="text-[8px] text-slate-500 uppercase block font-bold">Faturamento de Hoje</span>
+            <span id="roi-res-atual" class="text-sm font-bold text-slate-200 font-mono">R$ 31.200,00</span>
+          </div>
+          <div class="bg-slate-950 p-4 rounded-xl border border-slate-900">
+            <span class="text-[8px] text-[#00E5FF] uppercase block font-bold">Com DG Gestão</span>
+            <span id="roi-res-novo" class="text-sm font-bold text-[#00E5FF] font-mono">R$ 41.600,00</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICING B2B PLAN SCHEMES -->
+  <section id="valores" class="py-24 px-6 max-w-7xl mx-auto border-t border-slate-900">
+    <div class="text-center max-w-2xl mx-auto mb-20 space-y-3">
+      <span class="text-[10px] font-mono tracking-widest uppercase text-[#FF6600]">Investimento Inteligente</span>
+      <h2 class="font-display font-black text-3xl md:text-4xl text-white uppercase tracking-tight">Planos de Implementação</h2>
+      <p class="text-xs text-slate-400 leading-relaxed">Adote o sistema definitivo de gestão automotiva com planos sob medida para sua oficina.</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+      
+      <!-- Plano Mensal -->
+      <div class="bg-slate-900/40 border border-slate-900 hover:border-slate-800 rounded-3xl p-8 flex flex-col justify-between transition duration-300">
+        <div class="space-y-6 text-left">
+          <span class="bg-slate-800 text-slate-300 font-bold px-3 py-1 rounded-full text-[8px] uppercase tracking-wider inline-block">Flexibilidade Sem Fidelidade</span>
+          <h3 class="font-display font-black text-2xl text-white uppercase tracking-tight">Plano Mensal</h3>
+          <p class="text-xs text-slate-400">Acesso contínuo com renovação automática, ideal para manter o fluxo sob controle.</p>
+          
+          <div class="py-4">
+            <span class="text-3xl font-black text-white font-mono block">R$ 50,00<span class="text-xs font-normal text-slate-500"> / mês</span></span>
+          </div>
+
+          <ul class="space-y-3.5 text-xs text-slate-300 border-t border-slate-950 pt-6">
+            <li class="flex items-center gap-3">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#FF6600]"></span>
+              <span>Acesso completo ao sistema</span>
+            </li>
+            <li class="flex items-center gap-3">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#FF6600]"></span>
+              <span>Todas as funcionalidades liberadas</span>
+            </li>
+            <li class="flex items-center gap-3">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#FF6600]"></span>
+              <span>Atualizações incluídas</span>
+            </li>
+            <li class="flex items-center gap-3">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#FF6600]"></span>
+              <span>Suporte via WhatsApp</span>
+            </li>
+          </ul>
+        </div>
+        <a href="https://wa.me/5573999868104?text=Ol%C3%A1!%20Gostaria%20de%20assinar%20o%20Plano%20Mensal%20do%20DG%20Gest%C3%A3o%20Automotiva." target="_blank" class="w-full bg-slate-950 hover:bg-slate-900 border border-slate-800 text-white font-black py-4 rounded-xl text-xs uppercase tracking-wider mt-8 transition text-center block">
+          Assinar Plano Mensal
+        </a>
+      </div>
+
+      <!-- Plano Anual (PIX) -->
+      <div class="bg-slate-900/60 border-2 border-[#FF6600] rounded-3xl p-8 flex flex-col justify-between relative transition duration-300 shadow-xl shadow-orange-950/20">
+        <div class="absolute -top-3 right-8 bg-[#FF6600] text-white font-black text-[8px] uppercase tracking-widest px-3 py-1 rounded-full border border-slate-950">Mais vantajoso</div>
+        
+        <div class="space-y-6 text-left">
+          <span class="bg-orange-950/60 text-[#FF6600] font-black px-3 py-1 rounded-full text-[8px] uppercase tracking-wider inline-block">Economia Máxima</span>
+          <h3 class="font-display font-black text-2xl text-white uppercase tracking-tight">Plano Anual</h3>
+          <p class="text-xs text-slate-400">Garanta o melhor preço e faturamento ininterrupto por um ano inteiro.</p>
+          
+          <div class="py-2">
+            <span class="text-4xl font-black text-[#FF6600] font-mono block">R$ 550,00<span class="text-xs font-normal text-slate-500"> / ano único</span></span>
+            <div class="mt-2 inline-flex flex-col gap-1">
+              <span class="bg-emerald-950/50 text-emerald-400 border border-emerald-900/40 text-[9px] font-bold px-2 py-1 rounded-md">💡 Economize R$ 50,00</span>
+              <span class="bg-orange-950/50 text-orange-400 border border-orange-900/40 text-[9px] font-bold px-2 py-1 rounded-md">🔥 Ganhe 1 mês grátis.</span>
+            </div>
+          </div>
+
+          <ul class="space-y-3 text-xs text-slate-300 border-t border-slate-950 pt-4">
+            <li class="flex items-center gap-3">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#FF6600]"></span>
+              <span>Acesso completo por 12 meses</span>
+            </li>
+            <li class="flex items-center gap-3">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#FF6600]"></span>
+              <span>Todas as funcionalidades liberadas</span>
+            </li>
+            <li class="flex items-center gap-3">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#FF6600]"></span>
+              <span>Atualizações inclusas</span>
+            </li>
+            <li class="flex items-center gap-3">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#FF6600]"></span>
+              <span>Suporte via WhatsApp</span>
+            </li>
+          </ul>
+
+          <!-- PIX Details modern card -->
+          <div class="bg-slate-950/80 rounded-2xl p-4 border border-slate-900 space-y-2 mt-4">
+            <span class="text-[8px] font-mono uppercase tracking-widest text-slate-400 font-bold block">Dados para Pagamento PIX</span>
+            <div class="grid grid-cols-1 gap-2 text-[10px]">
+              <div>
+                <span class="text-slate-500 block">Chave PIX:</span>
+                <span class="font-mono font-bold text-white tracking-wider select-all">73999868104</span>
+              </div>
+              <div>
+                <span class="text-slate-500 block">Beneficiário:</span>
+                <span class="font-bold text-[#00E5FF]">Danilo dos Santos Gomes</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <a href="https://wa.me/5573999868104?text=Ol%C3%A1!%20Gostaria%20de%20assinar%20o%20Plano%20Anual%20do%20DG%20Gest%C3%A3o%20Automotiva." target="_blank" class="w-full bg-[#FF6600] hover:bg-orange-500 text-white font-black py-4 rounded-xl text-xs uppercase tracking-wider mt-8 transition text-center block">
+          Assinar Plano Anual
+        </a>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="bg-slate-950 border-t border-slate-900 py-16 px-6">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8 text-center md:text-left">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-[#FF6600] flex items-center justify-center font-display font-black text-white text-sm tracking-tighter">
+          DG
+        </div>
+        <div>
+          <span class="font-display font-black text-sm tracking-tight text-white uppercase block">DG GESTÃO AUTOMOTIVA</span>
+          <span class="text-[8px] font-mono tracking-widest text-[#00E5FF] uppercase block">© 2026 Todos os direitos reservados.</span>
+        </div>
+      </div>
+      
+      <div class="flex flex-wrap justify-center gap-6 text-xs text-slate-500 font-semibold uppercase tracking-wider">
+        <a href="#solucoes" class="hover:text-slate-300">Sobre</a>
+        <a href="#roi" class="hover:text-slate-300">Simulador</a>
+        <a href="catalogo_comercial.html" class="hover:text-slate-300">Catálogo</a>
+        <span class="text-[#FF6600]">Alta Performance B2B</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- SCRIPTING FOR INTERACTIONS -->
+  <script>
+    // 1. Mockup switcher
+    function switchHeroMockup(device) {
+      const img = document.getElementById('hero-mockup-img');
+      const btnDesktop = document.getElementById('btn-mock-desktop');
+      const btnTablet = document.getElementById('btn-mock-tablet');
+      const btnPhone = document.getElementById('btn-mock-phone');
+      
+      // Reset button styles
+      [btnDesktop, btnTablet, btnPhone].forEach(btn => {
+        btn.classList.add('bg-slate-950', 'text-slate-400', 'border-slate-800');
+        btn.classList.remove('bg-slate-900', 'text-white', 'border-orange-500');
+      });
+
+      if (device === 'desktop') {
+        img.src = '/marketing/assets/mockup_desktop.png';
+        btnDesktop.classList.remove('bg-slate-950', 'text-slate-400', 'border-slate-800');
+        btnDesktop.classList.add('bg-slate-900', 'text-white', 'border-orange-500');
+      } else if (device === 'tablet') {
+        img.src = '/marketing/assets/mockup_tablet.png';
+        btnTablet.classList.remove('bg-slate-950', 'text-slate-400', 'border-slate-800');
+        btnTablet.classList.add('bg-slate-900', 'text-white', 'border-orange-500');
+      } else if (device === 'phone') {
+        img.src = '/marketing/assets/mockup_smartphone_1.png';
+        btnPhone.classList.remove('bg-slate-950', 'text-slate-400', 'border-slate-800');
+        btnPhone.classList.add('bg-slate-900', 'text-white', 'border-orange-500');
+      }
+    }
+
+    // 2. Interactive ROI calculator
+    function calculateLandingROI() {
+      const os = parseFloat(document.getElementById('roi-os').value) || 0;
+      const ticket = parseFloat(document.getElementById('roi-ticket').value) || 0;
+      const taxaOriginal = parseFloat(document.getElementById('roi-taxa').value) || 60;
+      
+      const faturamentoTotalInicial = os * ticket;
+      const faturamentoAprovadoInicial = faturamentoTotalInicial * (taxaOriginal / 100);
+      
+      // Expected approval rate with visual PWA is 80% (validated industry conservative average)
+      const novaTaxa = 80; 
+      const faturamentoAprovadoNovo = faturamentoTotalInicial * (novaTaxa / 100);
+      const ganhoMensal = faturamentoAprovadoNovo - faturamentoAprovadoInicial;
+      
+      // Update displays
+      document.getElementById('roi-res-ganho').innerText = 'R$ ' + ganhoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      document.getElementById('roi-res-atual').innerText = 'R$ ' + faturamentoAprovadoInicial.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      document.getElementById('roi-res-novo').innerText = 'R$ ' + faturamentoAprovadoNovo.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    // 3. Gallery item filter logic
+    function filterGallery(category) {
+      const items = document.querySelectorAll('.gallery-item');
+      const buttons = {
+        all: document.getElementById('btn-tab-all'),
+        instagram: document.getElementById('btn-tab-instagram'),
+        stories: document.getElementById('btn-tab-stories'),
+        mockups: document.getElementById('btn-tab-mockups'),
+        banners: document.getElementById('btn-tab-banners')
+      };
+
+      // Reset button states
+      Object.keys(buttons).forEach(key => {
+        if (buttons[key]) {
+          buttons[key].classList.add('bg-slate-950', 'text-slate-400', 'border-slate-800');
+          buttons[key].classList.remove('bg-[#FF6600]', 'text-white', 'border-transparent');
+        }
+      });
+
+      // Highlight selected tab button
+      if (buttons[category]) {
+        buttons[category].classList.remove('bg-slate-950', 'text-slate-400', 'border-slate-800');
+        buttons[category].classList.add('bg-[#FF6600]', 'text-white', 'border-transparent');
+      }
+
+      // Hide or show grid elements
+      items.forEach(item => {
+        if (category === 'all' || item.classList.contains(category)) {
+          item.classList.remove('hidden');
+        } else {
+          item.classList.add('hidden');
+        }
+      });
+    }
+
+    // Run initial on-load calculation
+    window.addEventListener('DOMContentLoaded', () => {
+      calculateLandingROI();
+    });
+  </script>
+
+</body>
+</html>
