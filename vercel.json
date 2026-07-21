@@ -1,0 +1,21 @@
+{
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/marketing/assets/:path*",
+      "destination": "/marketing/assets/:path*"
+    },
+    {
+      "source": "/marketing/landing_page.html",
+      "destination": "/marketing/landing_page.html"
+    },
+    {
+      "source": "/marketing/catalogo_comercial.html",
+      "destination": "/marketing/catalogo_comercial.html"
+    },
+    {
+      "source": "/((?!api/|marketing/).*)",
+      "destination": "/index.html"
+    }
+  ]
+}
