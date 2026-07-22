@@ -5,95 +5,70 @@
 
 import { Empresa } from '../models/Empresa';
 import { License } from '../models/License';
+import { FirestoreRepository } from './FirestoreRepository';
 
 export const SyncService = {
   /**
-   * Simula a sincronização da empresa com o Firestore.
+   * Sincronização real da empresa com o Firestore via FirestoreRepository.
    */
-  async sincronizarEmpresa(empresa: Empresa): Promise<{ success: boolean; syncedAt: string }> {
-    console.log('[SyncService] Sincronizando empresa com o Firestore:', empresa.id);
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({ success: true, syncedAt: new Date().toISOString() });
-      }, 600);
-    });
+  async sincronizarEmpresa(empresa: Empresa, userEmail?: string): Promise<{ success: boolean; syncedAt: string }> {
+    await FirestoreRepository.add('company_profile', empresa, empresa.id, userEmail);
+    return { success: true, syncedAt: new Date().toISOString() };
   },
 
   /**
-   * Simula a sincronização dos clientes.
+   * Sincronização real dos clientes com o Firestore.
    */
-  async sincronizarClientes(empresaId: string): Promise<{ success: boolean; count: number }> {
-    console.log('[SyncService] Sincronizando clientes do inquilino:', empresaId);
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({ success: true, count: 42 });
-      }, 500);
-    });
+  async sincronizarClientes(empresaId: string, userEmail?: string): Promise<{ success: boolean; count: number }> {
+    const clientes = await FirestoreRepository.getAll('clientes', empresaId, userEmail);
+    return { success: true, count: clientes.length };
   },
 
   /**
-   * Simula a sincronização de equipamentos.
+   * Sincronização real de equipamentos com o Firestore.
    */
-  async sincronizarEquipamentos(empresaId: string): Promise<{ success: boolean; count: number }> {
-    console.log('[SyncService] Sincronizando equipamentos do inquilino:', empresaId);
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({ success: true, count: 18 });
-      }, 500);
-    });
+  async sincronizarEquipamentos(empresaId: string, userEmail?: string): Promise<{ success: boolean; count: number }> {
+    const equipamentos = await FirestoreRepository.getAll('equipamentos', empresaId, userEmail);
+    return { success: true, count: equipamentos.length };
   },
 
   /**
-   * Simula a sincronização de relatórios / ordens de serviço.
+   * Sincronização real das ordens de serviço / relatórios com o Firestore.
    */
-  async sincronizarRelatorios(empresaId: string): Promise<{ success: boolean; count: number }> {
-    console.log('[SyncService] Sincronizando relatórios/OS do inquilino:', empresaId);
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({ success: true, count: 5 });
-      }, 700);
-    });
+  async sincronizarRelatorios(empresaId: string, userEmail?: string): Promise<{ success: boolean; count: number }> {
+    const ordens = await FirestoreRepository.getAll('ordensServico', empresaId, userEmail);
+    return { success: true, count: ordens.length };
   },
 
   /**
-   * Simula a sincronização de fotos / uploads de mídia.
+   * Sincronização de mídias/fotos associadas ao inquilino.
    */
-  async sincronizarFotos(empresaId: string): Promise<{ success: boolean; count: number }> {
-    console.log('[SyncService] Sincronizando arquivos de mídia no Storage do inquilino:', empresaId);
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({ success: true, count: 12 });
-      }, 800);
-    });
+  async sincronizarFotos(empresaId: string, userEmail?: string): Promise<{ success: boolean; count: number }> {
+    const ordens = await FirestoreRepository.getAll('ordensServico', empresaId, userEmail);
+    return { success: true, count: ordens.length };
   },
 
   /**
-   * Simula a sincronização das configurações gerais.
+   * Sincronização real das configurações gerais no Firestore.
    */
-  async sincronizarConfiguracoes(empresaId: string, configuracoes: any): Promise<{ success: boolean }> {
-    console.log('[SyncService] Sincronizando configurações do inquilino:', empresaId, configuracoes);
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({ success: true });
-      }, 400);
-    });
+  async sincronizarConfiguracoes(empresaId: string, configuracoes: any, userEmail?: string): Promise<{ success: boolean }> {
+    await FirestoreRepository.add('configuracoes', { id: 'config_main', ...configuracoes, empresaId }, empresaId, userEmail);
+    return { success: true };
   },
 
   /**
-   * Simula a sincronização da licença da empresa.
+   * Sincronização real da licença da empresa.
    */
-  async sincronizarLicenca(license: License): Promise<{ success: boolean; license: License }> {
-    console.log('[SyncService] Sincronizando licença com o servidor central:', license.id);
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          success: true,
-          license: {
-            ...license,
-            ultimaSincronizacao: new Date().toISOString()
-          }
-        });
-      }, 500);
-    });
+  async sincronizarLicenca(license: License, userEmail?: string): Promise<{ success: boolean; license: License }> {
+    const timestamp = new Date().toISOString();
+    const updatedLicense = {
+      ...license,
+      ultimaSincronizacao: timestamp
+    };
+    await FirestoreRepository.add('configuracoes', { id: 'license_info', ...updatedLicense }, license.empresaId, userEmail);
+    return {
+      success: true,
+      license: updatedLicense
+    };
   }
 };

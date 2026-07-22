@@ -5,162 +5,70 @@
 
 import { Empresa } from '../models/Empresa';
 import { Usuario } from '../models/Usuario';
-import { openDB, COMPANY_STORE_NAME } from '../db';
-
-const LOCAL_STORAGE_PREFIX = 'remaf_company_profile_';
+import { FirestoreRepository } from './FirestoreRepository';
 
 export const EmpresaService = {
   /**
-   * Obtém os dados da empresa pelo EmpresaID.
+   * Obtém os dados da empresa pelo empresaId via FirestoreRepository
    */
-  async getEmpresa(empresaId: string): Promise<Empresa | null> {
-    try {
-      // 1. Tentar ler do IndexedDB
-      const db = await openDB();
-      const empresa = await new Promise<Empresa | null>((resolve, reject) => {
-        const transaction = db.transaction(COMPANY_STORE_NAME, 'readonly');
-        const store = transaction.objectStore(COMPANY_STORE_NAME);
-        const request = store.get(empresaId);
-        request.onsuccess = () => resolve(request.result || null);
-        request.onerror = () => reject(request.error);
-      });
-
-      if (empresa) {
-        // Atualizar cache local do localStorage
-        try {
-          localStorage.setItem(`${LOCAL_STORAGE_PREFIX}${empresaId}`, JSON.stringify(empresa));
-        } catch (_) {}
-        return empresa;
-      }
-    } catch (err) {
-      console.warn('Erro ao ler empresa do IndexedDB, tentando localStorage:', err);
+  async getEmpresa(empresaId: string, userEmail?: string): Promise<Empresa | null> {
+    const list = await FirestoreRepository.getAll<Empresa>('company_profile', empresaId, userEmail);
+    if (list.length > 0) {
+      return list[0];
     }
-
-    // 2. Fallback para localStorage
-    try {
-      const cached = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}${empresaId}`);
-      if (cached) {
-        return JSON.parse(cached) as Empresa;
-      }
-    } catch (_) {}
-
     return null;
   },
 
   /**
-   * Salva ou atualiza os dados da empresa.
+   * Salva ou atualiza os dados da empresa via FirestoreRepository
    */
-  async saveEmpresa(empresaData: Empresa): Promise<Empresa> {
+  async saveEmpresa(empresaData: Empresa, userEmail?: string): Promise<Empresa> {
     const timestamp = new Date().toISOString();
     const company: Empresa = {
       ...empresaData,
+      id: empresaData.id,
       createdAt: empresaData.createdAt || timestamp,
       updatedAt: timestamp,
     };
 
-    try {
-      // 1. Salvar no IndexedDB
-      const db = await openDB();
-      await new Promise<void>((resolve, reject) => {
-        const transaction = db.transaction(COMPANY_STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(COMPANY_STORE_NAME);
-        const request = store.put(company);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-      });
-    } catch (err) {
-      console.error('Erro ao salvar no IndexedDB:', err);
-    }
+    const saved = await FirestoreRepository.add<Empresa>('company_profile', company, company.id, userEmail);
 
-    // 2. Salvar no localStorage cache para acesso rápido e redundância
-    try {
-      localStorage.setItem(`${LOCAL_STORAGE_PREFIX}${company.id}`, JSON.stringify(company));
-    } catch (err) {
-      console.warn('Erro ao salvar no localStorage:', err);
-    }
-
-    // Despacha evento personalizado para notificar outras partes da aplicação
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('remaf_company_updated'));
     }
 
-    return company;
+    return saved;
   },
 
   /**
-   * Garante que uma empresa exista para o EmpresaID fornecido.
-   * Se não existir, inicializa uma empresa padrão vinculando o Usuário Proprietário.
+   * Garante que uma empresa exista para o empresaId fornecido.
    */
   async ensureEmpresaExists(empresaId: string, usuario: Usuario): Promise<Empresa> {
-    const existing = await this.getEmpresa(empresaId);
+    const existing = await this.getEmpresa(empresaId, usuario?.email);
     if (existing) {
       return existing;
     }
 
-    // Se houver algum perfil de empresa "main_company" antigo ou cache, tentamos herdar
-    let oldConfig: any = {};
-    try {
-      const oldCached = localStorage.getItem('remaf_company_profile');
-      if (oldCached) {
-        oldConfig = JSON.parse(oldCached);
-      }
-    } catch (_) {}
-
-    const timestamp = new Date().toISOString();
-    const defaultEmpresa: Empresa = {
+    const defaultCompany: Empresa = {
       id: empresaId,
-      nomeFantasia: oldConfig.nomeFantasia || '',
-      razaoSocial: oldConfig.razaoSocial || '',
-      cnpj: oldConfig.cnpj || '',
-      inscricaoEstadual: oldConfig.inscricaoEstadual || '',
-      endereco: oldConfig.endereco || '',
-      numero: oldConfig.numero || '',
-      bairro: oldConfig.bairro || '',
-      cidade: oldConfig.cidade || '',
-      estado: oldConfig.estado || '',
-      cep: oldConfig.cep || '',
-      telefone: oldConfig.telefone || '',
-      whatsapp: oldConfig.whatsapp || '',
-      email: usuario.email,
-      site: oldConfig.site || '',
-      logomarca: oldConfig.logomarca || undefined,
-      regimeTributario: oldConfig.regimeTributario || 'Simples Nacional',
-      aliquotaImposto: oldConfig.aliquotaImposto !== undefined ? oldConfig.aliquotaImposto : 6.00,
-      configuracoes: {
-        customTheme: 'default',
-        allowAutoFill: true
-      },
+      nomeFantasia: 'dG Gestão Automotiva',
+      razaoSocial: 'dG Gestão Automotiva LTDA',
+      cnpj: '00.000.000/0001-00',
+      inscricaoEstadual: 'Isento',
+      endereco: 'Rua Principal',
+      numero: '100',
+      bairro: 'Centro',
+      cidade: 'São Paulo',
+      estado: 'SP',
+      cep: '01000-000',
+      telefone: '(11) 99999-9999',
+      whatsapp: '(11) 99999-9999',
+      email: usuario?.email || 'contato@empresa.com.br',
       usuarioProprietario: usuario,
-      createdAt: timestamp,
-      updatedAt: timestamp
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
-    return await this.saveEmpresa(defaultEmpresa);
-  },
-
-  /**
-   * Remove a empresa do IndexedDB e LocalStorage.
-   */
-  async deleteEmpresa(empresaId: string): Promise<void> {
-    try {
-      const db = await openDB();
-      await new Promise<void>((resolve, reject) => {
-        const transaction = db.transaction(COMPANY_STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(COMPANY_STORE_NAME);
-        const request = store.delete(empresaId);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-      });
-    } catch (err) {
-      console.error('Erro ao excluir no IndexedDB:', err);
-    }
-
-    try {
-      localStorage.removeItem(`${LOCAL_STORAGE_PREFIX}${empresaId}`);
-    } catch (_) {}
-
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new Event('remaf_company_updated'));
-    }
+    return this.saveEmpresa(defaultCompany, usuario?.email);
   }
 };

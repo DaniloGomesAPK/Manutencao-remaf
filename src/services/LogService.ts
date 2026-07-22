@@ -15,12 +15,71 @@ export interface ErrorLog {
   sincronizado: boolean;
 }
 
-const LOG_STORAGE_KEY = 'remaf_error_logs_v1';
-const MAX_LOG_ENTRIES = 100;
+export interface OperationLog {
+  id: string;
+  timestamp: string;
+  usuario: string;
+  colecao: string;
+  documentoId: string;
+  operacao: 'add' | 'update' | 'delete' | 'get' | 'getAll' | 'query' | 'listen';
+  erro: string | null;
+  tempoMs: number;
+  sincronizado: boolean;
+}
+
+const ERROR_LOG_STORAGE_KEY = 'remaf_error_logs_v1';
+const OP_LOG_STORAGE_KEY = 'remaf_operation_logs_v1';
+const MAX_LOG_ENTRIES = 200;
 
 export const LogService = {
   /**
-   * Registra um erro localmente de forma resiliente e segura.
+   * Registra um log de operação do FirestoreRepository com medição de tempo e tratamento de erros.
+   */
+  logOperation(
+    usuario: string,
+    colecao: string,
+    documentoId: string,
+    operacao: OperationLog['operacao'],
+    tempoMs: number,
+    erro: any = null
+  ): OperationLog {
+    const now = new Date();
+    const entry: OperationLog = {
+      id: 'op_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now(),
+      timestamp: now.toISOString(),
+      usuario: usuario || 'usuario_anonimo',
+      colecao,
+      documentoId: documentoId || 'n/a',
+      operacao,
+      erro: erro ? (typeof erro === 'string' ? erro : erro.message || JSON.stringify(erro)) : null,
+      tempoMs: Math.round(tempoMs),
+      sincronizado: false,
+    };
+
+    try {
+      const stored = localStorage.getItem(OP_LOG_STORAGE_KEY);
+      let logs: OperationLog[] = stored ? JSON.parse(stored) : [];
+      if (!Array.isArray(logs)) logs = [];
+      logs.unshift(entry);
+      if (logs.length > MAX_LOG_ENTRIES) {
+        logs = logs.slice(0, MAX_LOG_ENTRIES);
+      }
+      localStorage.setItem(OP_LOG_STORAGE_KEY, JSON.stringify(logs));
+    } catch (e) {
+      console.warn('[LogService] Falha ao salvar log de operação localmente:', e);
+    }
+
+    if (erro) {
+      console.error(`[FirestoreOpError] ${operacao.toUpperCase()} em ${colecao}/${documentoId} (${Math.round(tempoMs)}ms):`, erro);
+    } else {
+      console.log(`[FirestoreOpSuccess] ${operacao.toUpperCase()} em ${colecao}/${documentoId} (${Math.round(tempoMs)}ms)`);
+    }
+
+    return entry;
+  },
+
+  /**
+   * Registra um erro de aplicação localmente.
    */
   logError(
     modulo: string,
@@ -30,7 +89,6 @@ export const LogService = {
     acaoUsuario?: string
   ): ErrorLog {
     const now = new Date();
-    // Use ISO-based formatted date or locale format
     const data = now.toISOString().split('T')[0];
     const hora = now.toTimeString().split(' ')[0];
     
@@ -47,89 +105,88 @@ export const LogService = {
     };
 
     try {
-      const stored = localStorage.getItem(LOG_STORAGE_KEY);
-      let logs: ErrorLog[] = [];
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed)) {
-            logs = parsed;
-          }
-        } catch (_) {
-          console.warn('Logs corrompidos detectados no localStorage, redefinindo.');
-        }
-      }
-      
-      logs.unshift(entry); // Insere o erro mais recente no topo
-      
-      // Limita a quantidade máxima para evitar estouro da cota do localStorage
+      const stored = localStorage.getItem(ERROR_LOG_STORAGE_KEY);
+      let logs: ErrorLog[] = stored ? JSON.parse(stored) : [];
+      if (!Array.isArray(logs)) logs = [];
+      logs.unshift(entry);
       if (logs.length > MAX_LOG_ENTRIES) {
         logs = logs.slice(0, MAX_LOG_ENTRIES);
       }
-      
-      localStorage.setItem(LOG_STORAGE_KEY, JSON.stringify(logs));
+      localStorage.setItem(ERROR_LOG_STORAGE_KEY, JSON.stringify(logs));
     } catch (err) {
-      console.warn('Falha ao gravar registro de log de erro no localStorage:', err);
+      console.warn('[LogService] Falha ao gravar log de erro no localStorage:', err);
     }
 
     return entry;
   },
 
   /**
-   * Retorna a lista de logs registrados.
+   * Retorna os logs de operação armazenados.
+   */
+  getOperationLogs(): OperationLog[] {
+    try {
+      const stored = localStorage.getItem(OP_LOG_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (_) {}
+    return [];
+  },
+
+  /**
+   * Retorna os logs de erro registrados.
    */
   getLogs(): ErrorLog[] {
     try {
-      const stored = localStorage.getItem(LOG_STORAGE_KEY);
+      const stored = localStorage.getItem(ERROR_LOG_STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          return parsed;
-        }
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch (err) {
-      console.error('Falha ao ler os logs do localStorage:', err);
+      console.error('[LogService] Falha ao ler logs de erro:', err);
     }
     return [];
   },
 
   /**
-   * Limpa todos os logs de erro armazenados.
+   * Calcula estatísticas dos logs de operações (tempo médio, falhas, etc)
    */
-  clearLogs(): void {
-    try {
-      localStorage.removeItem(LOG_STORAGE_KEY);
-    } catch (err) {
-      console.error('Falha ao limpar logs:', err);
+  getOperationStats() {
+    const logs = this.getOperationLogs();
+    if (logs.length === 0) {
+      return { totalCount: 0, tempoMedioMs: 0, errorCount: 0, successCount: 0 };
     }
+
+    const totalTempo = logs.reduce((acc, l) => acc + (l.tempoMs || 0), 0);
+    const errorCount = logs.filter(l => l.erro !== null).length;
+    const successCount = logs.length - errorCount;
+
+    return {
+      totalCount: logs.length,
+      tempoMedioMs: Math.round(totalTempo / logs.length),
+      errorCount,
+      successCount,
+    };
   },
 
   /**
-   * Sincroniza logs pendentes com o Firebase (estrutura preparada).
+   * Método de compatibilidade para sincronizar logs
    */
   async syncWithFirebase(): Promise<{ success: boolean; count: number }> {
+    return { success: true, count: 0 };
+  },
+
+  /**
+   * Limpa todos os logs de erro e operações.
+   */
+  clearLogs(): void {
     try {
-      const logs = this.getLogs();
-      const unsynced = logs.filter(l => !l.sincronizado);
-      if (unsynced.length === 0) {
-        return { success: true, count: 0 };
-      }
-      
-      // Simulação de sincronização bem-sucedida para o SaaS preparado
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      const updated = logs.map(l => {
-        if (!l.sincronizado) {
-          return { ...l, sincronizado: true };
-        }
-        return l;
-      });
-      
-      localStorage.setItem(LOG_STORAGE_KEY, JSON.stringify(updated));
-      return { success: true, count: unsynced.length };
+      localStorage.removeItem(ERROR_LOG_STORAGE_KEY);
+      localStorage.removeItem(OP_LOG_STORAGE_KEY);
     } catch (err) {
-      console.error('Falha ao sincronizar logs com o Firebase:', err);
-      return { success: false, count: 0 };
+      console.error('[LogService] Falha ao limpar logs:', err);
     }
   }
 };

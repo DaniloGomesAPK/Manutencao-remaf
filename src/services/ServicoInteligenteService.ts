@@ -4,50 +4,20 @@
  */
 
 import { Servico } from '../types';
-import { openDB, SERVICOS_INTELIGENTES_STORE_NAME } from '../db';
-
-const LOCAL_STORAGE_PREFIX = 'remaf_servico_inteligente_';
+import { FirestoreRepository } from './FirestoreRepository';
 
 export const ServicoInteligenteService = {
   /**
-   * Obtém todos os serviços inteligentes de um inquilino (empresaId)
+   * Obtém todos os serviços inteligentes de um inquilino (empresaId) via FirestoreRepository
    */
-  async getServicos(empresaId: string): Promise<Servico[]> {
-    try {
-      const db = await openDB();
-      const servicos = await new Promise<Servico[]>((resolve, reject) => {
-        const transaction = db.transaction(SERVICOS_INTELIGENTES_STORE_NAME, 'readonly');
-        const store = transaction.objectStore(SERVICOS_INTELIGENTES_STORE_NAME);
-        const request = store.getAll();
-        request.onsuccess = () => resolve(request.result || []);
-        request.onerror = () => reject(request.error);
-      });
-
-      // Filtra por empresaId
-      const tenantServicos = servicos.filter(s => s.empresaId === empresaId);
-
-      // Cache em localStorage
-      try {
-        localStorage.setItem(`${LOCAL_STORAGE_PREFIX}list_${empresaId}`, JSON.stringify(tenantServicos));
-      } catch (_) {}
-
-      return tenantServicos;
-    } catch (err) {
-      console.warn('Erro ao ler serviços inteligentes do IndexedDB, tentando localStorage:', err);
-      try {
-        const cached = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}list_${empresaId}`);
-        if (cached) {
-          return JSON.parse(cached) as Servico[];
-        }
-      } catch (_) {}
-      return [];
-    }
+  async getServicos(empresaId: string, userEmail?: string): Promise<Servico[]> {
+    return FirestoreRepository.getAll<Servico>('servicos_inteligentes', empresaId, userEmail);
   },
 
   /**
-   * Salva ou atualiza um serviço inteligente
+   * Salva ou atualiza um serviço inteligente via FirestoreRepository
    */
-  async saveServico(servicoData: Servico): Promise<Servico> {
+  async saveServico(servicoData: Servico, userEmail?: string): Promise<Servico> {
     const timestamp = new Date().toISOString();
     const id = servicoData.id || 'srv_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
     
@@ -58,75 +28,51 @@ export const ServicoInteligenteService = {
       ultimaAtualizacao: timestamp,
       quantidadeUtilizacoes: servicoData.quantidadeUtilizacoes ?? 0,
       status: servicoData.status || 'Ativo',
+      createdAt: servicoData.createdAt || timestamp,
+      updatedAt: timestamp,
     };
 
-    try {
-      const db = await openDB();
-      await new Promise<void>((resolve, reject) => {
-        const transaction = db.transaction(SERVICOS_INTELIGENTES_STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(SERVICOS_INTELIGENTES_STORE_NAME);
-        const request = store.put(servico);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-      });
+    const saved = await FirestoreRepository.add<Servico>('servicos_inteligentes', servico, servico.empresaId, userEmail);
 
-      // Recarrega e atualiza o cache do LocalStorage em background
-      await this.getServicos(servico.empresaId);
-
-      // Despacha evento de atualização
+    if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('servicos_updated', { detail: { empresaId: servico.empresaId } }));
-    } catch (error) {
-      console.error('Erro ao salvar serviço inteligente no IndexedDB:', error);
-      throw error;
     }
 
-    return servico;
+    return saved;
   },
 
   /**
-   * Exclui um serviço inteligente
+   * Escuta em tempo real serviços inteligentes
    */
-  async deleteServico(id: string, empresaId: string): Promise<void> {
-    try {
-      const db = await openDB();
-      await new Promise<void>((resolve, reject) => {
-        const transaction = db.transaction(SERVICOS_INTELIGENTES_STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(SERVICOS_INTELIGENTES_STORE_NAME);
-        const request = store.delete(id);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-      });
-
-      // Recarrega e atualiza o cache do LocalStorage em background
-      await this.getServicos(empresaId);
-
-      // Despacha evento de atualização
-      window.dispatchEvent(new CustomEvent('servicos_updated', { detail: { empresaId } }));
-    } catch (error) {
-      console.error('Erro ao excluir serviço inteligente no IndexedDB:', error);
-      throw error;
-    }
+  listenServicos(empresaId: string, callback: (servicos: Servico[]) => void, userEmail?: string) {
+    return FirestoreRepository.listen<Servico>('servicos_inteligentes', empresaId, callback, [], userEmail);
   },
 
   /**
-   * Registra a utilização de um serviço inteligente em uma OS
+   * Incrementa o contador de utilizações de um serviço inteligente
    */
-  async registrarUtilizacao(id: string, empresaId: string): Promise<void> {
+  async registrarUtilizacao(id: string, empresaId: string, userEmail?: string): Promise<void> {
     try {
-      const servicos = await this.getServicos(empresaId);
+      const servicos = await this.getServicos(empresaId, userEmail);
       const servico = servicos.find(s => s.id === id);
-      if (!servico) return;
+      if (servico) {
+        servico.quantidadeUtilizacoes = (servico.quantidadeUtilizacoes || 0) + 1;
+        servico.ultimaUtilizacao = new Date().toISOString();
+        await this.saveServico(servico, userEmail);
+      }
+    } catch (e) {
+      console.warn('[ServicoInteligenteService] Erro ao registrar utilização do serviço:', e);
+    }
+  },
 
-      const updated: Servico = {
-        ...servico,
-        quantidadeUtilizacoes: (servico.quantidadeUtilizacoes || 0) + 1,
-        ultimaUtilizacao: new Date().toISOString(),
-        ultimaAtualizacao: new Date().toISOString()
-      };
+  /**
+   * Exclui um serviço inteligente via FirestoreRepository
+   */
+  async deleteServico(id: string, empresaId: string, userEmail?: string): Promise<void> {
+    await FirestoreRepository.delete('servicos_inteligentes', id, empresaId, userEmail);
 
-      await this.saveServico(updated);
-    } catch (err) {
-      console.error('Erro ao registrar utilização do serviço inteligente:', err);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('servicos_updated', { detail: { empresaId } }));
     }
   }
 };
