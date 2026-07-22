@@ -56,6 +56,7 @@ export default function App() {
 
   // SaaS Login States
   const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
   const [loginNome, setLoginNome] = useState('');
   const [loginError, setLoginError] = useState('');
   const [submittingLogin, setSubmittingLogin] = useState(false);
@@ -184,12 +185,16 @@ export default function App() {
       setLoginError('Por favor, informe seu e-mail de acesso.');
       return;
     }
+    if (!loginPassword.trim()) {
+      setLoginError('Por favor, informe sua senha de acesso.');
+      return;
+    }
     setSubmittingLogin(true);
     setLoginError('');
     try {
-      await auth?.login(loginEmail.trim().toLowerCase(), loginNome.trim() || undefined);
+      await auth?.login(loginEmail.trim().toLowerCase(), loginPassword, loginNome.trim() || undefined);
     } catch (err: any) {
-      setLoginError(err.message || 'Falha ao realizar login. Verifique sua licença.');
+      setLoginError(err.message || 'Falha ao realizar login.');
     } finally {
       setSubmittingLogin(false);
     }
@@ -642,6 +647,21 @@ export default function App() {
 
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-500 tracking-wider uppercase">
+                    Senha de Acesso <span className="text-[#FF6600] font-bold">*</span>
+                  </label>
+                  <input
+                    id="login-password"
+                    type="password"
+                    required
+                    placeholder="Sua senha de acesso"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    className="w-full bg-slate-50 text-slate-800 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-500 tracking-wider uppercase">
                     Nome Completo <span className="text-slate-400 font-normal">(Opcional para novos cadastros)</span>
                   </label>
                   <input
@@ -686,9 +706,6 @@ export default function App() {
       {/* Main Structural Right Panel */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
         
-        {/* Connection Banner Status */}
-        <OfflineIndicator />
-
         {/* Main Header */}
         <header className="bg-white text-slate-800 h-16 flex items-center justify-between px-6 border-b border-slate-200 shrink-0 shadow-xs animate-in fade-in duration-300">
           <div className="flex items-center gap-3">
@@ -704,26 +721,9 @@ export default function App() {
               <CompanyHeader />
             </button>
 
-            {/* Quick status tags */}
-            <div className="hidden lg:flex items-center gap-3 text-[10px] font-bold uppercase tracking-wider pl-4 border-l border-slate-200">
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border ${
-                navigator.onLine 
-                  ? 'bg-emerald-50 text-emerald-800 border-emerald-175' 
-                  : 'bg-rose-50 text-rose-800 border-rose-175 animate-pulse'
-              }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${navigator.onLine ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
-                <span>{navigator.onLine ? 'Online' : 'Offline'}</span>
-              </span>
-
-              <button
-                type="button"
-                onClick={() => syncCtx?.syncAll()}
-                disabled={syncCtx?.isSyncing}
-                className="inline-flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-1 rounded-full cursor-pointer transition disabled:opacity-50"
-              >
-                <RefreshCw className={`w-3 h-3 ${syncCtx?.isSyncing ? 'animate-spin' : ''}`} />
-                <span>Sincronizar</span>
-              </button>
+            {/* Indicator de Sincronização em Nuvem (Firestore Sync Engine) */}
+            <div className="hidden sm:block pl-4 border-l border-slate-200">
+              <OfflineIndicator />
             </div>
           </div>
 

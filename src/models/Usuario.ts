@@ -8,7 +8,7 @@ export interface Usuario {
   nome: string;        // Nome
   email: string;       // E-mail
   empresaId: string;   // EmpresaID
-  statusConta: 'ativo' | 'suspenso' | 'pendente'; // Status da Conta
+  statusConta: 'ativo' | 'suspenso' | 'pendente' | 'active' | 'pending' | 'blocked' | 'expired'; // Status da Conta
   dataCadastro: string;// Data de Cadastro
   ultimoAcesso: string;// Último Acesso
 }

@@ -26,6 +26,8 @@ export interface Cliente {
   estado: string;
   cep: string;
   observacoes?: string;
+  sincronizado?: boolean;
+  ultimaSincronizacao?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -46,6 +48,8 @@ export interface Equipamento {
   quilometragem?: number; // Quilometragem Atual [opcional]
   horimetro?: number; // Horímetro Atual [opcional]
   observacoes?: string;
+  sincronizado?: boolean;
+  ultimaSincronizacao?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -125,6 +129,8 @@ export interface OrdemDeServico {
   // Análise de Rentabilidade Integrada
   rentabilidade?: AnaliseRentabilidade;
   
+  sincronizado?: boolean;
+  ultimaSincronizacao?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -166,6 +172,10 @@ export interface Servico {
   quantidadeUtilizacoes: number;
   ultimaUtilizacao?: string;
   status: 'Ativo' | 'Inativo';
+  sincronizado?: boolean;
+  ultimaSincronizacao?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Precificacao {
@@ -192,7 +202,32 @@ export interface Precificacao {
   custoTotalFixos: number;
   custoTotalImpostos: number;
   lucroEsperado: number;
+  sincronizado?: boolean;
+  ultimaSincronizacao?: string;
   createdAt: string;
+  updatedAt?: string;
+}
+
+export interface LancamentoFinanceiro {
+  id: string;
+  empresaId: string;
+  tipo: 'receita' | 'despesa'; // Contas a Receber vs Contas a Pagar
+  categoria: string;
+  descricao: string;
+  valor: number;
+  dataVencimento: string;
+  dataPagamento?: string;
+  status: 'Pendente' | 'Pago' | 'Atrasado' | 'Cancelado';
+  clienteId?: string;
+  clienteNome?: string;
+  osId?: string;
+  osNumero?: string;
+  formaPagamento?: string;
+  observacoes?: string;
+  sincronizado?: boolean;
+  ultimaSincronizacao?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface AnaliseRentabilidade {

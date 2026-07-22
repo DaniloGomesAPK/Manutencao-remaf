@@ -4,50 +4,20 @@
  */
 
 import { Cliente } from '../types';
-import { openDB, CLIENTES_STORE_NAME } from '../db';
-
-const LOCAL_STORAGE_PREFIX = 'remaf_cliente_';
+import { FirestoreRepository } from './FirestoreRepository';
 
 export const ClienteService = {
   /**
-   * Obtém todos os clientes de um determinado inquilino (empresaId)
+   * Obtém todos os clientes de um determinado inquilino (empresaId) via FirestoreRepository
    */
-  async getClientes(empresaId: string): Promise<Cliente[]> {
-    try {
-      const db = await openDB();
-      const clientes = await new Promise<Cliente[]>((resolve, reject) => {
-        const transaction = db.transaction(CLIENTES_STORE_NAME, 'readonly');
-        const store = transaction.objectStore(CLIENTES_STORE_NAME);
-        const request = store.getAll();
-        request.onsuccess = () => resolve(request.result || []);
-        request.onerror = () => reject(request.error);
-      });
-
-      // Filtra por empresaId
-      const tenantClientes = clientes.filter(c => c.empresaId === empresaId);
-
-      // Cache em localStorage
-      try {
-        localStorage.setItem(`${LOCAL_STORAGE_PREFIX}list_${empresaId}`, JSON.stringify(tenantClientes));
-      } catch (_) {}
-
-      return tenantClientes;
-    } catch (err) {
-      console.warn('Erro ao ler clientes do IndexedDB, tentando localStorage:', err);
-      try {
-        const cached = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}list_${empresaId}`);
-        if (cached) {
-          return JSON.parse(cached) as Cliente[];
-        }
-      } catch (_) {}
-      return [];
-    }
+  async getClientes(empresaId: string, userEmail?: string): Promise<Cliente[]> {
+    return FirestoreRepository.getAll<Cliente>('clientes', empresaId, userEmail);
   },
 
   /**
-   * Salva ou atualiza um cliente
+   * Salva ou atualiza um cliente via FirestoreRepository
    */
-  async saveCliente(clienteData: Cliente): Promise<Cliente> {
+  async saveCliente(clienteData: Cliente, userEmail?: string): Promise<Cliente> {
     const timestamp = new Date().toISOString();
     const id = clienteData.id || 'cli_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
     
@@ -58,67 +28,46 @@ export const ClienteService = {
       updatedAt: timestamp,
     };
 
-    try {
-      const db = await openDB();
-      await new Promise<void>((resolve, reject) => {
-        const transaction = db.transaction(CLIENTES_STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(CLIENTES_STORE_NAME);
-        const request = store.put(cliente);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-      });
+    const saved = await FirestoreRepository.add('clientes', cliente, cliente.empresaId, userEmail);
 
-      // Recarrega e atualiza o cache do LocalStorage em background
-      await this.getClientes(cliente.empresaId);
-
-      // Despacha evento de atualização
+    if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('clientes_updated', { detail: { empresaId: cliente.empresaId } }));
-    } catch (error) {
-      console.error('Erro ao salvar cliente no IndexedDB:', error);
-      throw error;
     }
 
-    return cliente;
+    return saved;
   },
 
   /**
-   * Exclui um cliente
+   * Exclui um cliente via FirestoreRepository
    */
-  async deleteCliente(id: string, empresaId: string): Promise<void> {
-    try {
-      const db = await openDB();
-      await new Promise<void>((resolve, reject) => {
-        const transaction = db.transaction(CLIENTES_STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(CLIENTES_STORE_NAME);
-        const request = store.delete(id);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-      });
+  async deleteCliente(id: string, empresaId: string, userEmail?: string): Promise<void> {
+    await FirestoreRepository.delete('clientes', id, empresaId, userEmail);
 
-      // Recarrega e atualiza o cache do LocalStorage em background
-      await this.getClientes(empresaId);
-
-      // Despacha evento de atualização
+    if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('clientes_updated', { detail: { empresaId } }));
-    } catch (error) {
-      console.error('Erro ao excluir cliente no IndexedDB:', error);
-      throw error;
     }
+  },
+
+  /**
+   * Escuta em tempo real as atualizações de clientes do inquilino
+   */
+  listenClientes(empresaId: string, callback: (clientes: Cliente[]) => void, userEmail?: string) {
+    return FirestoreRepository.listen<Cliente>('clientes', empresaId, callback, [], userEmail);
   },
 
   /**
    * Pesquisa clientes por termo (Nome, CPF/CNPJ, Telefone)
    */
-  async searchClientes(empresaId: string, term: string): Promise<Cliente[]> {
-    const all = await this.getClientes(empresaId);
+  async searchClientes(empresaId: string, term: string, userEmail?: string): Promise<Cliente[]> {
+    const all = await this.getClientes(empresaId, userEmail);
     if (!term || !term.trim()) return all;
 
     const normalizedTerm = term.toLowerCase().trim();
     return all.filter(c => 
-      c.nome.toLowerCase().includes(normalizedTerm) ||
-      c.documento.toLowerCase().includes(normalizedTerm) ||
-      c.telefone.toLowerCase().includes(normalizedTerm) ||
-      c.whatsapp.toLowerCase().includes(normalizedTerm)
+      (c.nome && c.nome.toLowerCase().includes(normalizedTerm)) ||
+      (c.documento && c.documento.toLowerCase().includes(normalizedTerm)) ||
+      (c.telefone && c.telefone.toLowerCase().includes(normalizedTerm)) ||
+      (c.whatsapp && c.whatsapp.toLowerCase().includes(normalizedTerm))
     );
   }
 };

@@ -4,16 +4,19 @@
  */
 
 import { OrdemDeServico } from './types';
+import { FirestoreRepository } from './services/FirestoreRepository';
 
 // Define DB config for IndexedDB
 const DB_NAME = 'RemafOfflineDB';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const STORE_NAME = 'service_orders';
 export const COMPANY_STORE_NAME = 'company_profile';
 export const CLIENTES_STORE_NAME = 'clientes';
 export const EQUIPAMENTOS_STORE_NAME = 'equipamentos';
 export const SERVICOS_INTELIGENTES_STORE_NAME = 'servicos_inteligentes';
 export const PRECIFICACOES_STORE_NAME = 'precificacoes';
+export const FINANCEIRO_STORE_NAME = 'financeiro';
+export const CONFIGURACOES_STORE_NAME = 'configuracoes';
 
 // Always 100% offline-first and local db active
 export const isLocalSandbox = true;
@@ -80,13 +83,17 @@ export function openDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(PRECIFICACOES_STORE_NAME)) {
         db.createObjectStore(PRECIFICACOES_STORE_NAME, { keyPath: 'id' });
       }
+      if (!db.objectStoreNames.contains(FINANCEIRO_STORE_NAME)) {
+        db.createObjectStore(FINANCEIRO_STORE_NAME, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(CONFIGURACOES_STORE_NAME)) {
+        db.createObjectStore(CONFIGURACOES_STORE_NAME, { keyPath: 'id' });
+      }
     };
   });
 }
 
 // --- OPTIONAL FUTURE SUPABASE CONFIGURATION & SYNC EXTRACTION ---
-// This client configuration is inactive by default (offline-first).
-// If a user later adds Supabase credentials, they can hook this service up.
 export interface SupabaseSyncState {
   enabled: boolean;
   connected: boolean;
@@ -108,10 +115,6 @@ export const getSupabaseConfig = (): SupabaseSyncState => {
   }
 };
 
-/**
- * Executes synchronisation cycle with Supabase if configured.
- * Otherwise, resolves immediately and silently as offline-only.
- */
 export const syncWithSupabase = async (): Promise<{ success: boolean; count: number; error: string | null }> => {
   const config = getSupabaseConfig();
   if (!config.enabled) {
@@ -120,15 +123,8 @@ export const syncWithSupabase = async (): Promise<{ success: boolean; count: num
 
   try {
     const orders = await fetchAllServiceOrders();
-    console.log(`[Supabase Async Sync] Sincronizando ${orders.length} ordens de serviço locais com o servidor...`);
-    
-    // In a real active setup, the integration would perform:
-    // const { data, error } = await supabase.from('service_orders').upsert(orders);
-    // if (error) throw error;
-    
     const now = new Date().toISOString();
     localStorage.setItem('remaf_last_supabase_sync', now);
-    
     return { success: true, count: orders.length, error: null };
   } catch (err: any) {
     console.error('[Supabase Sync Error]', err);
@@ -136,8 +132,7 @@ export const syncWithSupabase = async (): Promise<{ success: boolean; count: num
   }
 };
 
-
-// --- AUTHENTICATION API (100% Client-Side Local) ---
+// --- AUTHENTICATION API ---
 const LOCAL_AUTH_USER_KEY = 'remaf_active_user';
 
 const getLocalUser = () => {
@@ -156,7 +151,7 @@ export const signInWithGoogle = async (): Promise<any> => {
   const simulatedUser = {
     uid: 'mb_99_tecnico',
     displayName: 'Técnico de Manutenção',
-    email: 'daniloempreendimentos@gmail.com', // Active technician identifier
+    email: 'daniloempreendimentos@gmail.com',
     photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
     emailVerified: true,
   };
@@ -183,7 +178,6 @@ export const runOnAuthStateChanged = (callback: (user: any | null) => void) => {
   };
   
   checkAuth();
-  
   window.addEventListener('storage', checkAuth);
   
   return () => {
@@ -191,18 +185,14 @@ export const runOnAuthStateChanged = (callback: (user: any | null) => void) => {
   };
 };
 
+// --- DATABASE OPERATIONS VIA FIRESTORE REPOSITORY ---
 
-// --- DATABASE OPERATIONS ---
-
-/**
- * Safe local ID generator
- */
 export const generateNewDocumentId = (): string => {
   return 'os_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
 };
 
 /**
- * Saves or updates a service order in IndexedDB (SaaS Tenant-Isolated)
+ * Saves or updates a service order in Firestore and IndexedDB/LocalStorage via FirestoreRepository
  */
 export const saveOrdemDeServico = async (osData: OrdemDeServico): Promise<string> => {
   const timestamp = new Date().toISOString();
@@ -218,46 +208,9 @@ export const saveOrdemDeServico = async (osData: OrdemDeServico): Promise<string
   };
 
   try {
-    // 1. Primary storage: IndexedDB (stores full records including WebP compressed images)
-    const db = await openDB();
-    await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction(STORE_NAME, 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.put(documentWithTimestamps);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-
-    // 2. Synchronous/Fast fallback layout: update localStorage cache per company tenant
-    const lightCopy = { ...documentWithTimestamps };
-    delete lightCopy.fotosAntes;
-    delete lightCopy.fotosDepois;
-    delete lightCopy.pdfGerado;
-
-    const keys = [
-      `remaf_service_orders_${empresaId}`, 
-      `remaf_prod_service_orders_cache_${empresaId}`
-    ];
-    keys.forEach(key => {
-      try {
-        const cached = localStorage.getItem(key);
-        let list: any[] = cached ? JSON.parse(cached) : [];
-        if (!Array.isArray(list)) list = [];
-        const idx = list.findIndex(o => o.id === docId);
-        if (idx !== -1) {
-          list[idx] = lightCopy;
-        } else {
-          list.push(lightCopy);
-        }
-        sortServiceOrdersByCreationDate(list);
-        localStorage.setItem(key, JSON.stringify(list));
-      } catch (e) {
-        console.warn(`Local Storage write status: Key "${key}" -`, e);
-      }
-    });
-
+    await FirestoreRepository.add('ordensServico', documentWithTimestamps, empresaId);
   } catch (error) {
-    console.error('Error saving to local databases (IndexedDB & LocalStorage):', error);
+    console.error('Error saving service order with FirestoreRepository:', error);
     throw error;
   }
 
@@ -265,22 +218,12 @@ export const saveOrdemDeServico = async (osData: OrdemDeServico): Promise<string
 };
 
 /**
- * Fetches all service orders for a specific EmpresaID (SaaS Tenant-Isolated)
+ * Fetches all service orders for a specific empresaId via FirestoreRepository
  */
 export const fetchAllServiceOrders = async (empresaId: string = 'emp_daniloempreendimentos'): Promise<OrdemDeServico[]> => {
   try {
-    const db = await openDB();
-    const orders = await new Promise<OrdemDeServico[]>((resolve, reject) => {
-      const transaction = db.transaction(STORE_NAME, 'readonly');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.getAll();
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => reject(request.error);
-    });
+    const orders = await FirestoreRepository.getAll<OrdemDeServico>('ordensServico', empresaId);
 
-    // Filtra por empresaId para garantir estrito isolamento SaaS multi-tenant!
-    // Para compatibilidade com versões anteriores, se uma OS não tiver empresaId,
-    // nós a atribuímos para Danilo Empreendimentos ('emp_daniloempreendimentos') se este for o tenant ativo.
     const isolatedOrders = orders.filter(o => {
       if (!o.empresaId) {
         return empresaId === 'emp_daniloempreendimentos';
@@ -293,24 +236,10 @@ export const fetchAllServiceOrders = async (empresaId: string = 'emp_daniloempre
       return o;
     });
 
-    // Ordenar decrescente pela data de criação
     sortServiceOrdersByCreationDate(isolatedOrders);
-
-    // Refresh lightweight cache silenty
-    try {
-      const lightList = isolatedOrders.map(o => {
-        const c = { ...o };
-        delete c.fotosAntes;
-        delete c.fotosDepois;
-        delete c.pdfGerado;
-        return c;
-      });
-      localStorage.setItem(`remaf_prod_service_orders_cache_${empresaId}`, JSON.stringify(lightList));
-    } catch (_) {}
-
     return isolatedOrders;
   } catch (error) {
-    console.warn('Fallback to LocalStorage due to IndexedDB read issue:', error);
+    console.warn('Fallback to LocalStorage due to read issue:', error);
     return getLocalServiceOrders(empresaId);
   }
 };
@@ -320,6 +249,8 @@ export const fetchAllServiceOrders = async (empresaId: string = 'emp_daniloempre
  */
 export const getLocalServiceOrders = (empresaId: string): OrdemDeServico[] => {
   const keys = [
+    `remaf_cache_ordensServico_${empresaId}`,
+    `remaf_cache_service_orders_${empresaId}`,
     `remaf_prod_service_orders_cache_${empresaId}`, 
     `remaf_service_orders_${empresaId}`
   ];
@@ -344,7 +275,7 @@ export const getLocalServiceOrders = (empresaId: string): OrdemDeServico[] => {
 };
 
 /**
- * Computes next unique incremental sequence number (SaaS Tenant-Isolated)
+ * Computes next unique incremental sequence number
  */
 export const generateNextOSNumber = async (empresaId: string, existingOrders?: OrdemDeServico[]): Promise<string> => {
   const orders = existingOrders || await fetchAllServiceOrders(empresaId);
@@ -366,58 +297,22 @@ export const generateNextOSNumber = async (empresaId: string, existingOrders?: O
   return `OS-${maxNum + 1}`;
 };
 
-/**
- * Image storage adapter. Converts and stores images locally in WebP format
- */
 export const uploadImageFile = async (dataUrl: string, _folder: 'antes' | 'depois', _filename: string): Promise<string> => {
-  // WebP representation already compressed by imageCompressor utility
   return dataUrl;
 };
 
 /**
- * Deletes a service order from IndexedDB and local storage cache (SaaS Tenant-Isolated)
+ * Deletes a service order via FirestoreRepository
  */
 export const deleteServiceOrder = async (id: string, empresaId: string): Promise<void> => {
   try {
-    // 1. Delete from IndexedDB
-    const db = await openDB();
-    await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction(STORE_NAME, 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.delete(id);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-
-    // 2. Delete from LocalStorage caches
-    const keys = [
-      `remaf_service_orders_${empresaId}`, 
-      `remaf_prod_service_orders_cache_${empresaId}`
-    ];
-    keys.forEach(key => {
-      try {
-        const cached = localStorage.getItem(key);
-        if (cached) {
-          let list: any[] = JSON.parse(cached);
-          if (Array.isArray(list)) {
-            list = list.filter(o => o.id !== id);
-            localStorage.setItem(key, JSON.stringify(list));
-          }
-        }
-      } catch (e) {
-        console.warn(`Local Storage delete issue: Key "${key}" -`, e);
-      }
-    });
-
+    await FirestoreRepository.delete('ordensServico', id, empresaId);
   } catch (error) {
-    console.error('Error deleting from local databases (IndexedDB & LocalStorage):', error);
+    console.error('Error deleting service order with FirestoreRepository:', error);
     throw error;
   }
 };
 
-/**
- * PDF base64 storage adaptor inside IndexedDB
- */
 export const uploadPDFReport = async (pdfBase64: string, _osNumber: string): Promise<string> => {
   return pdfBase64;
 };

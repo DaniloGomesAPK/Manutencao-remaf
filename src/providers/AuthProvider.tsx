@@ -17,32 +17,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    const restoreSession = async () => {
+    // 1. Restaura imediatamente o usuário do cache local para evitar "flashing" ou atrasos na UI
+    const initCachedUser = async () => {
       try {
-        const user = await AuthService.getCurrentUser();
-        if (user) {
-          // Atualiza a marcação de último acesso para a auditoria do SaaS
-          const updatedUser: Usuario = {
-            ...user,
-            ultimoAcesso: new Date().toISOString()
-          };
-          await AuthService.updateSessionUser(updatedUser);
-          setCurrentUser(updatedUser);
+        const cached = await AuthService.getCurrentUser();
+        if (cached) {
+          setCurrentUser(cached);
         }
       } catch (err) {
-        console.error('Falha ao restaurar sessão ativa do usuário SaaS:', err);
+        console.error('Falha ao obter cache do usuário:', err);
       } finally {
         setIsLoading(false);
       }
     };
 
-    restoreSession();
+    initCachedUser();
+
+    // 2. Inscreve-se na sincronização real e contínua do estado do Firebase Auth
+    const unsubscribe = AuthService.subscribeToAuthState((user) => {
+      setCurrentUser(user);
+      setIsLoading(false);
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
-  const login = async (email: string, nomeCompleto?: string): Promise<Usuario> => {
+  const login = async (email: string, password?: string, nomeCompleto?: string): Promise<Usuario> => {
     setIsLoading(true);
     try {
-      const user = await AuthService.login(email, nomeCompleto);
+      const user = await AuthService.login(email, password, nomeCompleto);
       setCurrentUser(user);
       return user;
     } finally {

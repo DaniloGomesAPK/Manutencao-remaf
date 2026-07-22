@@ -10,7 +10,7 @@ export interface AuthContextType {
   currentUser: Usuario | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, nomeCompleto?: string) => Promise<Usuario>;
+  login: (email: string, password?: string, nomeCompleto?: string) => Promise<Usuario>;
   loginWithGoogle: () => Promise<Usuario>;
   logout: () => Promise<void>;
   sendPasswordResetEmail: (email: string) => Promise<void>;
