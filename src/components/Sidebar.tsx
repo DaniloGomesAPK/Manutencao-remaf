@@ -20,13 +20,12 @@ import {
   ChevronRight,
   Menu,
   X,
-  Sparkles,
   LogOut,
   BarChart2
 } from 'lucide-react';
 
 interface SidebarProps {
-  activeSubView: 'dashboard' | 'list' | 'clientes' | 'equipamentos' | 'banco_servicos' | 'precificacao' | 'company' | 'licensing' | 'configuracoes' | 'relatorios' | 'marketing';
+  activeSubView: 'dashboard' | 'list' | 'clientes' | 'equipamentos' | 'banco_servicos' | 'precificacao' | 'company' | 'licensing' | 'configuracoes' | 'relatorios';
   setActiveSubView: (view: any) => void;
   onNewOS: () => void;
   collapsed: boolean;
@@ -246,21 +245,6 @@ export default function Sidebar({
             >
               <BarChart2 className="w-4.5 h-4.5 text-[#FF6600] shrink-0" />
               {!collapsed && <span>Relatórios</span>}
-            </button>
-
-            {/* Submenu: Divulgação / Marketing */}
-            <button
-              type="button"
-              onClick={() => handleSubMenuClick('marketing')}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition ${
-                activeSubView === 'marketing'
-                  ? 'bg-slate-800/65 text-white font-bold border-l-2 border-[#FF6600]'
-                  : 'text-slate-400 hover:bg-slate-800/30 hover:text-white'
-              } ${collapsed ? 'justify-center' : 'text-left'}`}
-              title="Marketing & Divulgação"
-            >
-              <Sparkles className="w-4.5 h-4.5 text-amber-400 shrink-0" />
-              {!collapsed && <span>Divulgação</span>}
             </button>
 
             {/* Submenu: Licenciamento */}

@@ -46,7 +46,6 @@ const CentralPrecificacao = lazy(() => import('./pages/CentralPrecificacao'));
 const Licenciamento = lazy(() => import('./pages/Licenciamento'));
 const Configuracoes = lazy(() => import('./pages/Configuracoes'));
 const Relatorios = lazy(() => import('./pages/Relatorios'));
-const MarketingDivulgacao = lazy(() => import('./pages/MarketingDivulgacao'));
 
 export default function App() {
   const auth = useContext(AuthContext);
@@ -110,7 +109,7 @@ export default function App() {
   });
 
   const [isSaving, setIsSaving] = useState(false);
-  const [activeSubView, setActiveSubView] = useState<'dashboard' | 'list' | 'company' | 'clientes' | 'equipamentos' | 'banco_servicos' | 'precificacao' | 'licensing' | 'configuracoes' | 'relatorios' | 'marketing'>('dashboard');
+  const [activeSubView, setActiveSubView] = useState<'dashboard' | 'list' | 'company' | 'clientes' | 'equipamentos' | 'banco_servicos' | 'precificacao' | 'licensing' | 'configuracoes' | 'relatorios'>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
@@ -1225,26 +1224,6 @@ export default function App() {
                 </div>
               }>
                 <Configuracoes onBack={() => setActiveSubView('dashboard')} />
-              </Suspense>
-            </motion.div>
-          ) : activeSubView === 'marketing' ? (
-            
-            // VIEW: Marketing / Divulgação Page
-            <motion.div
-              key="marketing-view"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.18 }}
-              className="w-full"
-            >
-              <Suspense fallback={
-                <div className="flex flex-col items-center justify-center py-20 text-slate-500">
-                  <div className="w-10 h-10 border-4 border-[#003366] border-t-transparent rounded-full animate-spin mb-3"></div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-[#003366]">Carregando Divulgação...</p>
-                </div>
-              }>
-                <MarketingDivulgacao onBack={() => setActiveSubView('dashboard')} />
               </Suspense>
             </motion.div>
           ) : (

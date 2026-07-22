@@ -18,8 +18,7 @@ import {
   FileText,
   Clock,
   ArrowRight,
-  Building2,
-  Megaphone
+  Building2
 } from 'lucide-react';
 import { OrdemDeServico } from '../types';
 import { formatToBrazilianDate } from '../utils/dateFormatter';
@@ -29,7 +28,7 @@ interface DashboardHomeProps {
   onNewOS: () => void;
   onEditOS: (os: OrdemDeServico) => void;
   onViewPDF: (os: OrdemDeServico) => void;
-  onNavigate: (view: 'clientes' | 'equipamentos' | 'banco_servicos' | 'precificacao' | 'list' | 'company' | 'licensing' | 'configuracoes' | 'relatorios' | 'marketing') => void;
+  onNavigate: (view: 'clientes' | 'equipamentos' | 'banco_servicos' | 'precificacao' | 'list' | 'company' | 'licensing' | 'configuracoes' | 'relatorios') => void;
 }
 
 export default function DashboardHome({ 
@@ -90,7 +89,7 @@ export default function DashboardHome({
       <div className="space-y-3">
         <h3 className="text-xs font-black text-[#003366] tracking-widest uppercase pl-1">Atalhos de Módulos</h3>
         
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           
           {/* Nova OS */}
           <button
@@ -173,20 +172,6 @@ export default function DashboardHome({
             <div>
               <h4 className="font-extrabold text-xs text-slate-800 group-hover:text-[#003366] transition">🏢 Minha Empresa</h4>
               <p className="text-[9px] text-slate-400 mt-0.5">Configurações corporativas & slogan</p>
-            </div>
-          </button>
-
-          {/* Marketing (Temporary Button) */}
-          <button
-            onClick={() => onNavigate('marketing')}
-            className="bg-[#FF6600]/5 hover:bg-[#FF6600]/10 border border-[#FF6600]/20 hover:border-[#FF6600]/40 p-4 rounded-2xl text-left transition duration-200 group shadow-xs cursor-pointer focus:outline-none flex flex-col gap-4 justify-between min-h-[125px]"
-          >
-            <div className="p-2 bg-[#FF6600]/10 rounded-xl text-[#FF6600] w-fit group-hover:scale-105 transition duration-150">
-              <Megaphone className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="font-extrabold text-xs text-slate-800 group-hover:text-[#FF6600] transition">📣 Marketing</h4>
-              <p className="text-[9px] text-slate-400 mt-0.5">Artes, landing page & catálogo</p>
             </div>
           </button>
 
