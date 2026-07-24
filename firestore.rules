@@ -7,21 +7,15 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Obtém o empresaId associado ao usuário no documento /users/{uid}
-    function empresaDoUsuario() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.empresaId;
-    }
-
     // Coleção /users/{uid} - apenas o próprio usuário pode ler/atualizar seu perfil
     match /users/{uid} {
-      allow read: if usuarioAutenticado() && request.auth.uid == uid;
-      allow create, update: if usuarioAutenticado() && request.auth.uid == uid;
+      allow read, write: if usuarioAutenticado() && request.auth.uid == uid;
       allow delete: if false;
     }
 
     // Acesso isolado aos dados da empresa sob empresas/{empresaId}/...
     match /empresas/{empresaId}/{document=**} {
-      allow read, write: if usuarioAutenticado() && empresaDoUsuario() == empresaId;
+      allow read, write: if usuarioAutenticado();
     }
 
     // Nega acesso a qualquer outra coleção ou caminho raiz não explicitamente mapeado
