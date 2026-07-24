@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, Suspense, lazy, useContext } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ClipboardCheck, Sparkles, BookOpen, Layers, Check, Calendar, HardHat, FileText, Settings, Car, Building2, Users, Calculator, Menu, Wifi, WifiOff, Cloud, CloudOff, RefreshCw, ArrowLeft } from 'lucide-react';
+import { ClipboardCheck, Sparkles, BookOpen, Layers, Check, Calendar, HardHat, FileText, Settings, Car, Building2, Users, Calculator, Menu, Wifi, WifiOff, Cloud, CloudOff, RefreshCw, ArrowLeft, Eye, EyeOff, KeyRound, Mail, CheckCircle2, AlertCircle } from 'lucide-react';
 
 import { OrdemDeServico, OSStep } from './types';
 import { 
@@ -32,6 +32,14 @@ import CompanyHeader from './components/CompanyHeader';
 import Sidebar from './components/Sidebar';
 import DashboardHome from './components/DashboardHome';
 
+import { WelcomeScreen } from './components/WelcomeScreen';
+import { PlansPage } from './components/PlansPage';
+import { ActivationScreen } from './components/ActivationScreen';
+import { TrialBanner } from './components/TrialBanner';
+import { ExpiredLicenseScreen } from './components/ExpiredLicenseScreen';
+import { CheckoutModal } from './components/CheckoutModal';
+import { LogService } from './services/LogService';
+
 const OSDashboard = lazy(() => import('./components/OSDashboard'));
 const OSFormStep1 = lazy(() => import('./components/OSFormStep1'));
 const OSFormStep2 = lazy(() => import('./components/OSFormStep2'));
@@ -55,11 +63,21 @@ export default function App() {
   const activeUser = auth?.currentUser;
 
   // SaaS Login States
+  const [saasView, setSaasView] = useState<'welcome' | 'plans' | 'login'>('welcome');
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loginNome, setLoginNome] = useState('');
+  const [loginNomeEmpresa, setLoginNomeEmpresa] = useState('');
   const [loginError, setLoginError] = useState('');
   const [submittingLogin, setSubmittingLogin] = useState(false);
+  const [showPlansInApp, setShowPlansInApp] = useState(false);
+
+  // Esqueci a Senha States
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotStatus, setForgotStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error'; message: string }>({ type: 'idle', message: '' });
 
   const [serviceOrders, setServiceOrders] = useState<OrdemDeServico[]>([]);
   const [loading, setLoading] = useState(true);
@@ -162,6 +180,23 @@ export default function App() {
     };
   }, [viewingForm]);
 
+  const licAtual = licenseCtx?.licencaAtual;
+  const currentStatus = licAtual?.status || null;
+
+  // Log de Auditoria do Login e Direcionamento
+  useEffect(() => {
+    if (activeUser && currentStatus) {
+      let destino = 'Dashboard';
+      if (currentStatus === 'pending') destino = 'Tela Ativação';
+      else if (currentStatus === 'expired') destino = 'Licença Expirada';
+      else if (currentStatus === 'blocked') destino = 'Conta Bloqueada';
+      else if (currentStatus === 'cancelled') destino = 'Tela de Renovação';
+      else if (currentStatus === 'overdue') destino = 'Tela de Regularização';
+
+      LogService.logLogin(activeUser.email, activeUser.empresaId, currentStatus, destino);
+    }
+  }, [activeUser?.id, activeUser?.email, activeUser?.empresaId, currentStatus]);
+
   const loadServiceOrders = async (silent = false) => {
     if (!activeUser?.empresaId) return;
     
@@ -189,12 +224,25 @@ export default function App() {
       setLoginError('Por favor, informe sua senha de acesso.');
       return;
     }
+    if (authMode === 'register' && !loginNomeEmpresa.trim()) {
+      setLoginError('Por favor, informe o nome da sua empresa.');
+      return;
+    }
     setSubmittingLogin(true);
     setLoginError('');
     try {
-      await auth?.login(loginEmail.trim().toLowerCase(), loginPassword, loginNome.trim() || undefined);
+      if (authMode === 'register') {
+        await auth?.register(
+          loginEmail.trim().toLowerCase(), 
+          loginPassword, 
+          loginNome.trim() || undefined,
+          loginNomeEmpresa.trim() || undefined
+        );
+      } else {
+        await auth?.login(loginEmail.trim().toLowerCase(), loginPassword);
+      }
     } catch (err: any) {
-      setLoginError(err.message || 'Falha ao realizar login.');
+      setLoginError(err.message || 'Falha ao autenticar.');
     } finally {
       setSubmittingLogin(false);
     }
@@ -209,6 +257,28 @@ export default function App() {
       setLoginError(err.message || 'Falha ao autenticar com o Google.');
     } finally {
       setSubmittingLogin(false);
+    }
+  };
+
+  const handleSendPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const emailToUse = forgotEmail.trim().toLowerCase();
+    if (!emailToUse) {
+      setForgotStatus({ type: 'error', message: 'Por favor, informe seu e-mail cadastrado.' });
+      return;
+    }
+    setForgotStatus({ type: 'loading', message: '' });
+    try {
+      await auth?.sendPasswordResetEmail(emailToUse);
+      setForgotStatus({
+        type: 'success',
+        message: 'E-mail enviado com sucesso! Acesse sua caixa de entrada ou spam para redefinir sua senha.'
+      });
+    } catch (err: any) {
+      setForgotStatus({
+        type: 'error',
+        message: err.message || 'Ocorreu um erro ao enviar o e-mail de redefinição.'
+      });
     }
   };
 
@@ -541,18 +611,64 @@ export default function App() {
     }
   };
 
-  if (auth?.isLoading) {
+  // 1. Loading State - MUST wait for Auth AND License to finish loading before any navigation
+  const isAuthLoading = auth?.isLoading;
+  const isLicenseLoading = !!(auth?.isAuthenticated && (licenseCtx?.isLoadingLicense || !licenseCtx?.licencaAtual));
+
+  if (isAuthLoading || isLicenseLoading) {
+    console.log('[AUTH]', activeUser?.id || 'carregando...');
+    console.log('[EMPRESA]', activeUser?.empresaId || 'carregando...');
+    console.log('[LICENÇA]', 'carregando...');
+    console.log('[ROTA]', 'Tela de Carregamento');
+
     return (
-      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center text-slate-500">
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center text-slate-500 font-sans">
         <div className="w-12 h-12 border-4 border-[#003366] border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="font-semibold text-xs uppercase tracking-widest text-[#003366]">Carregando ambiente SaaS...</p>
+        <p className="font-semibold text-xs uppercase tracking-widest text-[#003366]">
+          Carregando licença e permissões...
+        </p>
       </div>
     );
   }
 
+  // 2. Unauthenticated Flow
   if (!auth?.isAuthenticated || !auth?.currentUser) {
+    console.log('[AUTH]', 'não autenticado');
+    console.log('[EMPRESA]', 'N/A');
+    console.log('[LICENÇA]', 'N/A');
+    console.log('[ROTA]', saasView === 'welcome' ? 'WelcomeScreen' : saasView === 'plans' ? 'PlansPage' : 'Tela de Login');
+
+    if (saasView === 'welcome') {
+      return (
+        <WelcomeScreen
+          onRegisterTrial={() => {
+            setAuthMode('register');
+            setSaasView('login');
+          }}
+          onOpenPlans={() => setSaasView('plans')}
+          onOpenLogin={() => {
+            setAuthMode('login');
+            setSaasView('login');
+          }}
+        />
+      );
+    }
+
+    if (saasView === 'plans') {
+      return <PlansPage onBack={() => setSaasView('welcome')} />;
+    }
+
     return (
-      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4 sm:p-6 font-sans text-slate-800">
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4 sm:p-6 font-sans text-slate-800 relative">
+        <button
+          type="button"
+          onClick={() => setSaasView('welcome')}
+          className="absolute top-6 left-6 flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-600 hover:text-slate-900 shadow-sm transition z-20"
+        >
+          <ArrowLeft className="w-4 h-4 text-slate-500" />
+          <span>Voltar ao Início</span>
+        </button>
+
         <div className="w-full max-w-md md:max-w-5xl bg-white border border-slate-200 rounded-3xl md:grid md:grid-cols-12 overflow-hidden shadow-xl animate-in fade-in zoom-in-95 duration-300">
           
           {/* Banner Pane - Hidden on mobile, beautiful on desktop */}
@@ -601,88 +717,245 @@ export default function App() {
             {/* Login Options Container */}
             <div className="space-y-6">
               
-              {/* Google Login button - Primary (at the top) */}
-              <button
-                id="btn-login-google"
-                type="button"
-                onClick={handleSaaSGoogleLogin}
-                disabled={submittingLogin}
-                className="w-full border-2 border-slate-200 text-slate-700 bg-white rounded-xl py-3.5 px-6 font-bold tracking-widest text-[10px] uppercase hover:bg-slate-50 hover:border-slate-350 active:scale-98 transition duration-200 cursor-pointer flex items-center justify-center gap-2"
-              >
-                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                  <path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.137 4.114a5.99 5.99 0 0 1-6-6c0-3.314 2.686-6 6-6 1.457 0 2.783.514 3.823 1.371l3.051-3.052A9.957 9.957 0 0 0 12.24 2c-5.523 0-10 4.477-10 10s4.477 10 10 10c5.523 0 10-4.477 10-10 0-.685-.068-1.354-.188-1.996L12.24 10.285z"/>
-                </svg>
-                <span>Entrar com o Google</span>
-              </button>
-
-              {/* Divider */}
-              <div className="relative flex items-center py-1">
-                <div className="flex-grow border-t border-slate-200"></div>
-                <span className="flex-shrink mx-4 text-[9px] font-black text-slate-400 tracking-wider uppercase">ou</span>
-                <div className="flex-grow border-t border-slate-200"></div>
-              </div>
-
-              {/* Email & Name Form */}
-              <form onSubmit={handleSaaSLogin} className="space-y-4">
-                {loginError && (
-                  <div className="bg-red-50 border border-red-200 text-red-900 text-xs rounded-xl p-3 text-center animate-shake">
-                    {loginError}
+              {showForgotPassword ? (
+                /* Form de Recuperação de Senha */
+                <div className="space-y-5 animate-in fade-in duration-200">
+                  <div className="flex items-center gap-2 text-[#003366] font-extrabold text-sm border-b border-slate-100 pb-2">
+                    <KeyRound className="w-4 h-4 text-[#FF6600]" />
+                    <span>Recuperação de Senha</span>
                   </div>
-                )}
 
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-500 tracking-wider uppercase">
-                    Endereço de E-mail <span className="text-[#FF6600] font-bold">*</span>
-                  </label>
-                  <input
-                    id="login-email"
-                    type="email"
-                    required
-                    placeholder="seu-email@empresa.com"
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    className="w-full bg-slate-50 text-slate-800 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] font-mono transition duration-200"
-                  />
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Informe o e-mail cadastrado na sua conta. Enviaremos um link direto para você redefinir sua senha com segurança.
+                  </p>
+
+                  <form onSubmit={handleSendPasswordReset} className="space-y-4">
+                    {forgotStatus.type === 'error' && (
+                      <div className="bg-red-50 border border-red-200 text-red-800 text-xs rounded-xl p-3 flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                        <span>{forgotStatus.message}</span>
+                      </div>
+                    )}
+
+                    {forgotStatus.type === 'success' && (
+                      <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl p-3 flex items-start gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                        <span>{forgotStatus.message}</span>
+                      </div>
+                    )}
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-500 tracking-wider uppercase">
+                        Endereço de E-mail <span className="text-[#FF6600] font-bold">*</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          id="forgot-email"
+                          type="email"
+                          required
+                          placeholder="seu-email@empresa.com"
+                          value={forgotEmail}
+                          onChange={(e) => setForgotEmail(e.target.value)}
+                          className="w-full bg-slate-50 text-slate-800 border border-slate-200 rounded-xl pl-4 pr-10 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] font-mono transition duration-200"
+                        />
+                        <Mail className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
+                      </div>
+                    </div>
+
+                    <button
+                      id="btn-send-reset"
+                      type="submit"
+                      disabled={forgotStatus.type === 'loading'}
+                      className="w-full bg-[#003366] text-white rounded-xl py-3.5 px-6 font-bold tracking-[0.12em] text-[10px] uppercase shadow-lg shadow-[#003366]/10 hover:bg-[#002244] active:scale-[0.99] transition duration-200 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {forgotStatus.type === 'loading' ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Enviando e-mail...</span>
+                        </>
+                      ) : (
+                        <span>Enviar E-mail de Recuperação</span>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowForgotPassword(false);
+                        setForgotStatus({ type: 'idle', message: '' });
+                      }}
+                      className="w-full py-2 text-xs font-bold text-slate-500 hover:text-[#003366] transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Voltar para o Login</span>
+                    </button>
+                  </form>
                 </div>
+              ) : (
+                /* Form de Login / Cadastro Padrao */
+                <>
+                  {/* Google Login button - Primary (at the top) */}
+                  <button
+                    id="btn-login-google"
+                    type="button"
+                    onClick={handleSaaSGoogleLogin}
+                    disabled={submittingLogin}
+                    className="w-full border-2 border-slate-200 text-slate-700 bg-white rounded-xl py-3.5 px-6 font-bold tracking-widest text-[10px] uppercase hover:bg-slate-50 hover:border-slate-350 active:scale-98 transition duration-200 cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                      <path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.137 4.114a5.99 5.99 0 0 1-6-6c0-3.314 2.686-6 6-6 1.457 0 2.783.514 3.823 1.371l3.051-3.052A9.957 9.957 0 0 0 12.24 2c-5.523 0-10 4.477-10 10s4.477 10 10 10c5.523 0 10-4.477 10-10 0-.685-.068-1.354-.188-1.996L12.24 10.285z"/>
+                    </svg>
+                    <span>Entrar com o Google</span>
+                  </button>
 
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-500 tracking-wider uppercase">
-                    Senha de Acesso <span className="text-[#FF6600] font-bold">*</span>
-                  </label>
-                  <input
-                    id="login-password"
-                    type="password"
-                    required
-                    placeholder="Sua senha de acesso"
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    className="w-full bg-slate-50 text-slate-800 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200"
-                  />
-                </div>
+                  {/* Divider */}
+                  <div className="relative flex items-center py-1">
+                    <div className="flex-grow border-t border-slate-200"></div>
+                    <span className="flex-shrink mx-4 text-[9px] font-black text-slate-400 tracking-wider uppercase">ou</span>
+                    <div className="flex-grow border-t border-slate-200"></div>
+                  </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-500 tracking-wider uppercase">
-                    Nome Completo <span className="text-slate-400 font-normal">(Opcional para novos cadastros)</span>
-                  </label>
-                  <input
-                    id="login-name"
-                    type="text"
-                    placeholder="Digite seu nome completo"
-                    value={loginNome}
-                    onChange={(e) => setLoginNome(e.target.value)}
-                    className="w-full bg-slate-50 text-slate-800 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200"
-                  />
-                </div>
+                  {/* Tabs para Entrar vs Criar Conta */}
+                  <div className="flex bg-slate-100 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => { setAuthMode('login'); setLoginError(''); }}
+                      className={`flex-1 py-2 text-xs font-bold rounded-lg transition duration-200 ${
+                        authMode === 'login'
+                          ? 'bg-white text-[#003366] shadow-sm'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      Entrar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setAuthMode('register'); setLoginError(''); }}
+                      className={`flex-1 py-2 text-xs font-bold rounded-lg transition duration-200 ${
+                        authMode === 'register'
+                          ? 'bg-white text-[#003366] shadow-sm'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      Criar Conta
+                    </button>
+                  </div>
 
-                <button
-                  id="btn-login-submit"
-                  type="submit"
-                  disabled={submittingLogin}
-                  className="w-full bg-[#003366] text-white rounded-xl py-3.5 px-6 font-bold tracking-[0.12em] text-[10px] uppercase shadow-lg shadow-[#003366]/10 hover:bg-[#002244] active:scale-[0.99] flex items-center justify-center gap-2 transition duration-200 cursor-pointer disabled:opacity-50"
-                >
-                  {submittingLogin ? 'Acessando...' : 'Acessar com E-mail'}
-                </button>
-              </form>
+                  {/* Email & Name Form */}
+                  <form onSubmit={handleSaaSLogin} className="space-y-4">
+                    {loginError && (
+                      <div className="bg-red-50 border border-red-200 text-red-900 text-xs rounded-xl p-3 text-center animate-shake">
+                        {loginError}
+                      </div>
+                    )}
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-500 tracking-wider uppercase">
+                        Endereço de E-mail <span className="text-[#FF6600] font-bold">*</span>
+                      </label>
+                      <input
+                        id="login-email"
+                        type="email"
+                        required
+                        placeholder="seu-email@empresa.com"
+                        value={loginEmail}
+                        onChange={(e) => setLoginEmail(e.target.value)}
+                        className="w-full bg-slate-50 text-slate-800 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] font-mono transition duration-200"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-500 tracking-wider uppercase">
+                        Senha de Acesso <span className="text-[#FF6600] font-bold">*</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          id="login-password"
+                          type={showPassword ? 'text' : 'password'}
+                          required
+                          placeholder="Sua senha de acesso"
+                          value={loginPassword}
+                          onChange={(e) => setLoginPassword(e.target.value)}
+                          className="w-full bg-slate-50 text-slate-800 border border-slate-200 rounded-xl pl-4 pr-11 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition p-1 cursor-pointer"
+                          title={showPassword ? 'Ocultar senha' : 'Visualizar senha'}
+                          aria-label={showPassword ? 'Ocultar senha' : 'Visualizar senha'}
+                        >
+                          {showPassword ? (
+                            <EyeOff className="w-4 h-4 text-slate-500" />
+                          ) : (
+                            <Eye className="w-4 h-4 text-slate-500" />
+                          )}
+                        </button>
+                      </div>
+
+                      {authMode === 'login' && (
+                        <div className="flex justify-end pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setForgotEmail(loginEmail);
+                              setForgotStatus({ type: 'idle', message: '' });
+                              setShowForgotPassword(true);
+                            }}
+                            className="text-xs font-bold text-[#003366] hover:text-[#FF6600] transition cursor-pointer"
+                          >
+                            Esqueci minha senha
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {authMode === 'register' && (
+                      <>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-slate-500 tracking-wider uppercase">
+                            Nome Completo <span className="text-slate-400 font-normal">(Opcional)</span>
+                          </label>
+                          <input
+                            id="login-name"
+                            type="text"
+                            placeholder="Digite seu nome completo"
+                            value={loginNome}
+                            onChange={(e) => setLoginNome(e.target.value)}
+                            className="w-full bg-slate-50 text-slate-800 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-slate-500 tracking-wider uppercase">
+                            Nome da Empresa / Oficina <span className="text-[#FF6600] font-bold">*</span>
+                          </label>
+                          <input
+                            id="login-company"
+                            type="text"
+                            required
+                            placeholder="Ex: Oficina Mecânica Silva"
+                            value={loginNomeEmpresa}
+                            onChange={(e) => setLoginNomeEmpresa(e.target.value)}
+                            className="w-full bg-slate-50 text-slate-800 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200"
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    <button
+                      id="btn-login-submit"
+                      type="submit"
+                      disabled={submittingLogin}
+                      className="w-full bg-[#003366] text-white rounded-xl py-3.5 px-6 font-bold tracking-[0.12em] text-[10px] uppercase shadow-lg shadow-[#003366]/10 hover:bg-[#002244] active:scale-[0.99] flex items-center justify-center gap-2 transition duration-200 cursor-pointer disabled:opacity-50"
+                    >
+                      {submittingLogin
+                        ? (authMode === 'register' ? 'Criando conta...' : 'Acessando...')
+                        : (authMode === 'register' ? 'Criar Nova Conta' : 'Acessar Conta')}
+                    </button>
+                  </form>
+                </>
+              )}
 
             </div>
 
@@ -700,8 +973,86 @@ export default function App() {
     );
   }
 
+  // 3. Authenticated State Machine Navigation
+  const uid = activeUser?.id || '';
+  const empresaId = activeUser?.empresaId || '';
+  const lic = licenseCtx?.licencaAtual;
+
+  // Se a licença ainda não estiver carregada, permanece na tela de carregamento (É proibido utilizar 'pending' como fallback)
+  if (!lic) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center text-slate-500 font-sans">
+        <div className="w-12 h-12 border-4 border-[#003366] border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="font-semibold text-xs uppercase tracking-widest text-[#003366]">
+          Carregando licença e permissões...
+        </p>
+      </div>
+    );
+  }
+
+  const status = lic.status;
+  const trialInicio = lic.trialInicio || null;
+  const trialFim = lic.trialFim || null;
+
+  // Manual trigger to view plans in-app
+  if (showPlansInApp) {
+    console.log('[AUTH]', uid);
+    console.log('[EMPRESA]', empresaId);
+    console.log('[LICENÇA]', `status: ${status}, trialInicio: ${trialInicio}, trialFim: ${trialFim}`);
+    console.log('[ROTA]', 'PlansPage (Visualização de Planos no App)');
+
+    return <PlansPage onBack={() => setShowPlansInApp(false)} />;
+  }
+
+  // Pending -> ActivationScreen (somente se nunca iniciou trial / status == pending)
+  if (status === 'pending') {
+    console.log('[AUTH]', uid);
+    console.log('[EMPRESA]', empresaId);
+    console.log('[LICENÇA]', `status: ${status}, trialInicio: ${trialInicio}, trialFim: ${trialFim}`);
+    console.log('[ROTA]', 'ActivationScreen (Escolha de Plano / Início do Trial)');
+
+    return (
+      <ActivationScreen
+        userEmail={activeUser?.email}
+        userName={activeUser?.nome}
+        onStartTrial={async () => {
+          await licenseCtx?.iniciarTrial();
+        }}
+        onLogout={() => auth?.logout()}
+      />
+    );
+  }
+
+  // Expired, Blocked, Cancelled, Overdue -> ExpiredLicenseScreen
+  if (
+    status === 'expired' || 
+    status === 'blocked' || 
+    status === 'cancelled' || 
+    status === 'overdue'
+  ) {
+    console.log('[AUTH]', uid);
+    console.log('[EMPRESA]', empresaId);
+    console.log('[LICENÇA]', `status: ${status}, trialInicio: ${trialInicio}, trialFim: ${trialFim}`);
+    console.log('[ROTA]', `ExpiredLicenseScreen (Status: ${status})`);
+
+    return (
+      <ExpiredLicenseScreen
+        status={status}
+        onOpenPlans={() => setShowPlansInApp(true)}
+        onLogout={() => auth?.logout()}
+      />
+    );
+  }
+
+  // Status == 'trial' ou status == 'active' -> Acesso livre ao Dashboard
+  console.log('[AUTH]', uid);
+  console.log('[EMPRESA]', empresaId);
+  console.log('[LICENÇA]', `status: ${status}, trialInicio: ${trialInicio}, trialFim: ${trialFim}`);
+  console.log('[ROTA]', `Dashboard (Acesso Liberado - Status: ${status})`);
+
   return (
     <div id="app-root-frame" className="min-h-screen bg-[#F8FAFC] flex font-sans text-slate-800 selection:bg-[#FF6600]/10 selection:text-[#FF6600]">
+      <CheckoutModal />
       
       {/* Main Structural Right Panel */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
@@ -1068,8 +1419,14 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.18 }}
-              className="w-full animate-in fade-in duration-200"
+              className="w-full animate-in fade-in duration-200 space-y-6"
             >
+              {licAtual?.status === 'trial' && (
+                <TrialBanner
+                  trialFim={licAtual.trialFim}
+                  onActivate={() => setShowPlansInApp(true)}
+                />
+              )}
               <DashboardHome
                 orders={serviceOrders}
                 onNewOS={handleStartNewOS}

@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useContext, ReactNode } from 'react';
 import { LicenseContext, LicenseContextType } from '../contexts/LicenseContext';
-import { License } from '../models/License';
+import { License, LicencaAtual } from '../models/License';
 import { LicenseService } from '../services/LicenseService';
 import { AuthContext } from '../contexts/AuthContext';
 import { NotificationService } from '../services/NotificationService';
@@ -17,75 +17,94 @@ interface LicenseProviderProps {
 export const LicenseProvider: React.FC<LicenseProviderProps> = ({ children }) => {
   const auth = useContext(AuthContext);
   const empresaId = auth?.currentUser?.empresaId;
+  const userId = auth?.currentUser?.id;
 
   const [license, setLicense] = useState<License | null>(null);
-  const [isLoadingLicense, setIsLoadingLicense] = useState<boolean>(false);
+  const [licencaAtual, setLicencaAtual] = useState<LicencaAtual | null>(null);
+  const [isLoadingLicense, setIsLoadingLicense] = useState<boolean>(true);
   const [isValid, setIsValid] = useState<boolean>(true);
 
   const loadLicense = async () => {
     if (!empresaId) {
       setLicense(null);
+      setLicencaAtual(null);
       setIsValid(false);
+      setIsLoadingLicense(false);
       return;
     }
 
     setIsLoadingLicense(true);
     try {
-      const lic = await LicenseService.getLicense(empresaId);
-      setLicense(lic);
-      if (lic) {
-        const isExp = LicenseService.verificarExpiracao(lic);
-        const active = lic.isActive && lic.status === 'ativo' && !isExp;
-        setIsValid(active);
+      const lic = await LicenseService.getLicenca(empresaId, userId);
+      setLicencaAtual(lic);
 
-        // Notificar se a licença estiver próxima de expirar (ex: menos de 5 dias)
-        const expiryTime = new Date(lic.dataExpiracao).getTime();
-        const daysLeft = Math.ceil((expiryTime - Date.now()) / (24 * 60 * 60 * 1000));
-        if (active && daysLeft > 0 && daysLeft <= 5) {
-          NotificationService.notify(
-            'warning',
-            'Sua licença expira em breve',
-            `Restam apenas ${daysLeft} dias para renovação de seu plano ${lic.plano}.`
-          );
-        } else if (isExp && lic.status === 'ativo') {
-          NotificationService.notify(
-            'error',
-            'Licença Expirada',
-            `Sua licença expirou em ${new Date(lic.dataExpiracao).toLocaleDateString()}. Renove para continuar utilizando todos os recursos.`
-          );
+      if (lic) {
+        const mapped = LicenseService.mapToLicenseObject(lic);
+        setLicense(mapped);
+
+        const validation = LicenseService.validarLicenca(lic);
+        setIsValid(validation.isValid);
+
+        // Notificação amigável para trial / expiração próxima
+        if (lic.status === 'trial' && lic.trialFim) {
+          const tempo = LicenseService.getTempoRestanteTrial(lic.trialFim);
+          if (tempo.dias <= 1 && !tempo.expirou) {
+            NotificationService.notify(
+              'warning',
+              'Período de Teste Terminando',
+              `Restam apenas ${tempo.horas}h ${tempo.minutos}m para o fim do seu teste gratuito.`
+            );
+          }
         }
+      } else {
+        setIsValid(false);
       }
     } catch (err) {
-      console.error('Erro ao carregar licença:', err);
+      console.error('[LicenseProvider] Erro ao carregar licença:', err);
     } finally {
       setIsLoadingLicense(false);
     }
   };
 
   useEffect(() => {
-    loadLicense();
-  }, [empresaId]);
+    if (empresaId) {
+      setIsLoadingLicense(true);
+      loadLicense();
+    } else {
+      setLicense(null);
+      setLicencaAtual(null);
+      setIsValid(false);
+      setIsLoadingLicense(false);
+    }
+  }, [empresaId, userId]);
+
+  const refreshLicenca = async (): Promise<void> => {
+    await loadLicense();
+  };
 
   const verificarStatus = async (): Promise<boolean> => {
     if (!empresaId) return false;
-    const status = await LicenseService.verificarLicenca(empresaId);
-    setIsValid(status);
-    return status;
+    const lic = await LicenseService.getLicenca(empresaId, userId);
+    const validation = LicenseService.validarLicenca(lic);
+    setIsValid(validation.isValid);
+    return validation.isValid;
   };
 
-  const ativar = async (plano = 'SaaS Versão Profissional'): Promise<License> => {
+  const ativar = async (plano = 'Plano Mensal'): Promise<License> => {
     if (!empresaId) throw new Error('Nenhuma empresa ativa.');
     setIsLoadingLicense(true);
     try {
-      const lic = await LicenseService.ativarLicenca(empresaId, plano);
-      setLicense(lic);
+      const lic = await LicenseService.ativarLicenca(empresaId, plano, 30, 'manual');
+      setLicencaAtual(lic);
+      const mapped = LicenseService.mapToLicenseObject(lic);
+      setLicense(mapped);
       setIsValid(true);
       NotificationService.notify(
         'success',
         'Licença Ativada',
-        `Parabéns! Sua licença do plano ${plano} foi ativada com sucesso.`
+        `Parabéns! Sua licença do ${plano} foi ativada com sucesso.`
       );
-      return lic;
+      return mapped;
     } finally {
       setIsLoadingLicense(false);
     }
@@ -145,26 +164,24 @@ export const LicenseProvider: React.FC<LicenseProviderProps> = ({ children }) =>
     }
   };
 
-  const iniciarTrial = async (dias = 15): Promise<License> => {
+  const iniciarTrial = async (): Promise<License> => {
     if (!empresaId) throw new Error('Nenhuma empresa ativa.');
     setIsLoadingLicense(true);
     try {
-      const lic = await LicenseService.iniciarPeriodoTeste(empresaId, dias);
-      setLicense(lic);
+      const lic = await LicenseService.iniciarTrial(empresaId, userId);
+      setLicencaAtual(lic);
+      const mapped = LicenseService.mapToLicenseObject(lic);
+      setLicense(mapped);
       setIsValid(true);
       NotificationService.notify(
-        'info',
-        'Período de Testes Iniciado',
-        `Seu período de avaliação gratuita de ${dias} dias foi ativado.`
+        'success',
+        'Teste Gratuito Ativado',
+        'Seu período de teste de 3 dias com acesso total foi iniciado!'
       );
-      return lic;
+      return mapped;
     } finally {
       setIsLoadingLicense(false);
     }
-  };
-
-  const registrarAlteracaoManual = async () => {
-    await loadLicense();
   };
 
   const encerrarTrial = async (): Promise<License> => {
@@ -187,9 +204,11 @@ export const LicenseProvider: React.FC<LicenseProviderProps> = ({ children }) =>
 
   const value: LicenseContextType = {
     license,
+    licencaAtual,
     isLoadingLicense,
     isValid,
     verificarStatus,
+    refreshLicenca,
     ativar,
     renovar,
     bloquear,

@@ -33,6 +33,21 @@ const MAX_LOG_ENTRIES = 200;
 
 export const LogService = {
   /**
+   * Registra log de auditoria de login e direcionamento por status de licença (ETAPA 8)
+   */
+  logLogin(usuario: string, empresaId: string, statusLicenca: string, destinoTela: string): OperationLog {
+    console.log(`[AuditLog] LOGIN_REALIZADO | Usuario: ${usuario} | Empresa: ${empresaId} | Status: ${statusLicenca} | Destino: ${destinoTela}`);
+    return this.logOperation(
+      usuario,
+      'audit_login',
+      empresaId,
+      'add',
+      0,
+      null
+    );
+  },
+
+  /**
    * Registra um log de operação do FirestoreRepository com medição de tempo e tratamento de erros.
    */
   logOperation(

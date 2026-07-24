@@ -44,10 +44,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
   }, []);
 
-  const login = async (email: string, password?: string, nomeCompleto?: string): Promise<Usuario> => {
+  const login = async (email: string, password?: string): Promise<Usuario> => {
     setIsLoading(true);
     try {
-      const user = await AuthService.login(email, password, nomeCompleto);
+      const user = await AuthService.login(email, password);
+      setCurrentUser(user);
+      return user;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const register = async (
+    email: string, 
+    password: string, 
+    nomeCompleto?: string, 
+    nomeEmpresa?: string
+  ): Promise<Usuario> => {
+    setIsLoading(true);
+    try {
+      const user = await AuthService.register(email, password, nomeCompleto, nomeEmpresa);
       setCurrentUser(user);
       return user;
     } finally {
@@ -90,6 +106,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     isAuthenticated: !!currentUser,
     isLoading,
     login,
+    register,
     loginWithGoogle,
     logout,
     sendPasswordResetEmail,
