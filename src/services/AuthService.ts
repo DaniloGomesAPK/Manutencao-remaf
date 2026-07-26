@@ -42,6 +42,34 @@ export const AuthService = {
    * Garante que o uid autenticado no Firebase Auth seja a única autoridade.
    */
   async processUserSession(fbUser: User, nomeCompleto?: string): Promise<Usuario> {
+    // 1. Forçar atualização do token com getIdToken(true) para garantir dados e Custom Claims atualizados
+    if (typeof fbUser.getIdToken === 'function') {
+      try {
+        await fbUser.getIdToken(true);
+      } catch (tokenErr) {
+        console.warn('[AuthService] Aviso ao atualizar token ID:', tokenErr);
+      }
+    }
+
+    // 2. Consultar o Firestore em emailsAutorizados/{email} e permitir o acesso apenas se o documento existir
+    const email = fbUser.email?.trim().toLowerCase();
+    if (!email) {
+      throw new Error('E-mail não encontrado no perfil do usuário.');
+    }
+
+    const emailDocRef = doc(db, 'emailsAutorizados', email);
+    let emailSnap;
+    try {
+      emailSnap = await getDoc(emailDocRef);
+    } catch (e: any) {
+      console.warn('[AuthService] Erro ao consultar emailsAutorizados no Firestore:', e);
+      throw new Error('Erro ao verificar autorização do e-mail no Firestore. Verifique suas permissões ou conexão.');
+    }
+
+    if (!emailSnap || !emailSnap.exists()) {
+      throw new Error(`Acesso negado: O e-mail (${email}) não está na lista de e-mails autorizados.`);
+    }
+
     const uid = fbUser.uid;
     const userDocRef = doc(db, 'users', uid);
     
@@ -186,6 +214,18 @@ export const AuthService = {
     const emailNormalizado = email.trim().toLowerCase();
     if (!emailNormalizado || !password) {
       throw new Error('E-mail e senha são obrigatórios para cadastro.');
+    }
+
+    // Valida se o e-mail está na lista de e-mails autorizados antes de criar a conta
+    const emailAuthorizedDocRef = doc(db, 'emailsAutorizados', emailNormalizado);
+    let emailSnap;
+    try {
+      emailSnap = await getDoc(emailAuthorizedDocRef);
+    } catch (e) {
+      console.warn('[AuthService] Erro ao consultar emailsAutorizados no cadastro:', e);
+    }
+    if (!emailSnap || !emailSnap.exists()) {
+      throw new Error(`Cadastro não permitido: O e-mail (${emailNormalizado}) não está na lista de e-mails autorizados.`);
     }
 
     let fbUser: User;
@@ -354,15 +394,10 @@ export const AuthService = {
           const validatedUser = await this.processUserSession(fbUser);
           onUserChanged(validatedUser);
         } catch (error) {
-          console.error('[AuthService] Erro ao sincronizar estado de autenticação:', error);
-          const cachedUser = await this.getCurrentUser();
-          if (cachedUser && cachedUser.id === fbUser.uid && cachedUser.empresaId) {
-            onUserChanged(cachedUser);
-          } else {
-            await signOut(auth);
-            localStorage.removeItem(SESSION_USER_KEY);
-            onUserChanged(null);
-          }
+          console.error('[AuthService] Acesso negado ou erro ao sincronizar estado de autenticação:', error);
+          await signOut(auth);
+          localStorage.removeItem(SESSION_USER_KEY);
+          onUserChanged(null);
         }
       } else {
         localStorage.removeItem(SESSION_USER_KEY);
