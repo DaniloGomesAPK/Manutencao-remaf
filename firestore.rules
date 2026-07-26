@@ -18,7 +18,7 @@ service cloud.firestore {
     // Coleção de e-mails autorizados (Permite apenas a checagem pelo sistema)
     match /emailsAutorizados/{email} {
       allow read: if usuarioAutenticado();
-      allow write: if false; // Garante que ninguém adicione e-mails por fora do painel administrativo
+      allow write: if false; 
     }
 
     // Perfil de usuário (O UID do documento deve ser igual ao UID autenticado)
@@ -26,20 +26,25 @@ service cloud.firestore {
       allow read, write: if request.auth.uid == uid && emailAutorizado();
     }
 
-    // Empresas (O ID da empresa deve ser igual ao UID do dono)
+    // Empresas (Ajustado para aceitar se o ID contiver o UID do usuário)
     match /empresas/{empresaId} {
-      allow read, write: if request.auth.uid == empresaId && emailAutorizado();
+      allow read, write: if (request.auth.uid == empresaId || empresaId == "emp_" + request.auth.uid) && emailAutorizado();
 
       // Subcoleção de licenças da empresa (Apenas leitura)
       match /licenca/{document=**} {
-        allow read: if request.auth.uid == empresaId && emailAutorizado();
+        allow read: if (request.auth.uid == empresaId || empresaId == "emp_" + request.auth.uid) && emailAutorizado();
         allow create, update, delete: if false;
       }
 
-      // Outras subcoleções da empresa (Cadastros gerais do sistema)
+      // Outras subcoleções da empresa (Cadastros gerais do sistema, como company_profile)
       match /{subcollection}/{document=**} {
-        allow read, write: if request.auth.uid == empresaId && emailAutorizado();
+        allow read, write: if (request.auth.uid == empresaId || empresaId == "emp_" + request.auth.uid) && emailAutorizado();
       }
+    }
+
+    // Coleção Global de Clientes (Adicionada para permitir que usuários autorizados mexam nos clientes)
+    match /clientes/{clienteId} {
+      allow read, write: if emailAutorizado();
     }
   }
 }
