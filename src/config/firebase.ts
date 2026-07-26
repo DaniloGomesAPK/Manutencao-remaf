@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
+import { initializeFirestore } from 'firebase/firestore'; // <-- Nova importação corrigida
 import { getAnalytics, isSupported } from 'firebase/analytics';
 
 const env = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : (process.env || {});
@@ -19,6 +20,12 @@ const firebaseConfig = {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 export const auth = getAuth(app);
+
+// Esta linha abaixo inicializa o banco de dados corrigindo o bug na raiz:
+export const db = initializeFirestore(app, {
+  ignoreUndefinedProperties: true
+});
+
 export { app };
 
 // Inicializa o Analytics se suportado pelo ambiente/navegador
