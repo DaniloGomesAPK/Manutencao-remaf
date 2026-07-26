@@ -1,0 +1,62 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and subscription status",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "statusConta": { "type": "string" },
+        "statusLicenca": { "type": "string" },
+        "trialInicio": { "type": "string" },
+        "trialFim": { "type": "string" },
+        "trialUtilizado": { "type": "boolean" },
+        "empresaId": { "type": "string" },
+        "plano": { "type": "string" }
+      }
+    },
+    "Licenca": {
+      "title": "Licenca",
+      "description": "Company current license state",
+      "type": "object",
+      "properties": {
+        "empresaId": { "type": "string" },
+        "status": { "type": "string" },
+        "plano": { "type": "string" },
+        "inicio": { "type": "string" },
+        "fim": { "type": "string" },
+        "trialInicio": { "type": "string" },
+        "trialFim": { "type": "string" },
+        "trialUtilizado": { "type": "boolean" },
+        "ultimaAtualizacao": { "type": "string" }
+      }
+    },
+    "Orcamento": {
+      "title": "Orcamento",
+      "description": "Company budgets and estimates",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clienteId": { "type": "string" },
+        "status": { "type": "string" },
+        "valorTotal": { "type": "number" },
+        "criadoEm": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profile collection"
+    },
+    "/empresas/{empresaId}/licenca/{licDoc}": {
+      "schema": "Licenca",
+      "description": "Company current active license"
+    },
+    "/empresas/{empresaId}/orcamentos/{orcamentoId}": {
+      "schema": "Orcamento",
+      "description": "Company budgets subcollection"
+    }
+  }
+}

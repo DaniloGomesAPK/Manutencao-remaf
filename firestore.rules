@@ -2,25 +2,75 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Verifica se a requisição possui autenticação válida
+    // Verifica se o usuário está autenticado
     function usuarioAutenticado() {
       return request.auth != null;
     }
 
-    // Coleção /users/{uid} - apenas o próprio usuário pode ler/atualizar seu perfil
+    function eDonoDoPerfil(uid) {
+      return usuarioAutenticado() && request.auth.uid == uid;
+    }
+
+    // Impede alteração de campos sensíveis de licença e assinatura por usuários comuns
+    function semAlteracaoCamposProtegidos() {
+      let camposProtegidos = ['statusConta', 'statusLicenca', 'trialInicio', 'trialFim', 'trialUtilizado', 'plano'];
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(camposProtegidos);
+    }
+
+    // Coleção /users/{uid} - perfil do usuário
     match /users/{uid} {
-      allow read, write: if usuarioAutenticado() && request.auth.uid == uid;
+      allow read: if eDonoDoPerfil(uid);
+      allow create: if eDonoDoPerfil(uid);
+      allow update: if eDonoDoPerfil(uid) && semAlteracaoCamposProtegidos();
       allow delete: if false;
     }
 
-    // Acesso isolado aos dados da empresa sob empresas/{empresaId}/...
-    match /empresas/{empresaId}/{document=**} {
-      allow read, write: if usuarioAutenticado();
+    // Função de validação de licença/trial no horário oficial do servidor Google
+    function licencaValida(empresaId) {
+      let licPath = /databases/$(database)/documents/empresas/$(empresaId)/licenca/licencaAtual;
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+
+      let temLicenca = exists(licPath);
+      let temUser = exists(userPath);
+
+      let licData = temLicenca ? get(licPath).data : null;
+      let userData = temUser ? get(userPath).data : null;
+
+      let status = licData != null && licData.status != null ? licData.status
+                 : (userData != null && userData.statusConta != null ? userData.statusConta : 'pending');
+
+      let trialFim = licData != null && licData.trialFim != null ? licData.trialFim
+                   : (userData != null && userData.trialFim != null ? userData.trialFim : null);
+
+      // Permite acesso apenas se a assinatura estiver ativa ou se o trial estiver dentro do prazo no servidor Google
+      return status == 'active' || (
+        status == 'trial' && trialFim != null && (
+          (trialFim is string && string(request.time) < trialFim) ||
+          (trialFim is timestamp && request.time < trialFim)
+        )
+      );
     }
 
-    // Nega acesso a qualquer outra coleção ou caminho raiz não explicitamente mapeado
+    // Isolamento e regras de segurança para /empresas/{empresaId}/...
+    match /empresas/{empresaId} {
+      allow read, write: if usuarioAutenticado();
+
+      // Subcoleção de licenças da empresa
+      match /licenca/{document=**} {
+        allow read, write: if usuarioAutenticado();
+      }
+
+      // Subcoleções de negócios (orcamentos, clientes, historico, servicos, etc.)
+      // Exigem que a licença/trial esteja válida no servidor do Firebase
+      match /{subcollection}/{document=**} {
+        allow read, write: if usuarioAutenticado() && (subcollection == 'licenca' || licencaValida(empresaId));
+      }
+    }
+
+    // Nega acesso a qualquer outro caminho
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
+
