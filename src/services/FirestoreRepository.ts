@@ -119,7 +119,6 @@ export function stripHeavyFields(item: any): DocumentData {
   delete clone.pdfBase64;
   delete clone.assinaturaTecnico;
   delete clone.assinaturaCliente;
-  delete clone.logomarca;
   delete clone.anexos;
 
   return clone;
