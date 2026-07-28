@@ -7,7 +7,7 @@ import React, { useState, useEffect, useContext, ReactNode } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { LicenseContext, LicenseContextType } from '../contexts/LicenseContext';
-import { License, LicencaAtual, EmailAutorizado } from '../models/License';
+import { License, LicencaAtual, EmailAutorizado, StatusLicenca } from '../models/License';
 import { LicenseService } from '../services/LicenseService';
 import { AuthContext } from '../contexts/AuthContext';
 import { NotificationService } from '../services/NotificationService';
@@ -136,6 +136,46 @@ export const LicenseProvider: React.FC<LicenseProviderProps> = ({ children }) =>
       unsubscribe();
     };
   }, [userEmail]);
+
+  // Effect para verificação contínua do tempo (cronômetro em segundo plano)
+  useEffect(() => {
+    if (!userEmail || !licencaAtual) return;
+
+    const checarExpiracaoTemporal = async () => {
+      const val = LicenseService.validarLicenca(licencaAtual);
+
+      if (!val.isValid) {
+        console.warn(`[LicenseProvider] Cronômetro detectou expiração/bloqueio para ${userEmail}:`, val);
+        
+        setIsValid(false);
+        setLicencaAtual((prev) => (prev ? { ...prev, status: val.status as StatusLicenca } : null));
+        setLicense((prev) => (prev ? { ...prev, status: val.status as StatusLicenca, isActive: false } : null));
+
+        NotificationService.notify(
+          'error',
+          'Acesso Interrompido',
+          val.reason || 'Sua licença expirou ou foi interrompida.'
+        );
+
+        LogService.logError(
+          'License',
+          'LicenseProvider',
+          `Cronômetro: Desconexão por expiração temporal (${val.status}): ${val.reason}`
+        );
+
+        if (val.status === 'blocked' || val.status === 'expired' || val.status === 'cancelled' || val.status === 'overdue') {
+          await auth?.logout();
+        }
+      }
+    };
+
+    // Executa a verificação a cada 30 segundos
+    const intervalId = setInterval(checarExpiracaoTemporal, 30000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [userEmail, licencaAtual, auth]);
 
   const refreshLicenca = async (): Promise<void> => {
     if (!userEmail) return;
