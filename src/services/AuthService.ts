@@ -13,13 +13,13 @@ import {
   onAuthStateChanged,
   sendPasswordResetEmail as fbSendPasswordResetEmail
 } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, app } from '../config/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db } from '../config/firebase';
 import { Usuario } from '../models/Usuario';
 import { EmpresaService } from './EmpresaService';
+import { LogService } from './LogService';
 
 const SESSION_USER_KEY = 'remaf_saas_user';
-const db = getFirestore(app);
 
 export const AuthService = {
   /**
@@ -67,9 +67,11 @@ export const AuthService = {
     }
 
     if (!emailSnap || !emailSnap.exists()) {
+      LogService.logError('Auth', 'AuthService', `Acesso negado: O e-mail (${email}) não está na lista de e-mails autorizados.`);
       throw new Error(`Acesso negado: O e-mail (${email}) não está na lista de e-mails autorizados.`);
     }
 
+    const emailData = emailSnap.data();
     const uid = fbUser.uid;
     const userDocRef = doc(db, 'users', uid);
     
@@ -80,15 +82,14 @@ export const AuthService = {
       console.warn('[AuthService] Falha ao consultar users/{uid} no Firestore:', e);
     }
 
-    let empresaId = '';
-    let statusConta: Usuario['statusConta'] = 'active';
+    let empresaId = emailData?.empresaId || '';
+    let statusConta: Usuario['statusConta'] = (emailData?.status as Usuario['statusConta']) || 'active';
     let dataCadastro = new Date().toISOString();
     let nomeExistente = '';
 
     if (userSnap && userSnap.exists()) {
       const uData = userSnap.data();
-      empresaId = uData.empresaId || '';
-      statusConta = uData.statusConta || 'active';
+      if (!empresaId) empresaId = uData.empresaId || '';
       dataCadastro = uData.dataCadastro || dataCadastro;
       nomeExistente = uData.nome || '';
     }
@@ -107,19 +108,10 @@ export const AuthService = {
     if (!empresaId) {
       const cleanUid = uid.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().substring(0, 20);
       empresaId = `emp_${cleanUid}`;
-    }
-
-    // Valida a licença existente para sincronizar o statusConta do usuário
-    if (empresaId) {
+      // Atualiza no documento de autorização para manter consistência
       try {
-        const LicenseService = (await import('./LicenseService')).LicenseService;
-        const lic = await LicenseService.getLicenca(empresaId, uid);
-        if (lic && lic.status && lic.status !== 'pending') {
-          statusConta = lic.status as Usuario['statusConta'];
-        }
-      } catch (e) {
-        console.warn('[AuthService] Não foi possível verificar licença em processUserSession:', e);
-      }
+        await setDoc(emailDocRef, { empresaId }, { merge: true });
+      } catch (_) {}
     }
 
     const finalNome = nomeCompleto || fbUser.displayName || nomeExistente || fbUser.email?.split('@')[0] || 'Usuário';
@@ -296,20 +288,15 @@ export const AuthService = {
       updatedAt: now
     }, emailNormalizado);
 
-    // Salva licença inicial pendente em empresas/{empresaId}/licenca/licencaAtual
-    const LicenseService = (await import('./LicenseService')).LicenseService;
-    await LicenseService.saveLicenca(empresaId, {
-      empresaId,
-      status: 'pending',
-      plano: null,
-      inicio: now,
-      fim: now,
-      trialInicio: null,
-      trialFim: null,
-      trialUtilizado: false,
-      ultimaAtualizacao: now,
-      origem: 'manual'
-    });
+    // Atualiza o documento de autorização vinculando a empresa criada
+    try {
+      await setDoc(doc(db, 'emailsAutorizados', emailNormalizado), {
+        email: emailNormalizado,
+        empresaId
+      }, { merge: true });
+    } catch (e) {
+      console.warn('[AuthService] Falha ao vincular empresaId no emailsAutorizados:', e);
+    }
 
     localStorage.setItem(SESSION_USER_KEY, JSON.stringify(usuario));
     return usuario;

@@ -44,9 +44,13 @@ export async function runLicenseFlowTests() {
 
   // 1. Teste: pending -> Tela Ativação
   const pendingLic: LicencaAtual = {
+    email: 'test_pending@empresa.com',
     empresaId: 'emp_test_pending',
     status: 'pending',
     plano: null,
+    validade: null,
+    ativo: true,
+    bloqueado: false,
     inicio: new Date().toISOString(),
     fim: new Date().toISOString(),
     trialInicio: null,
@@ -67,9 +71,13 @@ export async function runLicenseFlowTests() {
   const now = new Date();
   const trialFimFuturo = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString();
   const trialValidoLic: LicencaAtual = {
+    email: 'test_trial_valid@empresa.com',
     empresaId: 'emp_test_trial_valid',
     status: 'trial',
     plano: 'trial_3dias',
+    validade: trialFimFuturo,
+    ativo: true,
+    bloqueado: false,
     inicio: now.toISOString(),
     fim: trialFimFuturo,
     trialInicio: now.toISOString(),
@@ -89,9 +97,13 @@ export async function runLicenseFlowTests() {
   // 3. Teste: trial expirado -> Licença Expirada
   const trialFimPassado = new Date(now.getTime() - 1000).toISOString();
   const trialExpiradoLic: LicencaAtual = {
+    email: 'test_trial_exp@empresa.com',
     empresaId: 'emp_test_trial_exp',
     status: 'trial',
     plano: 'trial_3dias',
+    validade: trialFimPassado,
+    ativo: true,
+    bloqueado: false,
     inicio: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString(),
     fim: trialFimPassado,
     trialInicio: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString(),
@@ -111,9 +123,13 @@ export async function runLicenseFlowTests() {
 
   // 4. Teste: active -> Dashboard
   const activeLic: LicencaAtual = {
+    email: 'test_active@empresa.com',
     empresaId: 'emp_test_active',
     status: 'active',
     plano: 'Plano Mensal',
+    validade: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    ativo: true,
+    bloqueado: false,
     inicio: now.toISOString(),
     fim: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     trialInicio: now.toISOString(),
@@ -132,9 +148,13 @@ export async function runLicenseFlowTests() {
 
   // 5. Teste: blocked -> Conta Bloqueada
   const blockedLic: LicencaAtual = {
+    email: 'test_blocked@empresa.com',
     empresaId: 'emp_test_blocked',
     status: 'blocked',
     plano: null,
+    validade: null,
+    ativo: false,
+    bloqueado: true,
     inicio: now.toISOString(),
     fim: now.toISOString(),
     trialInicio: null,
@@ -153,9 +173,13 @@ export async function runLicenseFlowTests() {
 
   // 6. Teste: overdue -> Regularização
   const overdueLic: LicencaAtual = {
+    email: 'test_overdue@empresa.com',
     empresaId: 'emp_test_overdue',
     status: 'overdue',
     plano: 'Plano Mensal',
+    validade: null,
+    ativo: true,
+    bloqueado: false,
     inicio: now.toISOString(),
     fim: now.toISOString(),
     trialInicio: null,
@@ -174,9 +198,13 @@ export async function runLicenseFlowTests() {
 
   // 7. Teste: cancelled -> Renovação
   const cancelledLic: LicencaAtual = {
+    email: 'test_cancelled@empresa.com',
     empresaId: 'emp_test_cancelled',
     status: 'cancelled',
     plano: 'Plano Anual',
+    validade: null,
+    ativo: false,
+    bloqueado: false,
     inicio: now.toISOString(),
     fim: now.toISOString(),
     trialInicio: null,

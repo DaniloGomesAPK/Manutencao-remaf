@@ -1023,8 +1023,9 @@ export default function App() {
     );
   }
 
-  // Expired, Blocked, Cancelled, Overdue -> ExpiredLicenseScreen
+  // Expired, Blocked, Cancelled, Overdue ou Inválido -> ExpiredLicenseScreen
   if (
+    !licenseCtx?.isValid ||
     status === 'expired' || 
     status === 'blocked' || 
     status === 'cancelled' || 
@@ -1032,8 +1033,8 @@ export default function App() {
   ) {
     console.log('[AUTH]', uid);
     console.log('[EMPRESA]', empresaId);
-    console.log('[LICENÇA]', `status: ${status}, trialInicio: ${trialInicio}, trialFim: ${trialFim}`);
-    console.log('[ROTA]', `ExpiredLicenseScreen (Status: ${status})`);
+    console.log('[LICENÇA]', `status: ${status}, isValid: ${licenseCtx?.isValid}, trialInicio: ${trialInicio}, trialFim: ${trialFim}`);
+    console.log('[ROTA]', `ExpiredLicenseScreen (Status: ${status}, isValid: ${licenseCtx?.isValid})`);
 
     return (
       <ExpiredLicenseScreen

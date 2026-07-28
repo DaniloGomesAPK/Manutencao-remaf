@@ -4,7 +4,6 @@
  */
 
 import { 
-  getFirestore, 
   doc, 
   setDoc, 
   getDoc, 
@@ -17,11 +16,9 @@ import {
   DocumentData,
   Unsubscribe
 } from 'firebase/firestore';
-import { app } from '../config/firebase';
+import { db } from '../config/firebase';
 import { openDB } from '../db';
 import { LogService } from './LogService';
-
-const db = getFirestore(app);
 
 export const ALL_STORES = [
   'clientes',
@@ -119,6 +116,7 @@ export function stripHeavyFields(item: any): DocumentData {
   delete clone.pdfBase64;
   delete clone.assinaturaTecnico;
   delete clone.assinaturaCliente;
+  delete clone.logomarca;
   delete clone.anexos;
 
   return clone;
