@@ -1,7 +1,7 @@
 {
   "name": "DG Gestão Automotiva",
   "short_name": "DG Gestão",
-  "description": "DG Gestão Automotiva - Orce Rápido. Venda Melhor. Controle de Protocolos de Manutenção e Ordens de Serviço de forma 100% instalável e offline.",
+  "description": "DG Gestão Automotiva - Orce Rápido. Venda Melhor. Controle de Ordens de Serviço de forma 100% instalável e offline.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -9,6 +9,30 @@
   "theme_color": "#003366",
   "orientation": "portrait",
   "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/maskable-icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/maskable-icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    },
     {
       "src": "/icons/icon-72.png",
       "type": "image/png",
@@ -52,12 +76,6 @@
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-192.png",
-      "type": "image/png",
-      "sizes": "192x192",
-      "purpose": "any"
-    },
-    {
       "src": "/icons/icon-256.png",
       "type": "image/png",
       "sizes": "256x256",
@@ -68,30 +86,6 @@
       "type": "image/png",
       "sizes": "384x384",
       "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-512.png",
-      "type": "image/png",
-      "sizes": "512x512",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/maskable-icon-192.png",
-      "type": "image/png",
-      "sizes": "192x192",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/icons/maskable-icon-512.png",
-      "type": "image/png",
-      "sizes": "512x512",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/icons/maskable-icon.png",
-      "type": "image/png",
-      "sizes": "512x512",
-      "purpose": "maskable"
     }
   ]
 }
