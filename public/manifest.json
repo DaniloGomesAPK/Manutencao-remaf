@@ -1,4 +1,5 @@
 {
+  "id": "/",
   "name": "DG Gestão Automotiva",
   "short_name": "DG Gestão",
   "description": "DG Gestão Automotiva - Orce Rápido. Venda Melhor. Controle de Ordens de Serviço de forma 100% instalável e offline.",
@@ -8,30 +9,49 @@
   "background_color": "#ffffff",
   "theme_color": "#003366",
   "orientation": "portrait",
+  "categories": ["business", "utilities", "productivity"],
   "icons": [
     {
       "src": "/icons/icon-192.png",
       "type": "image/png",
       "sizes": "192x192",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-512.png",
       "type": "image/png",
       "sizes": "512x512",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icons/maskable-icon-192.png",
       "type": "image/png",
       "sizes": "192x192",
-      "purpose": "any maskable"
+      "purpose": "maskable"
     },
     {
       "src": "/icons/maskable-icon-512.png",
       "type": "image/png",
       "sizes": "512x512",
-      "purpose": "any maskable"
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/maskable-icon.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/android-launcher-icon.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "type": "image/png",
+      "sizes": "180x180",
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-72.png",
