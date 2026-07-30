@@ -28,6 +28,7 @@ import { formatToBrazilianDate } from './utils/dateFormatter';
 import officialAppBanner from './assets/images/official_app_banner_1784242870138.jpg';
 
 import OfflineIndicator from './components/OfflineIndicator';
+import PWAInstallBanner from './components/PWAInstallBanner';
 import CompanyHeader from './components/CompanyHeader';
 import Sidebar from './components/Sidebar';
 import DashboardHome from './components/DashboardHome';
@@ -1066,6 +1067,7 @@ export default function App() {
   return (
     <div id="app-root-frame" className="min-h-screen bg-[#F8FAFC] flex font-sans text-slate-800 selection:bg-[#FF6600]/10 selection:text-[#FF6600]">
       <CheckoutModal />
+      <PWAInstallBanner />
       
       {/* Main Structural Right Panel */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
@@ -1085,8 +1087,8 @@ export default function App() {
               <CompanyHeader />
             </button>
 
-            {/* Indicator de Sincronização em Nuvem (Firestore Sync Engine) */}
-            <div className="hidden sm:block pl-4 border-l border-slate-200">
+            {/* Indicator de Sincronização em Nuvem (Firestore Sync Engine) & Botão de Instalar PWA */}
+            <div className="pl-2 sm:pl-4 border-l border-slate-200">
               <OfflineIndicator />
             </div>
           </div>

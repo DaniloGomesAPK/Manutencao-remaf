@@ -72,11 +72,12 @@ export default function OfflineIndicator() {
         {installPrompt && (
           <button
             onClick={handleInstallClick}
-            className="hidden md:flex items-center gap-1.5 px-2.5 py-1 bg-[#003366] text-white hover:bg-[#002244] text-xs font-semibold rounded-md shadow-xs transition"
-            title="Instalar aplicativo PWA"
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-[#FF6600] hover:bg-[#e65c00] text-white text-xs font-bold rounded-md shadow-xs transition cursor-pointer"
+            title="Instalar aplicativo PWA no dispositivo"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Instalar PWA</span>
+            <span className="hidden xs:inline">Instalar App</span>
+            <span className="xs:hidden">Instalar</span>
           </button>
         )}
 
