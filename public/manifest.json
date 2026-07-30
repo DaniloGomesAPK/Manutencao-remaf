@@ -2,15 +2,31 @@
   "id": "/",
   "name": "DG Gestão Automotiva",
   "short_name": "DG Gestão",
-  "description": "DG Gestão Automotiva - Orce Rápido. Venda Melhor. Controle de Ordens de Serviço de forma 100% instalável e offline.",
+  "description": "DG Gestão Automotiva - Sistema completo de Orçamentos, Ordens de Serviço, Precificação e Gestão de Equipamentos.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "lang": "pt-BR",
+  "dir": "ltr",
   "background_color": "#ffffff",
   "theme_color": "#003366",
-  "orientation": "portrait",
+  "prefer_related_applications": false,
   "categories": ["business", "utilities", "productivity"],
   "icons": [
+    {
+      "src": "/icons/manifest-icon-192.maskable.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/manifest-icon-512.maskable.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    },
     {
       "src": "/icons/icon-192.png",
       "type": "image/png",
@@ -21,6 +37,12 @@
       "src": "/icons/icon-512.png",
       "type": "image/png",
       "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/apple-icon-180.png",
+      "type": "image/png",
+      "sizes": "180x180",
       "purpose": "any"
     },
     {
@@ -36,13 +58,13 @@
       "purpose": "maskable"
     },
     {
-      "src": "/icons/maskable-icon.png",
+      "src": "/android-launcher-192.png",
       "type": "image/png",
-      "sizes": "512x512",
-      "purpose": "maskable"
+      "sizes": "192x192",
+      "purpose": "any"
     },
     {
-      "src": "/android-launcher-icon.png",
+      "src": "/android-launcher-512.png",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any"
