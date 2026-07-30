@@ -208,18 +208,7 @@ export const AuthService = {
       throw new Error('E-mail e senha são obrigatórios para cadastro.');
     }
 
-    // Valida se o e-mail está na lista de e-mails autorizados antes de criar a conta
-    const emailAuthorizedDocRef = doc(db, 'emailsAutorizados', emailNormalizado);
-    let emailSnap;
-    try {
-      emailSnap = await getDoc(emailAuthorizedDocRef);
-    } catch (e) {
-      console.warn('[AuthService] Erro ao consultar emailsAutorizados no cadastro:', e);
-    }
-    if (!emailSnap || !emailSnap.exists()) {
-      throw new Error(`Cadastro não permitido: O e-mail (${emailNormalizado}) não está na lista de e-mails autorizados.`);
-    }
-
+    // 1. Autenticação via Firebase Auth (Criação de usuário)
     let fbUser: User;
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, emailNormalizado, password);
@@ -237,15 +226,33 @@ export const AuthService = {
     const uid = fbUser.uid;
     const cleanUid = uid.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().substring(0, 20);
     const empresaId = `emp_${cleanUid}`;
-    const finalNome = nomeCompleto?.trim() || fbUser.displayName || emailNormalizado.split('@')[0] || 'Usuário';
+    const nomeDigitado = nomeCompleto?.trim() || fbUser.displayName || emailNormalizado.split('@')[0] || 'Usuário';
+    const oficinaDigitada = nomeEmpresa?.trim() || 'DG Gestão Automotiva';
     const now = new Date().toISOString();
+
+    // 2. Envia imediatamente o documento com a estrutura estrita de segurança para 'emailsAutorizados/{email}'
+    const emailAuthorizedDocRef = doc(db, 'emailsAutorizados', emailNormalizado);
+    try {
+      await setDoc(emailAuthorizedDocRef, {
+        email: emailNormalizado,
+        status: 'pending',        // Garante que nasce pendente
+        ativo: false,             // Garante que nasce desativado administrativamente
+        bloqueado: false,
+        validade: now,            // Nasce com validade zerada/passada
+        nomeCompleto: nomeDigitado,
+        nomeEmpresa: oficinaDigitada,
+        empresaId
+      }, { merge: true });
+    } catch (e) {
+      console.warn('[AuthService] Falha ao criar documento em emailsAutorizados:', e);
+    }
 
     const usuario: Usuario = {
       id: uid,
-      nome: finalNome,
+      nome: nomeDigitado,
       email: emailNormalizado,
       empresaId,
-      statusConta: 'active',
+      statusConta: 'pending',
       dataCadastro: now,
       ultimoAcesso: now
     };
@@ -267,11 +274,10 @@ export const AuthService = {
     }
 
     // Salva perfil da empresa
-    const nomeEmpresaFinal = nomeEmpresa?.trim() || 'DG Gestão Automotiva';
     await EmpresaService.saveEmpresa({
       id: empresaId,
-      nomeFantasia: nomeEmpresaFinal,
-      razaoSocial: nomeEmpresaFinal,
+      nomeFantasia: oficinaDigitada,
+      razaoSocial: oficinaDigitada,
       cnpj: '00.000.000/0001-00',
       inscricaoEstadual: 'Isento',
       endereco: 'Rua Principal',
@@ -287,16 +293,6 @@ export const AuthService = {
       createdAt: now,
       updatedAt: now
     }, emailNormalizado);
-
-    // Atualiza o documento de autorização vinculando a empresa criada
-    try {
-      await setDoc(doc(db, 'emailsAutorizados', emailNormalizado), {
-        email: emailNormalizado,
-        empresaId
-      }, { merge: true });
-    } catch (e) {
-      console.warn('[AuthService] Falha ao vincular empresaId no emailsAutorizados:', e);
-    }
 
     localStorage.setItem(SESSION_USER_KEY, JSON.stringify(usuario));
     return usuario;

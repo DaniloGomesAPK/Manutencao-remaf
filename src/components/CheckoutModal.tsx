@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { CheckoutService } from '../services/CheckoutService';
-import { CheckCircle2, ShieldCheck, Zap, X } from 'lucide-react';
+import { CheckCircle2, Zap, X, MessageSquare } from 'lucide-react';
 
 export const CheckoutModal: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -22,6 +22,14 @@ export const CheckoutModal: React.FC = () => {
   if (!isOpen) return null;
 
   const isMensal = selectedPlan === 'mensal';
+
+  const handleOpenWhatsApp = () => {
+    if (isMensal) {
+      CheckoutService.openMonthlyCheckout();
+    } else {
+      CheckoutService.openAnnualCheckout();
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -40,12 +48,12 @@ export const CheckoutModal: React.FC = () => {
 
         {/* Header Icon */}
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-12 h-12 rounded-2xl bg-[#003366]/10 text-[#003366] flex items-center justify-center font-bold">
-            <Zap className="w-6 h-6 text-[#003366]" />
+          <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+            <MessageSquare className="w-6 h-6 text-emerald-700" />
           </div>
           <div>
-            <span className="text-[10px] font-black tracking-widest text-[#003366] uppercase bg-[#003366]/5 px-2.5 py-1 rounded-md">
-              Processamento Cakto
+            <span className="text-[10px] font-black tracking-widest text-emerald-800 uppercase bg-emerald-100 px-2.5 py-1 rounded-md">
+              Atendimento via WhatsApp
             </span>
             <h3 className="text-xl font-black text-slate-900 tracking-tight mt-1">
               {isMensal ? 'Plano Mensal - R$ 50,00' : 'Plano Anual - R$ 550,00 (PIX)'}
@@ -71,29 +79,27 @@ export const CheckoutModal: React.FC = () => {
             </li>
             <li className="flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Atualizações contínuas sem custo adicional</span>
+              <span>Ativação rápida pelo número (73) 99986-8104</span>
             </li>
           </ul>
         </div>
 
-        {/* Status Message */}
-        <div className="p-4 bg-amber-50/80 border border-amber-200/60 rounded-2xl mb-6 flex items-start gap-3">
-          <ShieldCheck className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-          <div className="text-xs text-amber-900 leading-relaxed">
-            <p className="font-bold">Integração com Plataforma de Pagamentos</p>
-            <p className="mt-0.5 text-amber-800/90">
-              O checkout direto via Cakto estará disponível em breve. Sua conta e empresa já foram reservadas e serão ativadas automaticamente assim que o pagamento for confirmado.
-            </p>
-          </div>
+        {/* Action Buttons */}
+        <div className="space-y-2">
+          <button
+            onClick={handleOpenWhatsApp}
+            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3.5 px-6 rounded-2xl font-bold text-xs tracking-wider uppercase shadow-lg shadow-emerald-600/20 active:scale-[0.99] transition flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <MessageSquare className="w-4 h-4" />
+            <span>Enviar mensagem no WhatsApp (73 999868104)</span>
+          </button>
+          <button
+            onClick={() => setIsOpen(false)}
+            className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 py-2.5 px-6 rounded-2xl font-semibold text-xs transition cursor-pointer"
+          >
+            Fechar
+          </button>
         </div>
-
-        {/* Action Button */}
-        <button
-          onClick={() => setIsOpen(false)}
-          className="w-full bg-[#003366] text-white py-3.5 px-6 rounded-2xl font-bold text-xs tracking-wider uppercase shadow-lg shadow-[#003366]/15 hover:bg-[#002244] active:scale-[0.99] transition"
-        >
-          Entendido, Prosseguir
-        </button>
       </div>
     </div>
   );

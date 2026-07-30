@@ -73,7 +73,7 @@ export default function OSFormStep4({ initialData, onNext, onBack, onCancel, onS
       {/* Image Captures Standard After */}
       <div className="bg-slate-50/30 rounded-xl p-5 border border-slate-200 shadow-xs">
         <ImageCaptureGallery
-          label="Fotos Depois da Manutenção"
+          label="Fotos Depois"
           photos={fotosDepois}
           onChange={setFotosDepois}
           descriptions={fotosDepoisDescricoes}

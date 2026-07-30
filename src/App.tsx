@@ -34,6 +34,7 @@ import DashboardHome from './components/DashboardHome';
 
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { PlansPage } from './components/PlansPage';
+import { TrialRegistrationScreen } from './components/TrialRegistrationScreen';
 import { ActivationScreen } from './components/ActivationScreen';
 import { TrialBanner } from './components/TrialBanner';
 import { ExpiredLicenseScreen } from './components/ExpiredLicenseScreen';
@@ -63,7 +64,7 @@ export default function App() {
   const activeUser = auth?.currentUser;
 
   // SaaS Login States
-  const [saasView, setSaasView] = useState<'welcome' | 'plans' | 'login'>('welcome');
+  const [saasView, setSaasView] = useState<'welcome' | 'plans' | 'login' | 'trial'>('welcome');
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -636,14 +637,13 @@ export default function App() {
     console.log('[AUTH]', 'não autenticado');
     console.log('[EMPRESA]', 'N/A');
     console.log('[LICENÇA]', 'N/A');
-    console.log('[ROTA]', saasView === 'welcome' ? 'WelcomeScreen' : saasView === 'plans' ? 'PlansPage' : 'Tela de Login');
+    console.log('[ROTA]', saasView === 'welcome' ? 'WelcomeScreen' : saasView === 'plans' ? 'PlansPage' : saasView === 'trial' ? 'TrialRegistrationScreen' : 'Tela de Login');
 
     if (saasView === 'welcome') {
       return (
         <WelcomeScreen
           onRegisterTrial={() => {
-            setAuthMode('register');
-            setSaasView('login');
+            setSaasView('trial');
           }}
           onOpenPlans={() => setSaasView('plans')}
           onOpenLogin={() => {
@@ -656,6 +656,18 @@ export default function App() {
 
     if (saasView === 'plans') {
       return <PlansPage onBack={() => setSaasView('welcome')} />;
+    }
+
+    if (saasView === 'trial') {
+      return (
+        <TrialRegistrationScreen
+          onBack={() => setSaasView('welcome')}
+          onOpenLogin={() => {
+            setAuthMode('login');
+            setSaasView('login');
+          }}
+        />
+      );
     }
 
     return (

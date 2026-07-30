@@ -73,7 +73,7 @@ export default function OSFormStep2({ initialData, onNext, onBack, onCancel, onS
       {/* Image Captures Standard Before */}
       <div className="bg-slate-50/30 rounded-xl p-5 border border-slate-200 shadow-xs">
         <ImageCaptureGallery
-          label="Fotos Antes da Manutenção"
+          label="Fotos Antes"
           photos={fotosAntes}
           onChange={setFotosAntes}
           descriptions={fotosAntesDescricoes}

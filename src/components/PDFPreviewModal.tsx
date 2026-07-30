@@ -68,19 +68,39 @@ export default function PDFPreviewModal({ os, pdfDataUri, onClose }: PDFPreviewM
     };
   }, [pdfDataUri]);
 
+  // Helper to generate sanitized PDF filename: Orçamento_NumeroDoOrcamento_NomeDoVeiculo.pdf
+  const getPDFFilename = (osData: OrdemDeServico): string => {
+    const num = (osData.numeroOS || '0')
+      .toString()
+      .trim()
+      .replace(/[/\\?%*:|"<>]/g, '_');
+
+    const veiculoRaw = osData.equipamento || 'Veiculo';
+    const veiculoClean = veiculoRaw
+      .trim()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9_\-]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
+    return `Orçamento_${num}_${veiculoClean || 'Veiculo'}.pdf`;
+  };
+
   // Helper to extract base64 binary and trigger native sharing
   const handleNativeShare = async () => {
     setSharing(true);
     setShareSuccess(null);
+    const pdfFilename = getPDFFilename(os);
     try {
       let file: File;
       if (pdfBlob) {
-        file = new File([pdfBlob], `Relatorio_Protocolo_${os.numeroOS}.pdf`, { type: 'application/pdf' });
+        file = new File([pdfBlob], pdfFilename, { type: 'application/pdf' });
       } else {
         // Convert dataURI to a File object
         const res = await fetch(pdfDataUri);
         const blob = await res.blob();
-        file = new File([blob], `Relatorio_Protocolo_${os.numeroOS}.pdf`, { type: 'application/pdf' });
+        file = new File([blob], pdfFilename, { type: 'application/pdf' });
       }
       
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -174,7 +194,7 @@ export default function PDFPreviewModal({ os, pdfDataUri, onClose }: PDFPreviewM
       const targetUrl = blobUrl || pdfDataUri;
       const link = document.createElement('a');
       link.href = targetUrl;
-      link.download = `Relatorio_Protocolo_${os.numeroOS}.pdf`;
+      link.download = getPDFFilename(os);
       document.body.appendChild(link);
       link.click();
       

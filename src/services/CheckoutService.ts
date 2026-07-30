@@ -3,14 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { NotificationService } from './NotificationService';
-
 export interface CheckoutConfig {
   monthlyCheckoutUrl?: string;
   annualCheckoutUrl?: string;
 }
 
 type CheckoutListener = (plan: 'mensal' | 'anual') => void;
+
+const WHATSAPP_NUMBER = '5573999868104';
 
 class CheckoutServiceManager {
   private listeners: Set<CheckoutListener> = new Set();
@@ -30,57 +30,52 @@ class CheckoutServiceManager {
   }
 
   /**
-   * Configura URLs de checkout da Cakto futuramente
+   * Configura URLs de checkout
    */
   setConfig(newConfig: CheckoutConfig) {
     this.config = { ...this.config, ...newConfig };
   }
 
   /**
-   * Abre o checkout do Plano Mensal (R$ 50/mês)
+   * Abre o WhatsApp com mensagem do Plano Mensal (R$ 50/mês)
    */
-  openMonthlyCheckout(): void {
-    console.log('[CheckoutService] Iniciando checkout do Plano Mensal');
-    if (this.config.monthlyCheckoutUrl) {
-      window.open(this.config.monthlyCheckoutUrl, '_blank');
-      return;
+  openMonthlyCheckout(userEmail?: string): void {
+    console.log('[CheckoutService] Redirecionando para WhatsApp para contratar Plano Mensal');
+    let message = 'Olá! Tenho interesse em adquirir o acesso ao sistema DG Gestão Automotiva no Plano Mensal (R$ 50,00/mês).';
+    if (userEmail) {
+      message += ` Meu e-mail de cadastro é: ${userEmail}.`;
     }
-    
-    // Notifica os componentes UI registrados para abrir o modal de aviso
+    const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
+
     this.notifyListeners('mensal');
   }
 
   /**
-   * Abre o checkout do Plano Anual (R$ 550/ano PIX)
+   * Abre o WhatsApp com mensagem do Plano Anual (R$ 550/ano PIX)
    */
-  openAnnualCheckout(): void {
-    console.log('[CheckoutService] Iniciando checkout do Plano Anual');
-    if (this.config.annualCheckoutUrl) {
-      window.open(this.config.annualCheckoutUrl, '_blank');
-      return;
+  openAnnualCheckout(userEmail?: string): void {
+    console.log('[CheckoutService] Redirecionando para WhatsApp para contratar Plano Anual');
+    let message = 'Olá! Tenho interesse em adquirir o acesso ao sistema DG Gestão Automotiva no Plano Anual (R$ 550,00/ano no PIX - 1 mês grátis).';
+    if (userEmail) {
+      message += ` Meu e-mail de cadastro é: ${userEmail}.`;
     }
-    
-    // Notifica os componentes UI registrados para abrir o modal de aviso
+    const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
+
     this.notifyListeners('anual');
   }
 
   private notifyListeners(plan: 'mensal' | 'anual') {
-    if (this.listeners.size === 0) {
-      NotificationService.notify(
-        'info',
-        'Pagamento via Cakto em Breve',
-        'O sistema de pagamentos estará disponível em breve. Sua licença foi reservada com sucesso!'
-      );
-    } else {
-      this.listeners.forEach((listener) => {
-        try {
-          listener(plan);
-        } catch (e) {
-          console.error('[CheckoutService] Erro no ouvinte de checkout:', e);
-        }
-      });
-    }
+    this.listeners.forEach((listener) => {
+      try {
+        listener(plan);
+      } catch (e) {
+        console.error('[CheckoutService] Erro no ouvinte de checkout:', e);
+      }
+    });
   }
 }
 
 export const CheckoutService = new CheckoutServiceManager();
+

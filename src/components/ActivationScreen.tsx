@@ -119,10 +119,10 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({
             </div>
 
             <button
-              onClick={() => CheckoutService.openMonthlyCheckout()}
-              className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3.5 px-4 rounded-2xl text-xs tracking-wider uppercase border border-slate-700 transition cursor-pointer"
+              onClick={() => CheckoutService.openMonthlyCheckout(userEmail)}
+              className="w-full bg-[#003366] hover:bg-[#002244] text-white font-bold py-3.5 px-4 rounded-2xl text-xs tracking-wider uppercase border border-sky-400/30 transition cursor-pointer"
             >
-              Assinar
+              Assinar Plano Mensal
             </button>
           </div>
 
@@ -151,10 +151,10 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({
             </div>
 
             <button
-              onClick={() => CheckoutService.openAnnualCheckout()}
+              onClick={() => CheckoutService.openAnnualCheckout(userEmail)}
               className="w-full bg-[#003366] hover:bg-[#002244] text-white font-black py-3.5 px-4 rounded-2xl text-xs tracking-wider uppercase border border-sky-400/30 transition cursor-pointer"
             >
-              Assinar
+              Assinar Plano Anual
             </button>
           </div>
 

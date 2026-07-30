@@ -222,7 +222,7 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
           <div className="space-y-1.5">
             <label className="text-[10px] font-black text-slate-500 tracking-wider flex items-center gap-1.5 uppercase">
               <Clipboard className="w-3.5 h-3.5 text-[#003366]" />
-              Nº do Protocolo <span className="text-[#FF6600] font-bold">*</span>
+              Nº do Orçamento <span className="text-[#FF6600] font-bold">*</span>
             </label>
             <input
               id="input-numero-os"

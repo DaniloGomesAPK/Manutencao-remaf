@@ -218,11 +218,24 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
   let sloganHeight = 0;
   let sloganLines: string[] = [];
   if (isCompanyRegistered && company) {
-    const displaySlogan = (company.slogan || company.site || 'EXCELÊNCIA EM PRESTAÇÃO DE SERVIÇO').toUpperCase();
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    sloganLines = doc.splitTextToSize(displaySlogan, 120).slice(0, 2); // Limit to maximum 2 lines
-    sloganHeight = sloganLines.length * 3.5;
+    const rawSlogan = (company.slogan || '').trim();
+    const sloganLower = rawSlogan.toLowerCase();
+    
+    // Regra de validação: Omitir se vazio, nulo, indefinido ou se corresponder ao exemplo
+    const isExampleSlogan =
+      !rawSlogan ||
+      sloganLower === 'ex: excelência em prestação de serviço' ||
+      sloganLower === 'excelência em prestação de serviço' ||
+      sloganLower === 'ex: excelencia em prestacao de servico' ||
+      sloganLower === 'excelencia em prestacao de servico';
+
+    if (!isExampleSlogan) {
+      const displaySlogan = rawSlogan.toUpperCase();
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      sloganLines = doc.splitTextToSize(displaySlogan, 120).slice(0, 2); // Limit to maximum 2 lines
+      sloganHeight = sloganLines.length * 3.5;
+    }
   }
 
   // Calculate required ending Y of the logo block
@@ -270,12 +283,14 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
     drawY += 1.5; // spacing
 
     // Draw Slogan
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(accentColor.r, accentColor.g, accentColor.b);
-    for (const line of sloganLines) {
-      doc.text(line, 15, drawY);
-      drawY += 3.5;
+    if (sloganLines.length > 0) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(accentColor.r, accentColor.g, accentColor.b);
+      for (const line of sloganLines) {
+        doc.text(line, 15, drawY);
+        drawY += 3.5;
+      }
     }
   }
 
@@ -450,7 +465,7 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
 
   // --- FOTOS ANTES (Gallery grid) ---
   if (os.fotosAntes && os.fotosAntes.length > 0) {
-    drawSectionHeader('Fotos Antes da Manutenção');
+    drawSectionHeader('Fotos Antes');
     
     const photoWidth = 55; // fits 3 photos across easily (3x55 = 165mm, fits 180mm content)
     const photoHeight = 42;
@@ -683,7 +698,7 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
 
   // --- FOTOS DEPOIS (Gallery grid) ---
   if (os.fotosDepois && os.fotosDepois.length > 0) {
-    drawSectionHeader('Fotos Depois da Manutenção');
+    drawSectionHeader('Fotos Depois');
     
     const photoWidth = 55;
     const photoHeight = 42;
