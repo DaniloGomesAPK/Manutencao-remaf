@@ -1,6 +1,6 @@
 {
-  "name": "DG Gestão Automotiva",
-  "description": "DG Gestão Automotiva - Aplicativo PWA de Controle de Manutenção e Ordens de Serviço. Funciona 100% offline, instalável, com armazenamento local robusto via IndexedDB para fotos e relatórios.",
+  "name": "DG Gestão em Orçamentos",
+  "description": "DG Gestão em Orçamentos - Sistema inteligente para gestão de orçamentos, clientes, ordens de serviço, financeiro e controle empresarial. Funciona 100% offline e instalável.",
   "requestFramePermissions": [
     "camera"
   ],

@@ -2,49 +2,56 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --- FUNÇÕES DE VALIDAÇÃO ---
+    // --- FUNÇÕES DE VALIDAÇÃO DE SEGURANÇA E TRIAL ---
+    
+    // Verifica se o usuário está autenticado no Firebase Auth
     function usuarioAutenticado() {
       return request.auth != null;
     }
 
-    // Verifica se o e-mail do usuário está cadastrado na coleção de autorizados
-    function emailAutorizado() {
-      return usuarioAutenticado() &&
-             exists(/databases/$(database)/documents/emailsAutorizados/$(request.auth.token.email));
+    // Verifica se o período de Trial de 7 dias ainda está válido com base no tempo do servidor (request.time)
+    function trialAtivo(criadoEm) {
+      return criadoEm is timestamp && request.time < criadoEm + duration.value(7, 'd');
     }
 
-    // --- REGRAS POR COLEÇÃO ---
-
-    // Coleção de e-mails autorizados (Permite apenas a checagem pelo sistema)
-    match /emailsAutorizados/{email} {
-      allow read: if usuarioAutenticado();
-      allow write: if false; 
-    }
-
-    // Perfil de usuário (O UID do documento deve ser igual ao UID autenticado)
-    match /users/{uid} {
-      allow read, write: if request.auth.uid == uid && emailAutorizado();
-    }
-
-    // Empresas (Ajustado para aceitar se o ID contiver o UID do usuário)
+    // --- REGRAS DA COLEÇÃO EMPRESAS ---
     match /empresas/{empresaId} {
-      allow read, write: if (request.auth.uid == empresaId || empresaId == "emp_" + request.auth.uid) && emailAutorizado();
+      
+      // 1. Criação do Trial:
+      // Permite criar apenas se o status for exatamente 'trial' e 'criadoEm' for rigorosamente o serverTimestamp()
+      allow create: if request.resource.data.status == 'trial'
+                    && request.resource.data.criadoEm == request.time;
 
-      // Subcoleção de licenças da empresa (Apenas leitura)
-      match /licenca/{document=**} {
-        allow read: if (request.auth.uid == empresaId || empresaId == "emp_" + request.auth.uid) && emailAutorizado();
-        allow create, update, delete: if false;
-      }
+      // 2. Leitura (get, list) e Atualização (update):
+      // Permite ler e atualizar apenas se a requisição ocorrer dentro da janela de 7 dias a partir do criadoEm
+      allow read, update: if trialAtivo(resource.data.criadoEm);
 
-      // Outras subcoleções da empresa (Cadastros gerais do sistema, como company_profile)
+      // 3. Exclusão (delete):
+      // Bloqueada para proteger os registros contra remoção não autorizada
+      allow delete: if false;
+
+      // Subcoleções internas da empresa (ex: clientes, ordensServico, etc.)
       match /{subcollection}/{document=**} {
-        allow read, write: if (request.auth.uid == empresaId || empresaId == "emp_" + request.auth.uid) && emailAutorizado();
+        allow read, create, update: if trialAtivo(get(/databases/$(database)/documents/empresas/$(empresaId)).data.criadoEm);
+        allow delete: if false;
       }
     }
 
-    // Coleção Global de Clientes (Adicionada para permitir que usuários autorizados mexam nos clientes)
+    // Coleção de e-mails autorizados (leitura e cadastros de trial)
+    match /emailsAutorizados/{email} {
+      allow read: if true;
+      allow create, update: if request.resource.data.status == 'trial' || request.auth != null;
+      allow delete: if false;
+    }
+
+    // Perfil de Usuário
+    match /users/{uid} {
+      allow read, write: if true;
+    }
+
+    // Coleção Global de Clientes
     match /clientes/{clienteId} {
-      allow read, write: if emailAutorizado();
+      allow read, write: if true;
     }
   }
 }

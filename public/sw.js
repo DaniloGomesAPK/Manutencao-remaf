@@ -1,41 +1,28 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * DG Gestão Automotiva - Service Worker Enterprise Offline-First Architecture
+ * DG Gestão em Orçamentos - Service Worker Enterprise Offline-First Architecture
  */
 
-const CACHE_NAME = 'dg-gestao-pwa-v5';
+const CACHE_NAME = 'dg-gestao-pwa-v7';
 
 const INITIAL_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
   '/favicon.ico',
-  '/favicon-16x16.png',
-  '/favicon-32x32.png',
-  '/favicon-48x48.png',
-  '/apple-touch-icon.png',
-  '/android-launcher-192.png',
-  '/android-launcher-512.png',
-  '/android-launcher-icon.png',
   '/splash.png',
-  '/icons/apple-icon-180.png',
-  '/icons/manifest-icon-192.maskable.png',
-  '/icons/manifest-icon-512.maskable.png',
-  '/icons/icon-72.png',
-  '/icons/icon-96.png',
-  '/icons/icon-128.png',
-  '/icons/icon-144.png',
-  '/icons/icon-152.png',
-  '/icons/icon-167.png',
-  '/icons/icon-180.png',
-  '/icons/icon-192.png',
-  '/icons/icon-256.png',
-  '/icons/icon-384.png',
-  '/icons/icon-512.png',
-  '/icons/maskable-icon-192.png',
-  '/icons/maskable-icon-512.png',
-  '/icons/maskable-icon.png'
+  '/icon/icon_16x16.png',
+  '/icon/icon_20x20.png',
+  '/icon/icon_29x29.png',
+  '/icon/icon_32x32.png',
+  '/icon/icon_40x40.png',
+  '/icon/icon_64x64.png',
+  '/icon/icon_76x76.png',
+  '/icon/icon_128x128.png',
+  '/icon/icon_256x256.png',
+  '/icon/icon_512x512.png',
+  '/icon/icon_1024x1024.png'
 ];
 
 // 1. Install event: pre-caches the main HTML shell and icons safely

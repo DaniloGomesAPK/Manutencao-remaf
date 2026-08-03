@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "DG Gestão Automotiva",
-  "short_name": "DG Gestão",
-  "description": "DG Gestão Automotiva - Sistema completo de Orçamentos, Ordens de Serviço, Precificação e Gestão de Equipamentos.",
+  "name": "DG Orçamentos",
+  "short_name": "DG Orçamentos",
+  "description": "Plataforma Profissional para Gestão de Orçamentos, Precificação de Serviços e Prontuário Inteligente.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -16,118 +16,70 @@
   "categories": ["business", "utilities", "productivity"],
   "icons": [
     {
-      "src": "/icons/manifest-icon-192.maskable.png",
+      "src": "/icon/icon_16x16.png",
       "type": "image/png",
-      "sizes": "192x192",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/icons/manifest-icon-512.maskable.png",
-      "type": "image/png",
-      "sizes": "512x512",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/icons/icon-192.png",
-      "type": "image/png",
-      "sizes": "192x192",
+      "sizes": "16x16",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-512.png",
+      "src": "/icon/icon_20x20.png",
       "type": "image/png",
-      "sizes": "512x512",
+      "sizes": "20x20",
       "purpose": "any"
     },
     {
-      "src": "/icons/apple-icon-180.png",
+      "src": "/icon/icon_29x29.png",
       "type": "image/png",
-      "sizes": "180x180",
+      "sizes": "29x29",
       "purpose": "any"
     },
     {
-      "src": "/icons/maskable-icon-192.png",
+      "src": "/icon/icon_32x32.png",
       "type": "image/png",
-      "sizes": "192x192",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/icons/maskable-icon-512.png",
-      "type": "image/png",
-      "sizes": "512x512",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/android-launcher-192.png",
-      "type": "image/png",
-      "sizes": "192x192",
+      "sizes": "32x32",
       "purpose": "any"
     },
     {
-      "src": "/android-launcher-512.png",
+      "src": "/icon/icon_40x40.png",
       "type": "image/png",
-      "sizes": "512x512",
+      "sizes": "40x40",
       "purpose": "any"
     },
     {
-      "src": "/apple-touch-icon.png",
+      "src": "/icon/icon_64x64.png",
       "type": "image/png",
-      "sizes": "180x180",
+      "sizes": "64x64",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-72.png",
+      "src": "/icon/icon_76x76.png",
       "type": "image/png",
-      "sizes": "72x72",
+      "sizes": "76x76",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-96.png",
-      "type": "image/png",
-      "sizes": "96x96",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-128.png",
+      "src": "/icon/icon_128x128.png",
       "type": "image/png",
       "sizes": "128x128",
-      "purpose": "any"
+      "purpose": "any maskable"
     },
     {
-      "src": "/icons/icon-144.png",
-      "type": "image/png",
-      "sizes": "144x144",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-152.png",
-      "type": "image/png",
-      "sizes": "152x152",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-167.png",
-      "type": "image/png",
-      "sizes": "167x167",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-180.png",
-      "type": "image/png",
-      "sizes": "180x180",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-256.png",
+      "src": "/icon/icon_256x256.png",
       "type": "image/png",
       "sizes": "256x256",
-      "purpose": "any"
+      "purpose": "any maskable"
     },
     {
-      "src": "/icons/icon-384.png",
+      "src": "/icon/icon_512x512.png",
       "type": "image/png",
-      "sizes": "384x384",
-      "purpose": "any"
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon/icon_1024x1024.png",
+      "type": "image/png",
+      "sizes": "1024x1024",
+      "purpose": "any maskable"
     }
   ]
 }
