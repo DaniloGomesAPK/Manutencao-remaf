@@ -18,7 +18,7 @@ let notificationsList: SystemNotification[] = [
   {
     id: 'notif_welcome',
     type: 'success',
-    title: 'Bem-vindo ao DG Gestão Automotiva',
+    title: 'Bem-vindo ao DG Gestão em Orçamentos',
     message: 'Seu ambiente de trabalho foi inicializado com sucesso e o banco de dados offline local está ativo.',
     timestamp: new Date().toISOString(),
     read: false

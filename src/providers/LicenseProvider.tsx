@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useContext, ReactNode } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { LicenseContext, LicenseContextType } from '../contexts/LicenseContext';
 import { License, LicencaAtual, EmailAutorizado, StatusLicenca } from '../models/License';
@@ -96,7 +96,64 @@ export const LicenseProvider: React.FC<LicenseProviderProps> = ({ children }) =>
             }
           }
         } else {
-          // Documento não existe em emailsAutorizados
+          // Documento não existe em emailsAutorizados: Verificar se é uma Empresa Trial em empresas/{empresaId}
+          const empresaId = auth?.currentUser?.empresaId || localStorage.getItem('empresaId') || `emp_${auth?.currentUser?.id}`;
+          
+          if (empresaId) {
+            try {
+              const empRef = doc(db, 'empresas', empresaId);
+              const empSnap = await getDoc(empRef);
+
+              if (empSnap.exists()) {
+                const empData = empSnap.data();
+                const licTrial: LicencaAtual = {
+                  email: userEmail,
+                  empresaId: empresaId,
+                  status: (empData.status as StatusLicenca) || 'trial',
+                  plano: 'Trial 7 Dias',
+                  validade: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                  ativo: true,
+                  bloqueado: false,
+                  trialInicio: empData.criadoEm?.toDate?.()?.toISOString() || new Date().toISOString(),
+                  trialFim: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                };
+                const mappedTrial = LicenseService.mapToLicenseObject(licTrial);
+
+                setLicencaAtual(licTrial);
+                setLicense(mappedTrial);
+                setIsValid(true);
+                setIsLoadingLicense(false);
+                return;
+              }
+            } catch (err: any) {
+              console.warn('[LicenseProvider] Leitura de empresa trial falhou:', err);
+              if (
+                err?.code === 'permission-denied' ||
+                err?.message?.toLowerCase().includes('permission-denied') ||
+                err?.message?.toLowerCase().includes('insufficient permissions') ||
+                err?.message?.toLowerCase().includes('permissão')
+              ) {
+                // Bloqueio de 7 dias acionado pelas Security Rules do Firebase!
+                const licExpirada: LicencaAtual = {
+                  email: userEmail,
+                  empresaId: empresaId,
+                  status: 'expired',
+                  plano: null,
+                  validade: new Date().toISOString(),
+                  ativo: false,
+                  bloqueado: true,
+                  trialInicio: null,
+                  trialFim: null,
+                };
+                setLicencaAtual(licExpirada);
+                setLicense(LicenseService.mapToLicenseObject(licExpirada));
+                setIsValid(false);
+                setIsLoadingLicense(false);
+                return;
+              }
+            }
+          }
+
           console.warn(`[LicenseProvider] Documento emailsAutorizados/${userEmail} não existe.`);
           setLicense(null);
           setLicencaAtual(null);
@@ -266,7 +323,7 @@ export const LicenseProvider: React.FC<LicenseProviderProps> = ({ children }) =>
       NotificationService.notify(
         'success',
         'Teste Gratuito Ativado',
-        'Seu período de teste de 3 dias foi ativado!'
+        'Seu período de teste de 7 dias foi ativado!'
       );
       return mapped;
     } finally {

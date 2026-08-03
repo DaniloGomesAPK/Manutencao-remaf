@@ -51,8 +51,8 @@ export const EmpresaService = {
 
     const defaultCompany: Empresa = {
       id: empresaId,
-      nomeFantasia: 'dG Gestão Automotiva',
-      razaoSocial: 'dG Gestão Automotiva LTDA',
+      nomeFantasia: 'DG Gestão em Orçamentos',
+      razaoSocial: 'DG Gestão em Orçamentos LTDA',
       cnpj: '00.000.000/0001-00',
       inscricaoEstadual: 'Isento',
       endereco: 'Rua Principal',

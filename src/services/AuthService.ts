@@ -51,30 +51,52 @@ export const AuthService = {
       }
     }
 
-    // 2. Consultar o Firestore em emailsAutorizados/{email} e permitir o acesso apenas se o documento existir
+    // 2. Consultar o Firestore em emailsAutorizados/{email} ou empresas/{empresaId} para suporte a Trial
     const email = fbUser.email?.trim().toLowerCase();
-    if (!email) {
-      throw new Error('E-mail não encontrado no perfil do usuário.');
-    }
-
-    const emailDocRef = doc(db, 'emailsAutorizados', email);
-    let emailSnap;
-    try {
-      emailSnap = await getDoc(emailDocRef);
-    } catch (e: any) {
-      console.warn('[AuthService] Erro ao consultar emailsAutorizados no Firestore:', e);
-      throw new Error('Erro ao verificar autorização do e-mail no Firestore. Verifique suas permissões ou conexão.');
-    }
-
-    if (!emailSnap || !emailSnap.exists()) {
-      LogService.logError('Auth', 'AuthService', `Acesso negado: O e-mail (${email}) não está na lista de e-mails autorizados.`);
-      throw new Error(`Acesso negado: O e-mail (${email}) não está na lista de e-mails autorizados.`);
-    }
-
-    const emailData = emailSnap.data();
     const uid = fbUser.uid;
+    let empresaId = '';
+    let statusConta: Usuario['statusConta'] = 'active';
+
+    if (email) {
+      const emailDocRef = doc(db, 'emailsAutorizados', email);
+      try {
+        const emailSnap = await getDoc(emailDocRef);
+        if (emailSnap.exists()) {
+          const emailData = emailSnap.data();
+          empresaId = emailData.empresaId || '';
+          statusConta = (emailData.status as Usuario['statusConta']) || 'active';
+        }
+      } catch (e: any) {
+        console.warn('[AuthService] Erro ao consultar emailsAutorizados no Firestore:', e);
+      }
+    }
+
+    // Se não encontrou em emailsAutorizados, verifica a coleção empresas/{empresaId} (Empresa Trial)
+    if (!empresaId) {
+      const storedEmpresaId = localStorage.getItem('empresaId') || `emp_${uid}`;
+      const empresaDocRef = doc(db, 'empresas', storedEmpresaId);
+
+      try {
+        const empresaSnap = await getDoc(empresaDocRef);
+        if (empresaSnap.exists()) {
+          const empData = empresaSnap.data();
+          empresaId = storedEmpresaId;
+          statusConta = empData.status === 'trial' ? 'active' : (empData.status || 'active');
+        }
+      } catch (e: any) {
+        console.warn('[AuthService] Leitura de empresas capturada:', e);
+        if (
+          e?.code === 'permission-denied' ||
+          e?.message?.toLowerCase().includes('permission-denied') ||
+          e?.message?.toLowerCase().includes('insufficient permissions') ||
+          e?.message?.toLowerCase().includes('permissão')
+        ) {
+          throw new Error('TRIAL_EXPIRADO');
+        }
+      }
+    }
+
     const userDocRef = doc(db, 'users', uid);
-    
     let userSnap;
     try {
       userSnap = await getDoc(userDocRef);
@@ -82,8 +104,6 @@ export const AuthService = {
       console.warn('[AuthService] Falha ao consultar users/{uid} no Firestore:', e);
     }
 
-    let empresaId = emailData?.empresaId || '';
-    let statusConta: Usuario['statusConta'] = (emailData?.status as Usuario['statusConta']) || 'active';
     let dataCadastro = new Date().toISOString();
     let nomeExistente = '';
 
@@ -108,10 +128,6 @@ export const AuthService = {
     if (!empresaId) {
       const cleanUid = uid.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().substring(0, 20);
       empresaId = `emp_${cleanUid}`;
-      // Atualiza no documento de autorização para manter consistência
-      try {
-        await setDoc(emailDocRef, { empresaId }, { merge: true });
-      } catch (_) {}
     }
 
     const finalNome = nomeCompleto || fbUser.displayName || nomeExistente || fbUser.email?.split('@')[0] || 'Usuário';
@@ -227,7 +243,7 @@ export const AuthService = {
     const cleanUid = uid.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().substring(0, 20);
     const empresaId = `emp_${cleanUid}`;
     const nomeDigitado = nomeCompleto?.trim() || fbUser.displayName || emailNormalizado.split('@')[0] || 'Usuário';
-    const oficinaDigitada = nomeEmpresa?.trim() || 'DG Gestão Automotiva';
+    const oficinaDigitada = nomeEmpresa?.trim() || 'DG Gestão em Orçamentos';
     const now = new Date().toISOString();
 
     // 2. Envia imediatamente o documento com a estrutura estrita de segurança para 'emailsAutorizados/{email}'

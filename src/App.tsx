@@ -36,6 +36,7 @@ import DashboardHome from './components/DashboardHome';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { PlansPage } from './components/PlansPage';
 import { TrialRegistrationScreen } from './components/TrialRegistrationScreen';
+import { TrialExpiradoScreen } from './components/TrialExpiradoScreen';
 import { ActivationScreen } from './components/ActivationScreen';
 import { TrialBanner } from './components/TrialBanner';
 import { ExpiredLicenseScreen } from './components/ExpiredLicenseScreen';
@@ -667,6 +668,12 @@ export default function App() {
             setAuthMode('login');
             setSaasView('login');
           }}
+          onAccessGranted={() => {
+            window.location.reload();
+          }}
+          onTrialExpired={() => {
+            setSaasView('plans');
+          }}
         />
       );
     }
@@ -688,7 +695,7 @@ export default function App() {
           <div className="hidden md:block md:col-span-7 relative bg-[#001f3f] overflow-hidden group">
             <img 
               src={officialAppBanner} 
-              alt="DG Gestão Automotiva - Orce Rápido. Venda Melhor." 
+              alt="DG Orçamentos - Orçamentos inteligentes. Gestão completa." 
               className="w-full h-full object-cover select-none transition duration-700 group-hover:scale-101"
               referrerPolicy="no-referrer"
             />
@@ -696,9 +703,9 @@ export default function App() {
             <div className="absolute inset-0 bg-gradient-to-t from-[#001f3f]/90 via-transparent to-transparent pointer-events-none" />
             <div className="absolute bottom-8 left-8 right-8 text-left text-white space-y-2 pointer-events-none">
               <span className="px-3 py-1 bg-[#FF6600] text-[10px] uppercase font-black tracking-widest rounded-full">Oficial SaaS</span>
-              <h3 className="text-xl font-extrabold tracking-tight">ORÇAMENTO DIGITAL INTELIGENTE</h3>
+              <h3 className="text-xl font-extrabold tracking-tight">ORÇAMENTOS INTELIGENTES</h3>
               <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                Transforme as ordens de serviço da sua oficina em vendas de forma instantânea e totalmente profissional.
+                Plataforma Profissional para Gestão de Orçamentos, Precificação de Serviços e Prontuário Inteligente.
               </p>
             </div>
           </div>
@@ -712,7 +719,7 @@ export default function App() {
               <div className="w-full max-w-[280px] mx-auto aspect-[16/9] rounded-2xl overflow-hidden border border-slate-200/80 shadow-md mb-3">
                 <img 
                   src={officialAppBanner} 
-                  alt="DG Gestão Automotiva" 
+                  alt="DG Orçamentos" 
                   className="w-full h-full object-cover select-none"
                   referrerPolicy="no-referrer"
                 />
@@ -720,10 +727,10 @@ export default function App() {
 
               <div className="inline-flex items-center gap-1.5 justify-center">
                 <span className="text-[#003366] font-black text-3xl tracking-tighter">DG</span>
-                <span className="text-[#FF6600] font-black text-3xl tracking-tighter">Gestão Automotiva</span>
+                <span className="text-[#FF6600] font-black text-3xl tracking-tighter">Orçamentos</span>
               </div>
               <p className="text-xs text-slate-500 leading-relaxed max-w-xs mx-auto">
-                Acesse sua plataforma de gestão. Gerencie seus atendimentos técnicos e ordens de serviço de forma inteligente.
+                Plataforma Profissional para Gestão de Orçamentos, Precificação de Serviços e Prontuário Inteligente.
               </p>
             </div>
 
@@ -828,7 +835,7 @@ export default function App() {
                     <div className="flex-grow border-t border-slate-200"></div>
                   </div>
 
-                  {/* Tabs para Entrar vs Criar Conta */}
+                  {/* Tabs para Entrar vs Começar Teste Gratuito */}
                   <div className="flex bg-slate-100 p-1 rounded-xl">
                     <button
                       type="button"
@@ -850,7 +857,7 @@ export default function App() {
                           : 'text-slate-500 hover:text-slate-800'
                       }`}
                     >
-                      Criar Conta
+                      Começar Teste Gratuito
                     </button>
                   </div>
 
@@ -941,13 +948,13 @@ export default function App() {
 
                         <div className="space-y-1.5">
                           <label className="text-[10px] font-black text-slate-500 tracking-wider uppercase">
-                            Nome da Empresa / Oficina <span className="text-[#FF6600] font-bold">*</span>
+                            Nome da Empresa <span className="text-[#FF6600] font-bold">*</span>
                           </label>
                           <input
                             id="login-company"
                             type="text"
                             required
-                            placeholder="Ex: Oficina Mecânica Silva"
+                            placeholder="Ex: Empresa Modelo LTDA"
                             value={loginNomeEmpresa}
                             onChange={(e) => setLoginNomeEmpresa(e.target.value)}
                             className="w-full bg-slate-50 text-slate-800 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200"
@@ -963,8 +970,8 @@ export default function App() {
                       className="w-full bg-[#003366] text-white rounded-xl py-3.5 px-6 font-bold tracking-[0.12em] text-[10px] uppercase shadow-lg shadow-[#003366]/10 hover:bg-[#002244] active:scale-[0.99] flex items-center justify-center gap-2 transition duration-200 cursor-pointer disabled:opacity-50"
                     >
                       {submittingLogin
-                        ? (authMode === 'register' ? 'Criando conta...' : 'Acessando...')
-                        : (authMode === 'register' ? 'Criar Nova Conta' : 'Acessar Conta')}
+                        ? (authMode === 'register' ? 'Iniciando teste gratuito...' : 'Acessando...')
+                        : (authMode === 'register' ? 'Começar Teste Gratuito' : 'Acessar Conta')}
                     </button>
                   </form>
                 </>
@@ -1036,7 +1043,7 @@ export default function App() {
     );
   }
 
-  // Expired, Blocked, Cancelled, Overdue ou Inválido -> ExpiredLicenseScreen
+  // Expired, Blocked, Cancelled, Overdue ou Inválido -> TrialExpiradoScreen / ExpiredLicenseScreen
   if (
     !licenseCtx?.isValid ||
     status === 'expired' || 
@@ -1047,7 +1054,16 @@ export default function App() {
     console.log('[AUTH]', uid);
     console.log('[EMPRESA]', empresaId);
     console.log('[LICENÇA]', `status: ${status}, isValid: ${licenseCtx?.isValid}, trialInicio: ${trialInicio}, trialFim: ${trialFim}`);
-    console.log('[ROTA]', `ExpiredLicenseScreen (Status: ${status}, isValid: ${licenseCtx?.isValid})`);
+    console.log('[ROTA]', `Tela de Bloqueio (Status: ${status}, isValid: ${licenseCtx?.isValid})`);
+
+    if (status === 'expired' || !licenseCtx?.isValid) {
+      return (
+        <TrialExpiradoScreen
+          onOpenPlans={() => setShowPlansInApp(true)}
+          onLogout={() => auth?.logout()}
+        />
+      );
+    }
 
     return (
       <ExpiredLicenseScreen

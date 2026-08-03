@@ -65,7 +65,7 @@ export const CheckoutModal: React.FC = () => {
         <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 mb-6 text-sm text-slate-600 space-y-2">
           <p className="font-medium text-slate-800">
             {isMensal
-              ? 'Acesso irrestrito a todos os módulos do DG Gestão Automotiva cobrado mensalmente.'
+              ? 'Acesso irrestrito a todos os módulos do DG Gestão em Orçamentos cobrado mensalmente.'
               : 'Assinatura anual via PIX com desconto especial (1 mês grátis inclusos).'}
           </p>
           <ul className="space-y-1.5 pt-2 text-xs text-slate-700">

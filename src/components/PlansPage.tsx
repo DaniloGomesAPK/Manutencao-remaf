@@ -24,7 +24,7 @@ export const PlansPage: React.FC<PlansPageProps> = ({ onBack }) => {
             dG
           </div>
           <span className="font-black text-lg tracking-tight text-white">
-            DG <span className="text-sky-400 font-normal">Gestão Automotiva</span>
+            DG <span className="text-sky-400 font-normal">Orçamentos</span>
           </span>
         </div>
 
@@ -48,11 +48,18 @@ export const PlansPage: React.FC<PlansPageProps> = ({ onBack }) => {
             <span>Planos Transparentes e Sem Surpresas</span>
           </div>
           <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight mb-4">
-            Escolha o plano ideal para sua oficina
+            Escolha o plano ideal para sua empresa
           </h1>
-          <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
+          <p className="text-slate-300 text-sm sm:text-base leading-relaxed mb-4">
             Acesso completo a todos os recursos do sistema. Sem limitações de funcionalidades.
           </p>
+
+          {/* Plano Gratuito Banner */}
+          <div className="bg-sky-950/40 border border-sky-500/30 rounded-2xl p-4 text-center max-w-xl mx-auto mt-2">
+            <p className="text-xs sm:text-sm font-bold text-sky-300">
+              Experimente gratuitamente por 7 dias. Sem compromisso. Sem necessidade de cartão.
+            </p>
+          </div>
         </div>
 
         {/* Pricing Cards Grid */}
@@ -180,7 +187,7 @@ export const PlansPage: React.FC<PlansPageProps> = ({ onBack }) => {
 
       {/* Footer */}
       <footer className="w-full border-t border-slate-900 px-6 py-6 text-center text-xs text-slate-500 z-10">
-        © {new Date().getFullYear()} DG Gestão Automotiva.
+        © {new Date().getFullYear()} DG Gestão em Orçamentos.
       </footer>
     </div>
   );

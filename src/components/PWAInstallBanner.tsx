@@ -96,7 +96,7 @@ export default function PWAInstallBanner() {
             <div>
               <h4 className="font-bold text-sm text-white">Aplicativo Instalado com Sucesso!</h4>
               <p className="text-xs text-slate-300">
-                Você já pode acessar o DG Gestão direto da sua tela inicial offline.
+                Você já pode acessar o DG Orçamentos direto da sua tela inicial offline.
               </p>
             </div>
           </div>
@@ -145,8 +145,8 @@ export default function PWAInstallBanner() {
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#003366] to-[#001f3f] border border-sky-400/30 p-1 shrink-0 flex items-center justify-center shadow-md">
                   <img
-                    src="/icons/icon-192.png"
-                    alt="DG Gestão Automotiva"
+                    src="/icon/icon_256x256.png"
+                    alt="DG Gestão em Orçamentos"
                     className="w-full h-full object-contain rounded-lg"
                     onError={(e) => {
                       // Fallback icon if image fails
@@ -158,7 +158,7 @@ export default function PWAInstallBanner() {
                 <div>
                   <div className="flex items-center gap-1.5">
                     <h4 className="font-black text-sm text-white tracking-tight">
-                      Instalar DG Gestão
+                      Instalar DG Orçamentos
                     </h4>
                     <span className="px-1.5 py-0.5 bg-[#FF6600] text-white text-[9px] font-bold uppercase rounded-md tracking-wider">
                       App

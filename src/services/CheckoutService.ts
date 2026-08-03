@@ -41,7 +41,7 @@ class CheckoutServiceManager {
    */
   openMonthlyCheckout(userEmail?: string): void {
     console.log('[CheckoutService] Redirecionando para WhatsApp para contratar Plano Mensal');
-    let message = 'Olá! Tenho interesse em adquirir o acesso ao sistema DG Gestão Automotiva no Plano Mensal (R$ 50,00/mês).';
+    let message = 'Olá! Tenho interesse em adquirir o acesso ao sistema DG Gestão em Orçamentos no Plano Mensal (R$ 50,00/mês).';
     if (userEmail) {
       message += ` Meu e-mail de cadastro é: ${userEmail}.`;
     }
@@ -56,7 +56,7 @@ class CheckoutServiceManager {
    */
   openAnnualCheckout(userEmail?: string): void {
     console.log('[CheckoutService] Redirecionando para WhatsApp para contratar Plano Anual');
-    let message = 'Olá! Tenho interesse em adquirir o acesso ao sistema DG Gestão Automotiva no Plano Anual (R$ 550,00/ano no PIX - 1 mês grátis).';
+    let message = 'Olá! Tenho interesse em adquirir o acesso ao sistema DG Gestão em Orçamentos no Plano Anual (R$ 550,00/ano no PIX - 1 mês grátis).';
     if (userEmail) {
       message += ` Meu e-mail de cadastro é: ${userEmail}.`;
     }

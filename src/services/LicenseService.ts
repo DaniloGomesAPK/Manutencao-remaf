@@ -153,7 +153,7 @@ export const LicenseService = {
   },
 
   /**
-   * Inicia o período de teste de 3 dias no documento emailsAutorizados/{email}.
+   * Inicia o período de teste de 7 dias no documento emailsAutorizados/{email}.
    * NUNCA reinicia nem recalcula o Trial se já foi iniciado anteriormente.
    */
   async iniciarTrial(email: string): Promise<LicencaAtual> {
@@ -168,11 +168,11 @@ export const LicenseService = {
 
     const now = new Date();
     const trialInicio = now.toISOString();
-    const trialFim = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    const trialFim = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
     return await this.saveAutorizacao(emailNorm, {
       status: 'trial',
-      plano: 'trial_3dias',
+      plano: 'trial_7dias',
       trialInicio,
       trialFim,
       validade: trialFim,

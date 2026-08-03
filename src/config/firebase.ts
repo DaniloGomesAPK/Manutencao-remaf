@@ -5,7 +5,7 @@ import { getAnalytics, isSupported } from 'firebase/analytics';
 
 const env = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : (process.env || {});
 
-// Configurações reais do Firebase dG Gestão Automotiva
+// Configurações reais do Firebase DG Gestão em Orçamentos
 const firebaseConfig = {
   apiKey: env.VITE_FIREBASE_API_KEY || 'AIzaSyDN92LsNMxpQ2CrHaaobzmgEpw2kE4_fL8',
   authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || 'dg-gestao-automotiva.firebaseapp.com',

@@ -217,7 +217,7 @@ export default function Configuracoes({ onBack }: ConfiguracoesProps) {
 
           <div className="text-[10px] text-slate-400 font-semibold leading-normal flex items-start gap-1.5">
             <HelpCircle className="w-4 h-4 text-slate-300 shrink-0 mt-0.5" />
-            Em conformidade com as diretrizes de segurança SaaS automotiva para resiliência offline completa.
+            Em conformidade com as diretrizes de segurança SaaS empresarial para resiliência offline completa.
           </div>
         </div>
 

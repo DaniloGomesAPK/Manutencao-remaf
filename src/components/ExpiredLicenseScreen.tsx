@@ -74,7 +74,7 @@ export const ExpiredLicenseScreen: React.FC<ExpiredLicenseScreenProps> = ({
             dG
           </div>
           <span className="font-black text-lg tracking-tight text-white">
-            DG <span className="text-sky-400 font-normal">Gestão Automotiva</span>
+            DG <span className="text-sky-400 font-normal">Gestão em Orçamentos</span>
           </span>
         </div>
 
@@ -124,7 +124,7 @@ export const ExpiredLicenseScreen: React.FC<ExpiredLicenseScreenProps> = ({
 
       {/* Footer */}
       <footer className="w-full border-t border-slate-900 px-6 py-6 text-center text-xs text-slate-500 z-10">
-        © {new Date().getFullYear()} DG Gestão Automotiva. Todos os direitos reservados.
+        © {new Date().getFullYear()} DG Gestão em Orçamentos. Todos os direitos reservados.
       </footer>
     </div>
   );

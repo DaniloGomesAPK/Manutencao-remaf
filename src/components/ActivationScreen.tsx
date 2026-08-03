@@ -43,7 +43,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({
             dG
           </div>
           <span className="font-black text-lg tracking-tight text-white">
-            DG <span className="text-sky-400 font-normal">Gestão Automotiva</span>
+            DG <span className="text-sky-400 font-normal">Orçamentos</span>
           </span>
         </div>
 
@@ -69,7 +69,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({
           Sua conta foi criada.
         </h1>
         <p className="text-slate-300 text-sm sm:text-base font-normal text-center max-w-xl mb-10 leading-relaxed">
-          Agora escolha como deseja utilizar o DG Gestão Automotiva.
+          Agora escolha como deseja utilizar o DG Orçamentos.
         </p>
 
         {/* 3 Options Grid (ETAPA 6) */}
@@ -85,7 +85,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({
                 Teste Gratuito
               </h3>
               <div className="inline-block bg-sky-950 text-sky-300 text-xs font-bold px-2.5 py-1 rounded-md mb-4 border border-sky-800/40">
-                3 dias de acesso total
+                7 dias de acesso total
               </div>
               <p className="text-xs text-slate-400 leading-relaxed mb-6">
                 Avalie todas as funcionalidades sem compromisso e sem necessidade de cartão de crédito.
@@ -163,7 +163,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({
 
       {/* Footer */}
       <footer className="w-full border-t border-slate-900 px-6 py-6 text-center text-xs text-slate-500 z-10">
-        © {new Date().getFullYear()} DG Gestão Automotiva.
+        © {new Date().getFullYear()} DG Gestão em Orçamentos.
       </footer>
     </div>
   );

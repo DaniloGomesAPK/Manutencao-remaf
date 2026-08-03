@@ -69,12 +69,12 @@ export async function runLicenseFlowTests() {
 
   // 2. Teste: trial válido -> Dashboard
   const now = new Date();
-  const trialFimFuturo = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString();
+  const trialFimFuturo = new Date(now.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString();
   const trialValidoLic: LicencaAtual = {
     email: 'test_trial_valid@empresa.com',
     empresaId: 'emp_test_trial_valid',
     status: 'trial',
-    plano: 'trial_3dias',
+    plano: 'trial_7dias',
     validade: trialFimFuturo,
     ativo: true,
     bloqueado: false,
@@ -100,13 +100,13 @@ export async function runLicenseFlowTests() {
     email: 'test_trial_exp@empresa.com',
     empresaId: 'emp_test_trial_exp',
     status: 'trial',
-    plano: 'trial_3dias',
+    plano: 'trial_7dias',
     validade: trialFimPassado,
     ativo: true,
     bloqueado: false,
-    inicio: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+    inicio: new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000).toISOString(),
     fim: trialFimPassado,
-    trialInicio: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+    trialInicio: new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000).toISOString(),
     trialFim: trialFimPassado,
     trialUtilizado: true,
     ultimaAtualizacao: trialFimPassado,

@@ -4,24 +4,30 @@
  */
 
 import React, { useState } from 'react';
-import { ArrowLeft, MessageSquare, Sparkles, User, Building2, Mail, Phone, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, MessageSquare, Sparkles, User, Building2, Mail, Phone, CheckCircle2, Loader2, ArrowRight } from 'lucide-react';
+import { TrialService } from '../services/TrialService';
 
 interface TrialRegistrationScreenProps {
   onBack: () => void;
   onOpenLogin?: () => void;
+  onAccessGranted?: (empresaId: string) => void;
+  onTrialExpired?: () => void;
 }
 
 export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = ({
   onBack,
-  onOpenLogin
+  onOpenLogin,
+  onAccessGranted,
+  onTrialExpired
 }) => {
   const [nomeResponsavel, setNomeResponsavel] = useState('');
   const [nomeOficina, setNomeOficina] = useState('');
   const [email, setEmail] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
+  const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
 
-  const handleAtivarTrialWhatsApp = (e: React.FormEvent) => {
+  const handleCadastrarTrialSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro('');
 
@@ -30,7 +36,7 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
       return;
     }
     if (!nomeOficina.trim()) {
-      setErro('Por favor, informe o Nome da Oficina.');
+      setErro('Por favor, informe o Nome da Empresa.');
       return;
     }
     if (!email.trim() || !email.includes('@')) {
@@ -42,14 +48,42 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
       return;
     }
 
-    const targetPhone = '5573999868104';
-    const mensagem = `Olá! Gostaria de ativar meus 3 dias grátis no DG Gestão Automotiva.
+    setCarregando(true);
 
-*Dados para Ativação:*
-• *Nome do Responsável:* ${nomeResponsavel.trim()}
-• *Nome da Oficina:* ${nomeOficina.trim()}
-• *E-mail:* ${email.trim().toLowerCase()}
-• *WhatsApp de Contato:* ${whatsapp.trim()}`;
+    try {
+      const { empresaId } = await TrialService.cadastrarEmpresaTrial({
+        nomeResponsavel: nomeResponsavel.trim(),
+        nomeEmpresa: nomeOficina.trim(),
+        email: email.trim().toLowerCase(),
+        whatsapp: whatsapp.trim()
+      });
+
+      if (onAccessGranted) {
+        onAccessGranted(empresaId);
+      } else {
+        window.location.reload();
+      }
+    } catch (err: any) {
+      console.error('[TrialRegistrationScreen] Erro no cadastro:', err);
+      if (err.message === 'TRIAL_EXPIRADO' && onTrialExpired) {
+        onTrialExpired();
+        return;
+      }
+      setErro(err.message || 'Erro ao realizar o cadastro. Tente novamente.');
+    } finally {
+      setCarregando(false);
+    }
+  };
+
+  const handleAtivarTrialWhatsApp = () => {
+    const targetPhone = '5573999868104';
+    const mensagem = `Olá! Gostaria de suporte para ativar meus 7 dias grátis no DG Orçamentos.
+
+*Dados:*
+• *Nome:* ${nomeResponsavel.trim() || 'Não informado'}
+• *Empresa:* ${nomeOficina.trim() || 'Não informada'}
+• *E-mail:* ${email.trim() || 'Não informado'}
+• *WhatsApp:* ${whatsapp.trim() || 'Não informado'}`;
 
     const url = `https://wa.me/${targetPhone}?text=${encodeURIComponent(mensagem)}`;
     window.open(url, '_blank');
@@ -77,7 +111,7 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
             dG
           </div>
           <span className="font-black text-base tracking-tight text-white hidden sm:inline">
-            DG <span className="text-sky-400 font-normal">Gestão Automotiva</span>
+            DG <span className="text-sky-400 font-normal">Orçamentos</span>
           </span>
         </div>
 
@@ -100,14 +134,14 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/30 text-emerald-400 text-xs font-bold mb-4">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>3 Dias Grátis • Sem Compromisso</span>
+            <span>7 Dias Grátis • Sem Compromisso</span>
           </div>
 
           <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight mb-2">
             Ativar Teste Gratuito
           </h2>
           <p className="text-xs sm:text-sm text-slate-400 leading-relaxed mb-6">
-            Preencha os dados abaixo para ativarmos seu período de testes de 3 dias no sistema.
+            Preencha os dados abaixo para ativarmos seu período de testes de 7 dias no sistema.
           </p>
 
           {erro && (
@@ -116,7 +150,7 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
             </div>
           )}
 
-          <form onSubmit={handleAtivarTrialWhatsApp} className="space-y-4">
+          <form onSubmit={handleCadastrarTrialSubmit} className="space-y-4">
             {/* Campo 1: Nome do Responsável */}
             <div>
               <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
@@ -135,10 +169,10 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
               </div>
             </div>
 
-            {/* Campo 2: Nome da Oficina */}
+            {/* Campo 2: Nome da Empresa */}
             <div>
               <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
-                Nome da Oficina *
+                Nome da Empresa *
               </label>
               <div className="relative">
                 <Building2 className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -147,7 +181,7 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
                   required
                   value={nomeOficina}
                   onChange={(e) => setNomeOficina(e.target.value)}
-                  placeholder="Ex: Auto Mecânica Silva"
+                  placeholder="Ex: Empresa Modelo LTDA"
                   className="w-full bg-slate-950 border border-slate-800 rounded-2xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition"
                 />
               </div>
@@ -165,7 +199,7 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Ex: contato@oficina.com"
+                  placeholder="Ex: contato@empresa.com"
                   className="w-full bg-slate-950 border border-slate-800 rounded-2xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition"
                 />
               </div>
@@ -189,15 +223,38 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
               </div>
             </div>
 
-            {/* Botão Final */}
+            {/* Botão de Ativação Automática Imediata */}
             <button
               type="submit"
-              className="w-full mt-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black py-4 px-6 rounded-2xl text-xs sm:text-sm tracking-wider uppercase shadow-xl shadow-emerald-600/20 active:scale-[0.99] transition flex items-center justify-center gap-2 cursor-pointer border border-emerald-400/30"
+              disabled={carregando}
+              className="w-full mt-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black py-4 px-6 rounded-2xl text-xs sm:text-sm tracking-wider uppercase shadow-xl shadow-emerald-600/20 active:scale-[0.99] transition flex items-center justify-center gap-2 cursor-pointer border border-emerald-400/30 disabled:opacity-60"
             >
-              <MessageSquare className="w-5 h-5 shrink-0" />
-              <span>Ativar meus 3 dias grátis via WhatsApp</span>
+              {carregando ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin text-white" />
+                  <span>Ativando Período de Testes...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-5 h-5 text-emerald-300" />
+                  <span>Ativar 7 Dias Grátis Agora</span>
+                  <ArrowRight className="w-4 h-4 text-emerald-300 ml-auto" />
+                </>
+              )}
             </button>
           </form>
+
+          {/* Link secundário opcional WhatsApp */}
+          <div className="mt-4 text-center">
+            <button
+              type="button"
+              onClick={handleAtivarTrialWhatsApp}
+              className="text-xs text-slate-400 hover:text-emerald-400 flex items-center justify-center gap-1.5 mx-auto transition cursor-pointer"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Dúvidas? Ativar via Suporte no WhatsApp</span>
+            </button>
+          </div>
 
           {/* Benefits list */}
           <div className="mt-6 pt-5 border-t border-slate-800/80 space-y-2">
@@ -215,7 +272,7 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
 
       {/* Footer */}
       <footer className="w-full border-t border-slate-900 px-6 py-6 text-center text-xs text-slate-500 z-10">
-        © {new Date().getFullYear()} DG Gestão Automotiva. Todos os direitos reservados.
+        © {new Date().getFullYear()} DG Gestão em Orçamentos. Todos os direitos reservados.
       </footer>
     </div>
   );

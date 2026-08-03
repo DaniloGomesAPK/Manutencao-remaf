@@ -76,7 +76,7 @@ export default function DashboardHome({
             Painel Geral
           </span>
           <h2 className="text-xl sm:text-2xl font-black tracking-tight leading-tight pt-1">
-            Gestão Integrada de Manutenção Automotiva
+            Gestão Integrada em Orçamentos
           </h2>
           <p className="text-xs text-slate-300 font-medium leading-relaxed">
             Bem-vindo ao centro de controle. Monitore seus atendimentos em tempo real, gerencie cadastros de clientes e automatize precificações de forma inteligente.

@@ -30,7 +30,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
             dG
           </div>
           <span className="font-black text-lg tracking-tight text-white">
-            DG <span className="text-sky-400 font-normal">Gestão Automotiva</span>
+            DG <span className="text-sky-400 font-normal">Orçamentos</span>
           </span>
         </div>
 
@@ -48,17 +48,17 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
         {/* Badge */}
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-sky-950/80 border border-sky-500/30 text-sky-300 text-xs font-bold mb-6 backdrop-blur-md">
           <Sparkles className="w-3.5 h-3.5 text-sky-400" />
-          <span>Gestão Eficiente & Inteligente para sua Oficina</span>
+          <span>Orçamentos inteligentes. Gestão completa.</span>
         </div>
 
         {/* Title */}
         <h1 className="text-4xl sm:text-6xl font-black text-white tracking-tight leading-[1.1] mb-6">
-          DG Gestão Automotiva
+          DG Orçamentos
         </h1>
 
         {/* Subtitle */}
         <p className="text-base sm:text-xl text-slate-300 max-w-3xl font-normal leading-relaxed mb-10">
-          A plataforma completa para gestão de oficinas mecânicas. Organize Ordens de Serviço, Clientes, Equipamentos, Financeiro e Relatórios Inteligentes em um único lugar.
+          Plataforma Profissional para Gestão de Orçamentos, Precificação de Serviços e Prontuário Inteligente.
         </p>
 
         {/* Action Buttons Grid (3 Botões das especificações) */}
@@ -77,7 +77,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                 Experimentar Gratuitamente
               </div>
               <div className="text-xs text-sky-200 mt-1">
-                Teste gratuitamente durante 3 dias.
+                Teste gratuitamente durante 7 dias.
               </div>
             </div>
           </button>
@@ -133,7 +133,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
 
       {/* Footer */}
       <footer className="w-full border-t border-slate-900 px-6 py-6 text-center text-xs text-slate-500 z-10">
-        © {new Date().getFullYear()} DG Gestão Automotiva. Todos os direitos reservados.
+        © {new Date().getFullYear()} DG Gestão em Orçamentos. Todos os direitos reservados.
       </footer>
     </div>
   );

@@ -265,7 +265,7 @@ export const generateProntuarioPDF = async (
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
     doc.setTextColor(255, 255, 255);
-    const headerTitle = company?.nomeFantasia ? `${company.nomeFantasia.toUpperCase()} - CENTRAL DE RELATÓRIOS` : 'DG GESTÃO AUTOMOTIVA';
+    const headerTitle = company?.nomeFantasia ? `${company.nomeFantasia.toUpperCase()} - CENTRAL DE RELATÓRIOS` : 'DG GESTÃO EM ORÇAMENTOS';
     doc.text(headerTitle, marginX, 7.5);
 
     doc.setFont('helvetica', 'normal');

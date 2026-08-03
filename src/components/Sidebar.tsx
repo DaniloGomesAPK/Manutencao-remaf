@@ -83,8 +83,8 @@ export default function Sidebar({
               DG
             </div>
             <div className="flex flex-col text-left leading-none">
-              <span className="text-white font-black text-sm tracking-tight">DG GESTÃO</span>
-              <span className="text-[9px] text-[#FF6600] font-black uppercase tracking-wider mt-0.5">SaaS Automotivo</span>
+              <span className="text-white font-black text-xs tracking-tight">DG GESTÃO</span>
+              <span className="text-[9px] text-[#FF6600] font-black uppercase tracking-wider mt-0.5">Em Orçamentos</span>
             </div>
           </div>
         ) : (
