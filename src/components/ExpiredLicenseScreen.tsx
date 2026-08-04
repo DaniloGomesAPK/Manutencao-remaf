@@ -68,7 +68,7 @@ export const ExpiredLicenseScreen: React.FC<ExpiredLicenseScreenProps> = ({
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-amber-600/10 rounded-full blur-[140px] pointer-events-none" />
 
       {/* Header */}
-      <header className="w-full max-w-7xl mx-auto px-6 py-6 flex items-center justify-between z-10">
+      <header className="w-full max-w-7xl mx-auto px-6 py-6 pt-safe-header flex items-center justify-between z-10">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-[#003366] text-white flex items-center justify-center font-black text-xl shadow-lg border border-sky-400/20">
             dG

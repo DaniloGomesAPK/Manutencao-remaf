@@ -24,7 +24,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
       <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-[#003366]/20 rounded-full blur-[140px] pointer-events-none" />
 
       {/* Header Bar */}
-      <header className="w-full max-w-7xl mx-auto px-6 py-6 flex items-center justify-between z-10">
+      <header className="w-full max-w-7xl mx-auto px-6 py-6 pt-safe-header flex items-center justify-between z-10">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-[#003366] text-white flex items-center justify-center font-black text-xl shadow-lg shadow-[#003366]/30 border border-sky-400/20">
             dG

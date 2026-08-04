@@ -76,7 +76,7 @@ export default function Sidebar({
     <div className="flex flex-col h-full bg-[#001f3f] text-slate-200 select-none">
       
       {/* Brand logo header */}
-      <div className={`p-5 flex items-center justify-between border-b border-slate-800/40 shrink-0 ${collapsed ? 'justify-center' : ''}`}>
+      <div className={`p-5 pt-safe-header flex items-center justify-between border-b border-slate-800/40 shrink-0 ${collapsed ? 'justify-center' : ''}`}>
         {!collapsed ? (
           <div className="flex items-center gap-2">
             <img 

@@ -96,7 +96,7 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
       <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-[#003366]/20 rounded-full blur-[140px] pointer-events-none" />
 
       {/* Header */}
-      <header className="w-full max-w-7xl mx-auto px-6 py-6 flex items-center justify-between z-10">
+      <header className="w-full max-w-7xl mx-auto px-6 py-6 pt-safe-header flex items-center justify-between z-10">
         <button
           type="button"
           onClick={onBack}
