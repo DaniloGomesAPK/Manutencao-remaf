@@ -111,7 +111,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({
                 Plano Mensal
               </h3>
               <div className="text-2xl font-black text-white mb-2">
-                R$ 50 <span className="text-xs font-normal text-slate-400">/mês</span>
+                R$ 30 <span className="text-xs font-normal text-slate-400">/mês</span>
               </div>
               <p className="text-xs text-slate-400 leading-relaxed mb-6">
                 Acesso completo sem fidelidade, cancele ou renove quando quiser.
@@ -129,7 +129,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({
           {/* Opção 3: Plano Anual (PIX) */}
           <div className="bg-slate-900 border-2 border-sky-500/80 rounded-3xl p-6 flex flex-col justify-between shadow-2xl relative">
             <div className="absolute top-0 right-0 bg-sky-500 text-slate-950 text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-bl-xl">
-              1 MÊS GRÁTIS
+              2 MESES GRÁTIS
             </div>
 
             <div>
@@ -140,10 +140,10 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({
                 Plano Anual
               </h3>
               <div className="text-2xl font-black text-white mb-1">
-                PIX R$ 550
+                PIX R$ 300
               </div>
               <div className="text-xs font-bold text-emerald-400 mb-4">
-                Ganhe 1 mês grátis
+                Ganhe 2 meses grátis (Economia R$ 60)
               </div>
               <p className="text-xs text-slate-400 leading-relaxed mb-6">
                 Economia máxima e prioridade total na plataforma.

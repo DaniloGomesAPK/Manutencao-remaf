@@ -56,7 +56,7 @@ export const CheckoutModal: React.FC = () => {
               Atendimento via WhatsApp
             </span>
             <h3 className="text-xl font-black text-slate-900 tracking-tight mt-1">
-              {isMensal ? 'Plano Mensal - R$ 50,00' : 'Plano Anual - R$ 550,00 (PIX)'}
+              {isMensal ? 'Plano Mensal - R$ 30,00' : 'Plano Anual - R$ 300,00 (PIX)'}
             </h3>
           </div>
         </div>
@@ -66,7 +66,7 @@ export const CheckoutModal: React.FC = () => {
           <p className="font-medium text-slate-800">
             {isMensal
               ? 'Acesso irrestrito a todos os módulos do DG Gestão em Orçamentos cobrado mensalmente.'
-              : 'Assinatura anual via PIX com desconto especial (1 mês grátis inclusos).'}
+              : 'Assinatura anual via PIX com desconto especial (2 meses grátis, economia de R$ 60,00 no ano).'}
           </p>
           <ul className="space-y-1.5 pt-2 text-xs text-slate-700">
             <li className="flex items-center gap-2">

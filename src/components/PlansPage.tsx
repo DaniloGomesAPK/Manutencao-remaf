@@ -72,7 +72,7 @@ export const PlansPage: React.FC<PlansPageProps> = ({ onBack }) => {
                 PLANO MENSAL
               </div>
               <div className="flex items-baseline gap-1 mb-6">
-                <span className="text-4xl font-black text-white">R$ 50,00</span>
+                <span className="text-4xl font-black text-white">R$ 30,00</span>
                 <span className="text-xs text-slate-400 font-medium">/ mês</span>
               </div>
 
@@ -136,11 +136,11 @@ export const PlansPage: React.FC<PlansPageProps> = ({ onBack }) => {
               </div>
 
               <div className="flex items-baseline gap-2 mb-2">
-                <span className="text-4xl font-black text-white">R$ 550,00</span>
+                <span className="text-4xl font-black text-white">R$ 300,00</span>
                 <span className="text-xs text-slate-400 font-medium">/ ano</span>
               </div>
               <p className="text-xs text-emerald-400 font-bold mb-6">
-                Ganhe 1 mês grátis.
+                Ganhe 2 meses grátis (Economia de R$ 60,00 no ano).
               </p>
 
               <div className="border-t border-slate-800 pt-6 mb-8">
@@ -154,7 +154,7 @@ export const PlansPage: React.FC<PlansPageProps> = ({ onBack }) => {
                   </li>
                   <li className="flex items-center gap-3 font-semibold text-emerald-300">
                     <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Economia de R$ 50,00 no ano</span>
+                    <span>Ganhe 2 meses grátis (Economia de R$ 60,00)</span>
                   </li>
                   <li className="flex items-center gap-3">
                     <Check className="w-4 h-4 text-sky-400 shrink-0" />
