@@ -107,9 +107,11 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
         </button>
 
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-[#003366] text-white flex items-center justify-center font-black text-lg shadow-lg shadow-[#003366]/30 border border-sky-400/20">
-            dG
-          </div>
+          <img 
+            src="/icon/icon_256x256.png" 
+            alt="DG Logo" 
+            className="w-9 h-9 rounded-xl object-contain shadow-lg border border-sky-400/20" 
+          />
           <span className="font-black text-base tracking-tight text-white hidden sm:inline">
             DG <span className="text-sky-400 font-normal">Orçamentos</span>
           </span>

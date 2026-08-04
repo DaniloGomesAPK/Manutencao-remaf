@@ -39,9 +39,11 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({
       {/* Header */}
       <header className="w-full max-w-7xl mx-auto px-6 py-6 flex items-center justify-between z-10">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#003366] text-white flex items-center justify-center font-black text-xl shadow-lg border border-sky-400/20">
-            dG
-          </div>
+          <img 
+            src="/icon/icon_256x256.png" 
+            alt="DG Logo" 
+            className="w-10 h-10 rounded-xl object-contain shadow-lg border border-sky-400/20" 
+          />
           <span className="font-black text-lg tracking-tight text-white">
             DG <span className="text-sky-400 font-normal">Orçamentos</span>
           </span>

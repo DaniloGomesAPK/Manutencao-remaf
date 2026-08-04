@@ -79,18 +79,26 @@ export default function Sidebar({
       <div className={`p-5 flex items-center justify-between border-b border-slate-800/40 shrink-0 ${collapsed ? 'justify-center' : ''}`}>
         {!collapsed ? (
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-[#FF6600] rounded-lg flex items-center justify-center font-black text-lg text-white shadow-sm shrink-0">
-              DG
-            </div>
+            <img 
+              src="/icon/icon_256x256.png" 
+              alt="DG Logo" 
+              className="w-8 h-8 rounded-lg object-contain shrink-0 shadow-sm"
+              onError={(e) => {
+                // Fallback if image fails to load
+                e.currentTarget.style.display = 'none';
+              }}
+            />
             <div className="flex flex-col text-left leading-none">
               <span className="text-white font-black text-xs tracking-tight">DG GESTÃO</span>
               <span className="text-[9px] text-[#FF6600] font-black uppercase tracking-wider mt-0.5">Em Orçamentos</span>
             </div>
           </div>
         ) : (
-          <div className="w-8 h-8 bg-[#FF6600] rounded-lg flex items-center justify-center font-black text-lg text-white shadow-sm shrink-0">
-            DG
-          </div>
+          <img 
+            src="/icon/icon_256x256.png" 
+            alt="DG Logo" 
+            className="w-8 h-8 rounded-lg object-contain shrink-0 shadow-sm"
+          />
         )}
 
         {/* Desktop collapse button */}
