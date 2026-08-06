@@ -50,6 +50,7 @@ export default function OSFormStep3({ initialData, onNext, onBack, onCancel }: O
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchSrvTerm, setSearchSrvTerm] = useState('');
   const [activeSmartService, setActiveSmartService] = useState<Servico | null>(initialData.rentabilidade ? { nome: initialData.rentabilidade.servicoExecutado, precoRecomendado: initialData.rentabilidade.precoRecomendado } as any : null);
+  const [activeLineId, setActiveLineId] = useState<string | null>(null);
 
   // New states for smart search and configured insertion
   const [isFullServiceListModalOpen, setIsFullServiceListModalOpen] = useState(false);
@@ -174,12 +175,17 @@ export default function OSFormStep3({ initialData, onNext, onBack, onCancel }: O
       valorUnitario: 0,
       valorTotal: 0
     };
-    setItems([...items, newItem]);
+    setItems(prev => [...prev, newItem]);
+    setActiveLineId(newItem.id);
   };
 
   const handleRemoveItem = (index: number) => {
     setOrcamentoFinalizado(false);
     setOrcamentoError('');
+    const removedItem = items[index];
+    if (removedItem && activeLineId === removedItem.id) {
+      setActiveLineId(null);
+    }
     const updated = items.filter((_, i) => i !== index);
     setItems(updated);
   };
@@ -274,18 +280,55 @@ export default function OSFormStep3({ initialData, onNext, onBack, onCancel }: O
       }
     }
 
-    if (items.length === 0) {
-      setItems(newItems);
-    } else {
-      if (window.confirm("Deseja substituir o orçamento atual pelos itens do serviço inteligente? (Caso contrário, serão adicionados ao final)")) {
-        setItems(newItems);
-      } else {
-        setItems([...items, ...newItems]);
+    // Fallback se o modo detalhado não gerar itens
+    if (newItems.length === 0) {
+      newItems.push({
+        id: 'item_srv_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now(),
+        quantidade: 1,
+        descricao: `${srv.nome}`,
+        valorUnitario: priceToUse,
+        valorTotal: priceToUse
+      });
+    }
+
+    // Identificar a linha alvo do orçamento
+    let targetIndex = activeLineId ? items.findIndex(it => it.id === activeLineId) : -1;
+
+    if (targetIndex === -1) {
+      // Se não houver linha ativa selecionada, procurar a primeira linha não preenchida
+      const emptyIndex = items.findIndex(it => !it.descricao.trim());
+      if (emptyIndex !== -1) {
+        targetIndex = emptyIndex;
       }
     }
 
+    let updatedItems = [...items];
+
+    if (targetIndex !== -1) {
+      // Preencher a linha alvo especificamente sem sobrescrever outras linhas
+      const currentQty = updatedItems[targetIndex].quantidade > 0 ? updatedItems[targetIndex].quantidade : newItems[0].quantidade;
+      const firstItem: ItemOrcamento = {
+        ...newItems[0],
+        id: updatedItems[targetIndex].id, // Preservar a referência da linha
+        quantidade: currentQty,
+        valorTotal: currentQty * newItems[0].valorUnitario
+      };
+
+      if (newItems.length === 1) {
+        updatedItems[targetIndex] = firstItem;
+      } else {
+        // Lançamento detalhado com múltiplos subitens: substitui a linha alvo pelo 1º e insere os demais em sequência
+        updatedItems.splice(targetIndex, 1, firstItem, ...newItems.slice(1));
+      }
+    } else {
+      // Caso todas as linhas existentes estejam preenchidas e nenhuma linha esteja ativa: adicionar ao final
+      updatedItems = [...updatedItems, ...newItems];
+    }
+
+    setItems(updatedItems);
     setOrcamentoFinalizado(false);
     setIsSearchOpen(false);
+    setActiveLineId(null);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -505,14 +548,28 @@ export default function OSFormStep3({ initialData, onNext, onBack, onCancel }: O
                     {/* Descricao */}
                     <div className="col-span-6">
                       <label className="sm:hidden block text-[9px] font-black text-slate-400 uppercase mb-1">Descrição</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Ex: Óleo Hidráulico Shell Tellus S2 V46, Coxim do Motor, Mão de obra..."
-                        value={item.descricao}
-                        onChange={(e) => handleItemChange(index, 'descricao', e.target.value)}
-                        className="w-full bg-white text-slate-800 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[#003366] font-semibold"
-                      />
+                      <div className="relative flex items-center">
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ex: Óleo Hidráulico Shell Tellus S2 V46, Coxim do Motor, Mão de obra..."
+                          value={item.descricao}
+                          onChange={(e) => handleItemChange(index, 'descricao', e.target.value)}
+                          onFocus={() => setActiveLineId(item.id)}
+                          className="w-full bg-white text-slate-800 border border-slate-200 rounded-lg pl-3 pr-9 py-2 text-xs focus:outline-none focus:border-[#003366] font-semibold"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveLineId(item.id);
+                            setIsFullServiceListModalOpen(true);
+                          }}
+                          className="absolute right-1.5 p-1 text-slate-400 hover:text-[#003366] hover:bg-slate-100 rounded-md transition cursor-pointer"
+                          title="Pesquisa Inteligente para esta linha"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-[#FF6600]" />
+                        </button>
+                      </div>
                     </div>
 
                     {/* Preço Unitário */}

@@ -4,8 +4,9 @@
  */
 
 import React, { useState } from 'react';
-import { ArrowLeft, MessageSquare, Sparkles, User, Building2, Mail, Phone, CheckCircle2, Loader2, ArrowRight } from 'lucide-react';
+import { ArrowLeft, MessageSquare, Sparkles, User, Building2, Mail, Phone, CheckCircle2, Loader2, ArrowRight, Briefcase, ChevronDown } from 'lucide-react';
 import { TrialService } from '../services/TrialService';
+import { PERFIL_EMPRESA_OPCOES } from '../constants/perfilEmpresa';
 
 interface TrialRegistrationScreenProps {
   onBack: () => void;
@@ -22,6 +23,7 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
 }) => {
   const [nomeResponsavel, setNomeResponsavel] = useState('');
   const [nomeOficina, setNomeOficina] = useState('');
+  const [perfilEmpresa, setPerfilEmpresa] = useState('Oficina Mecânica');
   const [email, setEmail] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [carregando, setCarregando] = useState(false);
@@ -39,6 +41,10 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
       setErro('Por favor, informe o Nome da Empresa.');
       return;
     }
+    if (!perfilEmpresa) {
+      setErro('Por favor, selecione o Perfil da Empresa.');
+      return;
+    }
     if (!email.trim() || !email.includes('@')) {
       setErro('Por favor, informe um E-mail válido.');
       return;
@@ -54,6 +60,7 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
       const { empresaId } = await TrialService.cadastrarEmpresaTrial({
         nomeResponsavel: nomeResponsavel.trim(),
         nomeEmpresa: nomeOficina.trim(),
+        perfilEmpresa: perfilEmpresa,
         email: email.trim().toLowerCase(),
         whatsapp: whatsapp.trim()
       });
@@ -186,6 +193,32 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
                   placeholder="Ex: Empresa Modelo LTDA"
                   className="w-full bg-slate-950 border border-slate-800 rounded-2xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition"
                 />
+              </div>
+            </div>
+
+            {/* Campo 3: Perfil da Empresa */}
+            <div>
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                Perfil da Empresa *
+              </label>
+              <div className="relative">
+                <Briefcase className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <select
+                  required
+                  value={perfilEmpresa}
+                  onChange={(e) => setPerfilEmpresa(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl pl-10 pr-10 py-3 text-sm text-white focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition appearance-none cursor-pointer"
+                >
+                  <option value="" disabled className="bg-slate-900 text-slate-500">
+                    Selecione o Perfil da Empresa...
+                  </option>
+                  {PERFIL_EMPRESA_OPCOES.map((opcao) => (
+                    <option key={opcao} value={opcao} className="bg-slate-900 text-white">
+                      {opcao}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
             </div>
 

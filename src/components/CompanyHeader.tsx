@@ -11,7 +11,8 @@ export default function CompanyHeader() {
   const empresaCtx = useContext(EmpresaContext);
   const company = empresaCtx?.empresa;
 
-  const isCompanyRegistered = company && company.nomeFantasia && company.nomeFantasia !== 'Sua Empresa';
+  const companyName = (company?.nomeFantasia || company?.razaoSocial || '').trim();
+  const isCompanyRegistered = Boolean(companyName && companyName !== 'Sua Empresa');
 
   return (
     <div id="company-smart-header" className="flex items-center gap-2.5 sm:gap-3.5 py-1 min-w-0">
@@ -27,7 +28,7 @@ export default function CompanyHeader() {
           />
         ) : (
           <div className="w-7 h-7 sm:w-8 sm:h-8 bg-[#FF6600] rounded-lg flex items-center justify-center font-bold text-base sm:text-xl text-white">
-            {isCompanyRegistered ? company.nomeFantasia.charAt(0).toUpperCase() : 'O'}
+            {isCompanyRegistered ? companyName.charAt(0).toUpperCase() : 'O'}
           </div>
         )}
       </div>
@@ -37,13 +38,13 @@ export default function CompanyHeader() {
         <h1 className="text-xs sm:text-sm md:text-base font-black tracking-tight text-[#003366] uppercase leading-tight truncate">
           ORDEM DE SERVIÇO
           {isCompanyRegistered && (
-            <span className="hidden md:inline font-bold text-slate-600"> - {company.nomeFantasia}</span>
+            <span className="hidden md:inline font-bold text-slate-600"> - {companyName}</span>
           )}
         </h1>
         
         {isCompanyRegistered ? (
           <p className="text-[9px] text-[#FF6600] font-black uppercase tracking-wider truncate flex items-center gap-1.5">
-            <span className="truncate">{company.nomeFantasia || company.razaoSocial}</span>
+            <span className="truncate">{companyName}</span>
             {company.whatsapp && (
               <>
                 <span className="opacity-40 hidden sm:inline">•</span>

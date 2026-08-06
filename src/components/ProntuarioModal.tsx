@@ -10,6 +10,7 @@ import { ClienteContext } from '../contexts/ClienteContext';
 import { EmpresaContext } from '../contexts/EmpresaContext';
 import { OrdemDeServico, Equipamento } from '../types';
 import { generateProntuarioPDF } from '../utils/prontuarioGenerator';
+import { getPerfilConfig, isCampoVisivel, getCampoLabel } from '../config/perfis';
 
 interface ProntuarioModalProps {
   orders: OrdemDeServico[];
@@ -25,6 +26,7 @@ export default function ProntuarioModal({ orders, onClose, onViewCustomPDF }: Pr
   const { equipamentos } = equipCtx || { equipamentos: [] };
   const { clientes } = clienteCtx || { clientes: [] };
   const company = empresaCtx?.empresa || null;
+  const perfilConfig = empresaCtx?.perfilConfig || getPerfilConfig(company?.perfilEmpresa);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedEqId, setSelectedEqId] = useState<string>('');
@@ -166,7 +168,7 @@ export default function ProntuarioModal({ orders, onClose, onViewCustomPDF }: Pr
           {/* Left panel - Search & Equipment Select */}
           <div className="flex-1 flex flex-col gap-3 min-w-0">
             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block text-left">
-              Selecionar Equipamento / Veículo
+              Selecionar {getCampoLabel(perfilConfig, 'equipamento', 'Equipamento')}
             </label>
 
             {/* Search inputs */}
@@ -174,7 +176,7 @@ export default function ProntuarioModal({ orders, onClose, onViewCustomPDF }: Pr
               <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 type="text"
-                placeholder="Placa, Marca, Modelo ou Cliente..."
+                placeholder={`Pesquisar por ${getCampoLabel(perfilConfig, 'equipamento', 'Equipamento')}, Marca, Modelo...`}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#001f3f]/10 focus:border-[#001f3f]/40 transition"
@@ -186,6 +188,16 @@ export default function ProntuarioModal({ orders, onClose, onViewCustomPDF }: Pr
               {filteredEquipments.length > 0 ? (
                 filteredEquipments.map((eq) => {
                   const isSelected = eq.id === selectedEqId;
+                  const mainIdent = (isCampoVisivel(perfilConfig, 'placa') && eq.placa)
+                    ? eq.placa
+                    : ((isCampoVisivel(perfilConfig, 'numeroSerie') && eq.numeroSerie)
+                      ? eq.numeroSerie
+                      : ((isCampoVisivel(perfilConfig, 'patrimonio') && eq.patrimonio)
+                        ? eq.patrimonio
+                        : ((isCampoVisivel(perfilConfig, 'localObra') && eq.localObra)
+                          ? eq.localObra
+                          : eq.id)));
+
                   return (
                     <button
                       key={eq.id}
@@ -198,18 +210,22 @@ export default function ProntuarioModal({ orders, onClose, onViewCustomPDF }: Pr
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <span className={`font-mono font-bold text-xs tracking-wider uppercase ${isSelected ? 'text-[#FF6600]' : 'text-slate-800'}`}>
-                            {eq.placa || 'SEM PLACA'}
+                            {mainIdent}
                           </span>
-                          <span className="text-[9px] bg-slate-200/60 text-slate-600 font-bold px-1.5 py-0.5 rounded uppercase">
-                            {eq.ano}
-                          </span>
+                          {eq.ano && (
+                            <span className="text-[9px] bg-slate-200/60 text-slate-600 font-bold px-1.5 py-0.5 rounded uppercase">
+                              {eq.ano}
+                            </span>
+                          )}
                         </div>
                         <p className="text-[10px] font-bold text-slate-500 truncate mt-0.5">
                           {eq.fabricante} {eq.modelo}
                         </p>
                       </div>
                       <div className="text-right shrink-0">
-                        <span className="text-[9px] text-slate-400 font-semibold block">Proprietário</span>
+                        <span className="text-[9px] text-slate-400 font-semibold block">
+                          {getCampoLabel(perfilConfig, 'cliente', 'Proprietário')}
+                        </span>
                         <span className="text-[9.5px] font-bold text-[#001f3f] truncate block max-w-[100px]">
                           {eq.clienteNome || 'Não informado'}
                         </span>
@@ -220,7 +236,9 @@ export default function ProntuarioModal({ orders, onClose, onViewCustomPDF }: Pr
               ) : (
                 <div className="p-8 text-center text-slate-400">
                   <AlertCircle className="w-6 h-6 mx-auto text-slate-300 mb-1.5" />
-                  <p className="text-[10px] font-bold uppercase tracking-wider">Nenhum equipamento encontrado</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider">
+                    Nenhum {getCampoLabel(perfilConfig, 'equipamento', 'equipamento').toLowerCase()} encontrado
+                  </p>
                 </div>
               )}
             </div>
@@ -231,17 +249,23 @@ export default function ProntuarioModal({ orders, onClose, onViewCustomPDF }: Pr
             {selectedEquipment ? (
               <div className="space-y-4 text-left">
                 <div className="border-b border-slate-200 pb-2.5">
-                  <span className="text-[9px] text-slate-400 font-black uppercase tracking-wider block">Equipamento Selecionado</span>
+                  <span className="text-[9px] text-slate-400 font-black uppercase tracking-wider block">
+                    {getCampoLabel(perfilConfig, 'equipamento', 'Equipamento')} Selecionado
+                  </span>
                   <h4 className="font-black text-sm text-[#001f3f] uppercase leading-tight mt-0.5">
                     {selectedEquipment.fabricante} {selectedEquipment.modelo}
                   </h4>
                   <div className="flex items-center gap-2 mt-1.5">
                     <span className="font-mono text-[10px] font-bold text-[#FF6600] bg-[#FF6600]/10 px-2 py-0.5 rounded">
-                      {selectedEquipment.placa}
+                      {(isCampoVisivel(perfilConfig, 'placa') && selectedEquipment.placa)
+                        ? selectedEquipment.placa
+                        : (selectedEquipment.numeroSerie || selectedEquipment.patrimonio || selectedEquipment.id)}
                     </span>
-                    <span className="text-[9.5px] text-slate-500 font-bold">
-                      Ano: {selectedEquipment.ano}
-                    </span>
+                    {selectedEquipment.ano && (
+                      <span className="text-[9.5px] text-slate-500 font-bold">
+                        Ano: {selectedEquipment.ano}
+                      </span>
+                    )}
                   </div>
                 </div>
 

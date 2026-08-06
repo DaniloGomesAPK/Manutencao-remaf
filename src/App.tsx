@@ -41,6 +41,7 @@ import { ActivationScreen } from './components/ActivationScreen';
 import { TrialBanner } from './components/TrialBanner';
 import { ExpiredLicenseScreen } from './components/ExpiredLicenseScreen';
 import { CheckoutModal } from './components/CheckoutModal';
+import { InitialSetupWizard } from './components/InitialSetupWizard';
 import { LogService } from './services/LogService';
 
 const OSDashboard = lazy(() => import('./components/OSDashboard'));
@@ -131,9 +132,22 @@ export default function App() {
   });
 
   const [isSaving, setIsSaving] = useState(false);
-  const [activeSubView, setActiveSubView] = useState<'dashboard' | 'list' | 'company' | 'clientes' | 'equipamentos' | 'banco_servicos' | 'precificacao' | 'licensing' | 'configuracoes' | 'relatorios'>('dashboard');
+  const [activeSubView, setActiveSubView] = useState<'dashboard' | 'list' | 'company' | 'clientes' | 'equipamentos' | 'banco_servicos' | 'precificacao' | 'licensing' | 'configuracoes' | 'relatorios'>(() => {
+    try {
+      const saved = sessionStorage.getItem('remaf_active_subview');
+      if (saved) return saved as any;
+    } catch (_) {}
+    return 'dashboard';
+  });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  // Persist activeSubView choice
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('remaf_active_subview', activeSubView);
+    } catch (_) {}
+  }, [activeSubView]);
 
   // PDF Modal states
   const [activeReport, setActiveReport] = useState<OrdemDeServico | null>(null);
@@ -227,23 +241,10 @@ export default function App() {
       setLoginError('Por favor, informe sua senha de acesso.');
       return;
     }
-    if (authMode === 'register' && !loginNomeEmpresa.trim()) {
-      setLoginError('Por favor, informe o nome da sua empresa.');
-      return;
-    }
     setSubmittingLogin(true);
     setLoginError('');
     try {
-      if (authMode === 'register') {
-        await auth?.register(
-          loginEmail.trim().toLowerCase(), 
-          loginPassword, 
-          loginNome.trim() || undefined,
-          loginNomeEmpresa.trim() || undefined
-        );
-      } else {
-        await auth?.login(loginEmail.trim().toLowerCase(), loginPassword);
-      }
+      await auth?.login(loginEmail.trim().toLowerCase(), loginPassword);
     } catch (err: any) {
       setLoginError(err.message || 'Falha ao autenticar.');
     } finally {
@@ -357,11 +358,24 @@ export default function App() {
   const handleDeleteOS = async (id: string) => {
     if (!activeUser?.empresaId) return;
     try {
+      // Optimistic update of state
+      setServiceOrders(prev => prev.filter(o => o.id !== id));
+
+      if (formData.id === id) {
+        handleCancelForm();
+      }
+
       await deleteServiceOrder(id, activeUser.empresaId);
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ordens_servico_updated', { detail: { empresaId: activeUser.empresaId, deletedId: id } }));
+      }
+
       await loadServiceOrders(true); // reload list silently
     } catch (err) {
       console.error("Failed to delete service order:", err);
       alert("Erro ao excluir Ordem de Serviço.");
+      await loadServiceOrders(true);
     }
   };
 
@@ -835,33 +849,7 @@ export default function App() {
                     <div className="flex-grow border-t border-slate-200"></div>
                   </div>
 
-                  {/* Tabs para Entrar vs Começar Teste Gratuito */}
-                  <div className="flex bg-slate-100 p-1 rounded-xl">
-                    <button
-                      type="button"
-                      onClick={() => { setAuthMode('login'); setLoginError(''); }}
-                      className={`flex-1 py-2 text-xs font-bold rounded-lg transition duration-200 ${
-                        authMode === 'login'
-                          ? 'bg-white text-[#003366] shadow-sm'
-                          : 'text-slate-500 hover:text-slate-800'
-                      }`}
-                    >
-                      Entrar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setAuthMode('register'); setLoginError(''); }}
-                      className={`flex-1 py-2 text-xs font-bold rounded-lg transition duration-200 ${
-                        authMode === 'register'
-                          ? 'bg-white text-[#003366] shadow-sm'
-                          : 'text-slate-500 hover:text-slate-800'
-                      }`}
-                    >
-                      Começar Teste Gratuito
-                    </button>
-                  </div>
-
-                  {/* Email & Name Form */}
+                  {/* Email & Password Form */}
                   <form onSubmit={handleSaaSLogin} className="space-y-4">
                     {loginError && (
                       <div className="bg-red-50 border border-red-200 text-red-900 text-xs rounded-xl p-3 text-center animate-shake">
@@ -913,55 +901,20 @@ export default function App() {
                         </button>
                       </div>
 
-                      {authMode === 'login' && (
-                        <div className="flex justify-end pt-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setForgotEmail(loginEmail);
-                              setForgotStatus({ type: 'idle', message: '' });
-                              setShowForgotPassword(true);
-                            }}
-                            className="text-xs font-bold text-[#003366] hover:text-[#FF6600] transition cursor-pointer"
-                          >
-                            Esqueci minha senha
-                          </button>
-                        </div>
-                      )}
+                      <div className="flex justify-end pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForgotEmail(loginEmail);
+                            setForgotStatus({ type: 'idle', message: '' });
+                            setShowForgotPassword(true);
+                          }}
+                          className="text-xs font-bold text-[#003366] hover:text-[#FF6600] transition cursor-pointer"
+                        >
+                          Esqueci minha senha
+                        </button>
+                      </div>
                     </div>
-
-                    {authMode === 'register' && (
-                      <>
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-slate-500 tracking-wider uppercase">
-                            Nome Completo <span className="text-slate-400 font-normal">(Opcional)</span>
-                          </label>
-                          <input
-                            id="login-name"
-                            type="text"
-                            placeholder="Digite seu nome completo"
-                            value={loginNome}
-                            onChange={(e) => setLoginNome(e.target.value)}
-                            className="w-full bg-slate-50 text-slate-800 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200"
-                          />
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-slate-500 tracking-wider uppercase">
-                            Nome da Empresa <span className="text-[#FF6600] font-bold">*</span>
-                          </label>
-                          <input
-                            id="login-company"
-                            type="text"
-                            required
-                            placeholder="Ex: Empresa Modelo LTDA"
-                            value={loginNomeEmpresa}
-                            onChange={(e) => setLoginNomeEmpresa(e.target.value)}
-                            className="w-full bg-slate-50 text-slate-800 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200"
-                          />
-                        </div>
-                      </>
-                    )}
 
                     <button
                       id="btn-login-submit"
@@ -969,9 +922,7 @@ export default function App() {
                       disabled={submittingLogin}
                       className="w-full bg-[#003366] text-white rounded-xl py-3.5 px-6 font-bold tracking-[0.12em] text-[10px] uppercase shadow-lg shadow-[#003366]/10 hover:bg-[#002244] active:scale-[0.99] flex items-center justify-center gap-2 transition duration-200 cursor-pointer disabled:opacity-50"
                     >
-                      {submittingLogin
-                        ? (authMode === 'register' ? 'Iniciando teste gratuito...' : 'Acessando...')
-                        : (authMode === 'register' ? 'Começar Teste Gratuito' : 'Acessar Conta')}
+                      {submittingLogin ? 'Acessando...' : 'Entrar'}
                     </button>
                   </form>
                 </>
@@ -1080,10 +1031,13 @@ export default function App() {
   console.log('[LICENÇA]', `status: ${status}, trialInicio: ${trialInicio}, trialFim: ${trialFim}`);
   console.log('[ROTA]', `Dashboard (Acesso Liberado - Status: ${status})`);
 
+  const showInitialWizard = empresaCtx?.empresa && empresaCtx.empresa.configuracaoInicialConcluida === false;
+
   return (
     <div id="app-root-frame" className="min-h-screen bg-[#F8FAFC] flex font-sans text-slate-800 selection:bg-[#FF6600]/10 selection:text-[#FF6600]">
       <CheckoutModal />
       <PWAInstallBanner />
+      {showInitialWizard && <InitialSetupWizard />}
       
       {/* Main Structural Right Panel */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">

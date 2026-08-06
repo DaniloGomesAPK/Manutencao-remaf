@@ -7,6 +7,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { Download, Share2, X, MessageSquare, Mail, Check, AlertCircle, ExternalLink, Eye, FileText, Lock } from 'lucide-react';
 import { OrdemDeServico } from '../types';
 import { EmpresaContext } from '../contexts/EmpresaContext';
+import { getPerfilConfig, isCampoVisivel, getCampoLabel } from '../config/perfis';
 
 interface PDFPreviewModalProps {
   os: OrdemDeServico;
@@ -17,7 +18,9 @@ interface PDFPreviewModalProps {
 export default function PDFPreviewModal({ os, pdfDataUri, onClose }: PDFPreviewModalProps) {
   const empresaCtx = useContext(EmpresaContext);
   const company = empresaCtx?.empresa;
-  const isCompanyRegistered = company && company.nomeFantasia && company.nomeFantasia !== 'Sua Empresa';
+  const perfilConfig = empresaCtx?.perfilConfig || getPerfilConfig(company?.perfilEmpresa);
+  const companyName = (company?.nomeFantasia || company?.razaoSocial || '').trim();
+  const isCompanyRegistered = Boolean(companyName && companyName !== 'Sua Empresa');
 
   const [sharing, setSharing] = useState(false);
   const [shareSuccess, setShareSuccess] = useState<string | null>(null);
@@ -294,14 +297,18 @@ export default function PDFPreviewModal({ os, pdfDataUri, onClose }: PDFPreviewM
                     <div className="flex items-start justify-between gap-4">
                       <div>
                         <h4 className="text-sm font-black text-[#003366] uppercase tracking-tight">
-                          {isCompanyRegistered ? company.nomeFantasia : 'Ordem de Serviço'}
+                          {companyName || 'Ordem de Serviço'}
                         </h4>
-                        <p className="text-[10px] text-slate-500 font-medium mt-0.5">
-                          {isCompanyRegistered ? company.razaoSocial : 'Sua Empresa'}
-                        </p>
-                        <p className="text-[10px] text-slate-400">
-                          {company?.cnpj ? `CNPJ: ${company.cnpj}` : 'CNPJ: 12.345.678/0001-90'}
-                        </p>
+                        {company?.razaoSocial && company?.razaoSocial !== companyName && (
+                          <p className="text-[10px] text-slate-500 font-medium mt-0.5">
+                            {company.razaoSocial}
+                          </p>
+                        )}
+                        {company?.cnpj && (
+                          <p className="text-[10px] text-slate-400">
+                            CNPJ: {company.cnpj}
+                          </p>
+                        )}
                       </div>
                       <div className="text-right">
                         <span className="inline-block bg-[#003366]/5 text-[#003366] text-[10px] font-mono font-bold px-2 py-1 rounded border border-[#003366]/10">
@@ -318,16 +325,82 @@ export default function PDFPreviewModal({ os, pdfDataUri, onClose }: PDFPreviewM
                   <div className="space-y-4 text-xs text-slate-700 flex-1">
                     {/* Informações Gerais */}
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                      {isCampoVisivel(perfilConfig, 'equipamento') && (
+                        <div>
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">
+                            {getCampoLabel(perfilConfig, 'equipamento', 'Equipamento')}
+                          </span>
+                          <strong className="text-slate-800">{os.equipamento}</strong>
+                        </div>
+                      )}
+                      {isCampoVisivel(perfilConfig, 'placa') && os.placa && (
+                        <div>
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">
+                            {getCampoLabel(perfilConfig, 'placa', 'Placa / Identificador')}
+                          </span>
+                          <strong className="text-slate-800 font-mono">{os.placa}</strong>
+                        </div>
+                      )}
+                      {isCampoVisivel(perfilConfig, 'chassi') && os.chassi && (
+                        <div>
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">
+                            {getCampoLabel(perfilConfig, 'chassi', 'Chassi')}
+                          </span>
+                          <strong className="text-slate-800 font-mono">{os.chassi}</strong>
+                        </div>
+                      )}
+                      {isCampoVisivel(perfilConfig, 'numeroSerie') && os.numeroSerie && (
+                        <div>
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">
+                            {getCampoLabel(perfilConfig, 'numeroSerie', 'Número de Série')}
+                          </span>
+                          <strong className="text-slate-800 font-mono">{os.numeroSerie}</strong>
+                        </div>
+                      )}
+                      {isCampoVisivel(perfilConfig, 'patrimonio') && os.patrimonio && (
+                        <div>
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">
+                            {getCampoLabel(perfilConfig, 'patrimonio', 'Patrimônio')}
+                          </span>
+                          <strong className="text-slate-800 font-mono">{os.patrimonio}</strong>
+                        </div>
+                      )}
+                      {isCampoVisivel(perfilConfig, 'localObra') && os.localObra && (
+                        <div>
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">
+                            {getCampoLabel(perfilConfig, 'localObra', 'Local da Obra')}
+                          </span>
+                          <strong className="text-slate-800">{os.localObra}</strong>
+                        </div>
+                      )}
+                      {isCampoVisivel(perfilConfig, 'responsavelObra') && os.responsavelObra && (
+                        <div>
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">
+                            {getCampoLabel(perfilConfig, 'responsavelObra', 'Responsável pela Obra')}
+                          </span>
+                          <strong className="text-slate-800">{os.responsavelObra}</strong>
+                        </div>
+                      )}
+                      {isCampoVisivel(perfilConfig, 'setor') && os.setor && (
+                        <div>
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">
+                            {getCampoLabel(perfilConfig, 'setor', 'Setor')}
+                          </span>
+                          <strong className="text-slate-800">{os.setor}</strong>
+                        </div>
+                      )}
+                      {isCampoVisivel(perfilConfig, 'linhaProducao') && os.linhaProducao && (
+                        <div>
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">
+                            {getCampoLabel(perfilConfig, 'linhaProducao', 'Linha de Produção')}
+                          </span>
+                          <strong className="text-slate-800">{os.linhaProducao}</strong>
+                        </div>
+                      )}
                       <div>
-                        <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">Equipamento</span>
-                        <strong className="text-slate-800">{os.equipamento}</strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">Identidade / Placa</span>
-                        <strong className="text-slate-800 font-mono">{os.placa || '-'}</strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">Técnico Responsável</span>
+                        <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">
+                          {perfilConfig.labels.tecnico || 'Técnico Responsável'}
+                        </span>
                         <strong className="text-slate-800">{os.tecnico}</strong>
                       </div>
                       <div>

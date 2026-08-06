@@ -3,10 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
-import { Search, Settings, FileText, ChevronRight, PenTool, CheckCircle, AlertTriangle, AlertCircle, Calendar, Plus, Clipboard, Smartphone, Copy, Check, QrCode, Calculator, Trash2, ArrowLeft } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useEmpresa } from '../contexts/EmpresaContext';
+import { toPlural } from '../config/perfis';
+import { Search, Settings, FileText, ChevronRight, PenTool, CheckCircle, AlertTriangle, AlertCircle, Calendar, Plus, Clipboard, Smartphone, Copy, Check, QrCode, Calculator, Trash2, ArrowLeft, X } from 'lucide-react';
 import { OrdemDeServico } from '../types';
 import { formatToBrazilianDate } from '../utils/dateFormatter';
+import { saveModuleState, getModuleState, applySmartFocus } from '../utils/navigationState';
+import { UIHeader, UICard, UIButton, UIBadge } from './ui/UIComponents';
 
 interface OSDashboardProps {
   orders: OrdemDeServico[];
@@ -19,11 +23,42 @@ interface OSDashboardProps {
 }
 
 export default function OSDashboard({ orders, onNewOS, onEditOS, onViewPDF, onDeleteOS, onDuplicateOS, onBack }: OSDashboardProps) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('All');
+  const { perfilConfig } = useEmpresa();
+  const labels = perfilConfig.labels;
+
+  const initialNavState = getModuleState('os_dashboard');
+  const [searchTerm, setSearchTerm] = useState<string>(initialNavState.searchTerm || '');
+  const [statusFilter, setStatusFilter] = useState<string>(initialNavState.filterStatus || 'All');
   const [copiedLink, setCopiedLink] = useState(false);
   const [showQR, setShowQR] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Persistence
+  useEffect(() => {
+    saveModuleState('os_dashboard', { searchTerm, filterStatus: statusFilter });
+  }, [searchTerm, statusFilter]);
+
+  // Scroll restoration
+  useEffect(() => {
+    const savedScroll = initialNavState.scrollPos;
+    if (savedScroll && savedScroll > 0) {
+      setTimeout(() => window.scrollTo({ top: savedScroll, behavior: 'instant' as ScrollBehavior }), 50);
+    }
+
+    const onScroll = () => {
+      saveModuleState('os_dashboard', { scrollPos: window.scrollY });
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // Smart focus on search field
+  useEffect(() => {
+    applySmartFocus(searchInputRef.current);
+  }, []);
 
   const handleCopyLink = () => {
     try {
@@ -81,32 +116,14 @@ export default function OSDashboard({ orders, onNewOS, onEditOS, onViewPDF, onDe
   };
 
   return (
-    <div id="os-dashboard-component" className="space-y-6">
-      {/* Page Header */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          {onBack && (
-            <button
-              id="btn-back-from-reports"
-              type="button"
-              onClick={onBack}
-              className="p-2 hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer text-slate-500"
-              title="Voltar"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-          )}
-          <div>
-            <h2 className="text-lg font-black text-[#003366] uppercase tracking-tight flex items-center gap-2">
-              <FileText className="w-5 h-5 text-[#FF6600]" />
-              Relatórios e Ordens de Serviço
-            </h2>
-            <p className="text-xs text-slate-500 font-medium">
-              Histórico completo de atendimentos, ordens de serviço e exportações em PDF.
-            </p>
-          </div>
-        </div>
-      </div>
+    <div id="os-dashboard-component" className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 py-5">
+      {/* Standardized Header */}
+      <UIHeader
+        title={`Relatórios e ${toPlural(labels.ordemServico)}`}
+        subtitle={`Histórico completo de atendimentos, ${toPlural(labels.ordemServico.toLowerCase())} e exportações em PDF.`}
+        icon={FileText}
+        onBack={onBack}
+      />
 
       {/* KPI Stats cards */}
       <div className="grid grid-cols-3 gap-4">
@@ -135,7 +152,7 @@ export default function OSDashboard({ orders, onNewOS, onEditOS, onViewPDF, onDe
         className="w-full h-16 flex items-center justify-center gap-3 bg-[#FF6600] hover:bg-[#E05500] text-white rounded-full font-black text-sm tracking-[0.12em] uppercase shadow-xl shadow-[#FF6600]/25 hover:shadow-2xl transition duration-200 cursor-pointer animate-in fade-in slide-in-from-top-4 duration-200"
       >
         <Plus className="w-5.5 h-5.5 text-white" />
-        <span>Abrir Nova ordem de Serviço</span>
+        <span>Abrir Nova {labels.ordemServico}</span>
       </button>
 
       {/* Mobile Access QR & Link card */}
@@ -212,13 +229,24 @@ export default function OSDashboard({ orders, onNewOS, onEditOS, onViewPDF, onDe
           <div className="relative flex-1">
             <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4.5 h-4.5 text-slate-400" />
             <input
+              ref={searchInputRef}
               id="search-orders-input"
               type="text"
-              placeholder="Buscar por Protocolo, Equipamento, Placa ou Técnico..."
+              placeholder={`Buscar por Protocolo, ${labels.equipamento}, ${labels.identificacao} ou Técnico...`}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-10 pr-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366]/40 transition duration-150"
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-10 pr-9 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366]/40 transition duration-150"
             />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 cursor-pointer"
+                title="Limpar pesquisa"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
           {/* Filter trigger */}

@@ -4,6 +4,8 @@
  */
 
 import React, { useState } from 'react';
+import { useEmpresa } from '../contexts/EmpresaContext';
+import { toPlural } from '../config/perfis';
 import { 
   LayoutDashboard, 
   ClipboardCheck, 
@@ -47,6 +49,8 @@ export default function Sidebar({
   onLogout,
   activeUser
 }: SidebarProps) {
+  const { perfilConfig } = useEmpresa();
+  const labels = perfilConfig.labels;
   
   // Local state to keep track of expanded menu sections on sidebar
   const [expandedSections, setExpandedSections] = useState({
@@ -147,10 +151,10 @@ export default function Sidebar({
               type="button"
               onClick={handleNewOSClick}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-slate-400 hover:bg-slate-800/30 hover:text-white ${collapsed ? 'justify-center' : 'text-left'}`}
-              title="Nova Ordem de Serviço"
+              title={`Nova ${labels.ordemServico}`}
             >
               <Plus className="w-4.5 h-4.5 text-[#FF6600] shrink-0" />
-              {!collapsed && <span className="font-bold">Nova OS</span>}
+              {!collapsed && <span className="font-bold">Nova {labels.ordemServico.includes('/') ? labels.ordemServico.split('/')[0].trim() : labels.ordemServico}</span>}
             </button>
 
             {/* Submenu: Histórico das Ordens de Serviço */}
@@ -162,10 +166,10 @@ export default function Sidebar({
                   ? 'bg-slate-800/65 text-white font-bold border-l-2 border-[#FF6600]'
                   : 'text-slate-400 hover:bg-slate-800/30 hover:text-white'
               } ${collapsed ? 'justify-center' : 'text-left'}`}
-              title="Histórico de OS"
+              title={`Histórico de ${toPlural(labels.ordemServico)}`}
             >
               <ClipboardCheck className="w-4.5 h-4.5 text-[#00E5FF] shrink-0" />
-              {!collapsed && <span>Histórico de OS</span>}
+              {!collapsed && <span>Histórico de {toPlural(labels.ordemServico)}</span>}
             </button>
           </div>
         </div>
@@ -190,10 +194,10 @@ export default function Sidebar({
                   ? 'bg-slate-800/65 text-white font-bold border-l-2 border-[#FF6600]'
                   : 'text-slate-400 hover:bg-slate-800/30 hover:text-white'
               } ${collapsed ? 'justify-center' : 'text-left'}`}
-              title="Clientes"
+              title={toPlural(labels.cliente)}
             >
               <Users className="w-4.5 h-4.5 text-blue-400 shrink-0" />
-              {!collapsed && <span>Clientes</span>}
+              {!collapsed && <span>{toPlural(labels.cliente)}</span>}
             </button>
 
             {/* Submenu: Equipamentos */}
@@ -205,10 +209,10 @@ export default function Sidebar({
                   ? 'bg-slate-800/65 text-white font-bold border-l-2 border-[#FF6600]'
                   : 'text-slate-400 hover:bg-slate-800/30 hover:text-white'
               } ${collapsed ? 'justify-center' : 'text-left'}`}
-              title="Equipamentos"
+              title={toPlural(labels.equipamento)}
             >
               <Car className="w-4.5 h-4.5 text-indigo-400 shrink-0" />
-              {!collapsed && <span>Equipamentos</span>}
+              {!collapsed && <span>{toPlural(labels.equipamento)}</span>}
             </button>
 
 

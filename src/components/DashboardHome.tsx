@@ -4,6 +4,8 @@
  */
 
 import React from 'react';
+import { useEmpresa } from '../contexts/EmpresaContext';
+import { toPlural } from '../config/perfis';
 import { 
   Plus, 
   Users, 
@@ -38,6 +40,8 @@ export default function DashboardHome({
   onViewPDF, 
   onNavigate 
 }: DashboardHomeProps) {
+  const { perfilConfig } = useEmpresa();
+  const labels = perfilConfig.labels;
 
   // Get last 5 orders
   const latestOrders = [...orders]
@@ -100,7 +104,7 @@ export default function DashboardHome({
               <Plus className="w-5 h-5 stroke-[2.5]" />
             </div>
             <div>
-              <h4 className="font-extrabold text-xs text-[#003366] group-hover:text-[#FF6600] transition">➕ Nova OS</h4>
+              <h4 className="font-extrabold text-xs text-[#003366] group-hover:text-[#FF6600] transition">➕ Nova {labels.ordemServico.includes('/') ? labels.ordemServico.split('/')[0].trim() : labels.ordemServico}</h4>
               <p className="text-[9px] text-slate-400 mt-0.5">Abrir e gerenciar atendimentos</p>
             </div>
           </button>
@@ -114,8 +118,8 @@ export default function DashboardHome({
               <Users className="w-5 h-5" />
             </div>
             <div>
-              <h4 className="font-extrabold text-xs text-slate-800 group-hover:text-[#003366] transition">👥 Clientes</h4>
-              <p className="text-[9px] text-slate-400 mt-0.5">Fichas de clientes e contatos</p>
+              <h4 className="font-extrabold text-xs text-slate-800 group-hover:text-[#003366] transition">👥 {toPlural(labels.cliente)}</h4>
+              <p className="text-[9px] text-slate-400 mt-0.5">Fichas de {toPlural(labels.cliente.toLowerCase())} e contatos</p>
             </div>
           </button>
 
@@ -128,8 +132,8 @@ export default function DashboardHome({
               <Car className="w-5 h-5" />
             </div>
             <div>
-              <h4 className="font-extrabold text-xs text-slate-800 group-hover:text-[#003366] transition">🚜 Equipamentos</h4>
-              <p className="text-[9px] text-slate-400 mt-0.5">Cadastro de frotas e veículos</p>
+              <h4 className="font-extrabold text-xs text-slate-800 group-hover:text-[#003366] transition">🚜 {toPlural(labels.equipamento)}</h4>
+              <p className="text-[9px] text-slate-400 mt-0.5">Cadastro de {toPlural(labels.equipamento.toLowerCase())}</p>
             </div>
           </button>
 
@@ -157,7 +161,7 @@ export default function DashboardHome({
             </div>
             <div>
               <h4 className="font-extrabold text-xs text-slate-800 group-hover:text-[#003366] transition">📊 Relatórios</h4>
-              <p className="text-[9px] text-slate-400 mt-0.5">Prontuário Inteligente do Equipamento</p>
+              <p className="text-[9px] text-slate-400 mt-0.5">Prontuário Inteligente do {labels.equipamento}</p>
             </div>
           </button>
 

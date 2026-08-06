@@ -4,11 +4,13 @@
  */
 
 import { OrdemDeServico } from './types';
-import { FirestoreRepository } from './services/FirestoreRepository';
+import { FirestoreRepository, getDeletedLocallyIds } from './services/FirestoreRepository';
+import { IntegridadeService } from './services/IntegridadeService';
+import { RecuperacaoService } from './services/RecuperacaoService';
 
 // Define DB config for IndexedDB
 const DB_NAME = 'RemafOfflineDB';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 const STORE_NAME = 'service_orders';
 export const COMPANY_STORE_NAME = 'company_profile';
 export const CLIENTES_STORE_NAME = 'clientes';
@@ -17,6 +19,7 @@ export const SERVICOS_INTELIGENTES_STORE_NAME = 'servicos_inteligentes';
 export const PRECIFICACOES_STORE_NAME = 'precificacoes';
 export const FINANCEIRO_STORE_NAME = 'financeiro';
 export const CONFIGURACOES_STORE_NAME = 'configuracoes';
+export const LIXEIRA_STORE_NAME = 'lixeira';
 
 // Always 100% offline-first and local db active
 export const isLocalSandbox = true;
@@ -88,6 +91,9 @@ export function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(CONFIGURACOES_STORE_NAME)) {
         db.createObjectStore(CONFIGURACOES_STORE_NAME, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(LIXEIRA_STORE_NAME)) {
+        db.createObjectStore(LIXEIRA_STORE_NAME, { keyPath: 'id' });
       }
     };
   });
@@ -207,6 +213,12 @@ export const saveOrdemDeServico = async (osData: OrdemDeServico): Promise<string
     updatedAt: timestamp,
   };
 
+  // Validação de referências (clienteId, equipamentoId)
+  const refValidation = await IntegridadeService.validateOSReferences(documentWithTimestamps, empresaId);
+  if (!refValidation.valid) {
+    throw new Error(refValidation.message || 'Ordem de Serviço possui referências inexistentes.');
+  }
+
   try {
     await FirestoreRepository.add('ordensServico', documentWithTimestamps, empresaId);
   } catch (error) {
@@ -248,6 +260,7 @@ export const fetchAllServiceOrders = async (empresaId: string = 'emp_daniloempre
  * Fallback local cache recovery (SaaS Tenant-Isolated)
  */
 export const getLocalServiceOrders = (empresaId: string): OrdemDeServico[] => {
+  const deletedIds = getDeletedLocallyIds('ordensServico', empresaId);
   const keys = [
     `remaf_cache_ordensServico_${empresaId}`,
     `remaf_cache_service_orders_${empresaId}`,
@@ -260,12 +273,14 @@ export const getLocalServiceOrders = (empresaId: string): OrdemDeServico[] => {
       if (data) {
         const parsed = JSON.parse(data);
         if (Array.isArray(parsed)) {
-          const mapped = parsed.map(o => {
-            if (o.status === 'Concluído com restrições' || (o.status as string) === 'Com Restrições') {
-              return { ...o, status: 'Pendente' as const };
-            }
-            return o;
-          });
+          const mapped = parsed
+            .filter((o: any) => !deletedIds.includes(o.id))
+            .map(o => {
+              if (o.status === 'Concluído com restrições' || (o.status as string) === 'Com Restrições') {
+                return { ...o, status: 'Pendente' as const };
+              }
+              return o;
+            });
           return sortServiceOrdersByCreationDate(mapped);
         }
       }
@@ -302,13 +317,19 @@ export const uploadImageFile = async (dataUrl: string, _folder: 'antes' | 'depoi
 };
 
 /**
- * Deletes a service order via FirestoreRepository
+ * Deletes a service order / budget via RecuperacaoService (Soft Delete)
  */
-export const deleteServiceOrder = async (id: string, empresaId: string): Promise<void> => {
+export const deleteServiceOrder = async (id: string, empresaId: string, userEmail?: string): Promise<void> => {
   try {
-    await FirestoreRepository.delete('ordensServico', id, empresaId);
+    const os = await FirestoreRepository.get<OrdemDeServico>('ordensServico', id, empresaId, userEmail);
+    const isOrcamento = (os as any)?.status === 'Orçamento' || (os as any)?.tipo === 'Orçamento';
+    const tipo = isOrcamento ? 'Orçamento' : 'Ordem de Serviço';
+    const nome = os ? `OS #${os.numeroOS || id} - ${os.clienteNome || 'Cliente'}` : 'OS Sem Nome';
+    const ident = os ? `${os.equipamento || ''} (${os.status || ''})`.trim() : id;
+
+    await RecuperacaoService.softDeleteRecord('ordensServico', id, tipo, nome, ident, empresaId, userEmail, os);
   } catch (error) {
-    console.error('Error deleting service order with FirestoreRepository:', error);
+    console.error('Error deleting service order with RecuperacaoService:', error);
     throw error;
   }
 };
