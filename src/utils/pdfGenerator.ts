@@ -6,6 +6,7 @@
 import { OrdemDeServico } from '../types';
 import { formatToBrazilianDate } from './dateFormatter';
 import { EmpresaService } from '../services/EmpresaService';
+import { getPerfilConfig, isCampoVisivel, getCampoLabel } from '../config/perfis';
 
 /**
  * Loads a base64 image (or URL) into an HTMLImageElement asynchronously
@@ -62,6 +63,8 @@ const getFitDimensions = (
  */
 export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> => {
   const company = await EmpresaService.getEmpresa(os.empresaId || 'emp_daniloempreendimentos');
+  const perfilConfig = getPerfilConfig(company?.perfilEmpresa);
+  const docTitleLabel = perfilConfig.labels.ordemServico || 'Ordem de Serviço';
   const { jsPDF } = await import('jspdf');
   const doc = new jsPDF({
     orientation: 'p',
@@ -140,8 +143,8 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
     doc.setTextColor(120, 120, 120);
     
     // Left-aligned footer: system info
-    const isCompanyRegistered = company && company.nomeFantasia && company.nomeFantasia !== 'Sua Empresa';
-    const companyText = isCompanyRegistered ? `Ordem de Serviço - ${company.nomeFantasia}` : 'Ordem de Serviço';
+    const companyName = (company?.nomeFantasia || company?.razaoSocial || '').trim();
+    const companyText = companyName && companyName !== 'Sua Empresa' ? `${docTitleLabel} - ${companyName}` : docTitleLabel;
     doc.text(`${companyText} | Sistema de Ordens de Serviço`, marginX, 283);
     
     // Right-aligned footer: page count
@@ -184,9 +187,8 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
 
   // --- NEW BRANDED CORPORATE HEADER (Based on User's Sample) ---
   // Page 1 gets the fully loaded header as requested.
-  // We do not draw standard page header on Page 1 to avoid overlap.
-  
-  let isCompanyRegistered = company && company.nomeFantasia && company.nomeFantasia.trim() !== '' && company.nomeFantasia !== 'Sua Empresa';
+  // Priority: 1. Logomarca | 2. Nome Fantasia | 3. Razão Social (fallback if Nome Fantasia is empty)
+  const companyName = (company?.nomeFantasia || company?.razaoSocial || '').trim();
 
   // 1. Calculate dynamic heights first
   let logoHeight = 0;
@@ -204,20 +206,20 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
     }
   }
 
-  // Calculate Nome Fantasia Height
+  // Calculate Company Title Height (Priority: Nome Fantasia -> Razão Social)
   let nameHeight = 0;
   let nameLines: string[] = [];
-  if (isCompanyRegistered && company && company.nomeFantasia) {
+  if (companyName && companyName !== 'Sua Empresa') {
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5); // reduced slightly (~15% from 8.5) and semibold/bold weight
-    nameLines = doc.splitTextToSize(company.nomeFantasia.toUpperCase(), 120);
+    doc.setFontSize(7.5);
+    nameLines = doc.splitTextToSize(companyName.toUpperCase(), 120);
     nameHeight = nameLines.length * 3.5;
   }
 
   // Calculate Slogan Height
   let sloganHeight = 0;
   let sloganLines: string[] = [];
-  if (isCompanyRegistered && company) {
+  if (company) {
     const rawSlogan = (company.slogan || '').trim();
     const sloganLower = rawSlogan.toLowerCase();
     
@@ -251,8 +253,8 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
     leftColY += sloganHeight + 1.5; // Slogan height + vertical spacing
   }
   
-  // The end height of the white area must be at least 44mm, but can grow if needed
-  const headerEndY = Math.max(44, leftColY + 2);
+  // The end height of the white area must be at least 38mm, but can grow if needed
+  const headerEndY = Math.max(38, leftColY + 2);
 
   // Top Colored Banner Bar
   doc.setFillColor(primaryColor.r, primaryColor.g, primaryColor.b);
@@ -271,8 +273,8 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
     } catch (_) {}
   }
 
-  if (isCompanyRegistered && company) {
-    // Draw Name Fantasia
+  // Draw Title (Nome Fantasia or Razão Social)
+  if (nameLines.length > 0) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
     doc.setTextColor(primaryColor.r, primaryColor.g, primaryColor.b);
@@ -281,16 +283,16 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
       drawY += 3.5;
     }
     drawY += 1.5; // spacing
+  }
 
-    // Draw Slogan
-    if (sloganLines.length > 0) {
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(accentColor.r, accentColor.g, accentColor.b);
-      for (const line of sloganLines) {
-        doc.text(line, 15, drawY);
-        drawY += 3.5;
-      }
+  // Draw Slogan
+  if (sloganLines.length > 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(accentColor.r, accentColor.g, accentColor.b);
+    for (const line of sloganLines) {
+      doc.text(line, 15, drawY);
+      drawY += 3.5;
     }
   }
 
@@ -326,107 +328,252 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
   doc.setFillColor(accentColor.r, accentColor.g, accentColor.b); // #FF6600
   doc.rect(0, headerEndY, pageWidth, 1.2, 'F');
 
-  // Conditional Rendering of Company Details and Second Red Line
-  if (isCompanyRegistered && company) {
-    // Centered footer of the company header (lower block details in clean charcoal print)
+  // Dynamic Rendering of Company Details (Independent rendering of all available fields)
+  const detailLines: Array<{ text: string; colorType: 'dark' | 'grey' | 'blue' }> = [];
+
+  if (company) {
+    // Line 1: Address (Endereço, Número, Bairro, Cidade, Estado)
+    const addrParts: string[] = [];
+    const streetAndNum = [company.endereco?.trim(), company.numero?.trim()].filter(Boolean).join(', ');
+    if (streetAndNum) addrParts.push(streetAndNum);
+    if (company.bairro?.trim()) addrParts.push(company.bairro.trim());
+    const cityState = [company.cidade?.trim(), company.estado?.trim()].filter(Boolean).join(' - ');
+    if (cityState) addrParts.push(cityState);
+
+    if (addrParts.length > 0) {
+      detailLines.push({
+        text: addrParts.join(' – ').toUpperCase(),
+        colorType: 'dark'
+      });
+    }
+
+    // Line 2: Identifiers (CEP, CNPJ, Inscrição Estadual)
+    const regParts: string[] = [];
+    if (company.cep?.trim()) regParts.push(`CEP: ${company.cep.trim()}`);
+    if (company.cnpj?.trim()) regParts.push(`CNPJ: ${company.cnpj.trim()}`);
+    if (company.inscricaoEstadual?.trim()) regParts.push(`IE: ${company.inscricaoEstadual.trim()}`);
+
+    if (regParts.length > 0) {
+      detailLines.push({
+        text: regParts.join('       -       '),
+        colorType: 'grey'
+      });
+    }
+
+    // Line 3: Contacts / Additional Info (Razão Social if distinct from title, Email, Phones, Site)
+    const contactParts: string[] = [];
+    
+    const titleLower = companyName.toLowerCase();
+    const razaoLower = (company.razaoSocial || '').trim().toLowerCase();
+    if (company.razaoSocial?.trim() && razaoLower !== titleLower) {
+      contactParts.push(`Razão Social: ${company.razaoSocial.trim()}`);
+    }
+
+    if (company.email?.trim()) {
+      contactParts.push(`E-mail: ${company.email.trim()}`);
+    }
+
+    const phones: string[] = [];
+    if (company.whatsapp?.trim()) phones.push(company.whatsapp.trim());
+    if (company.telefone?.trim() && company.telefone.trim() !== company.whatsapp?.trim()) {
+      phones.push(company.telefone.trim());
+    }
+    if (phones.length > 0) {
+      contactParts.push(`Fone/WhatsApp: ${phones.join(' / ')}`);
+    }
+
+    if (company.site?.trim()) {
+      contactParts.push(`Site: ${company.site.trim()}`);
+    }
+
+    if (contactParts.length > 0) {
+      detailLines.push({
+        text: contactParts.join('       |       '),
+        colorType: 'blue'
+      });
+    }
+  }
+
+  if (detailLines.length > 0) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
-    doc.setTextColor(51, 51, 51); // Dark charcoal for perfect printed readability
 
-    const addressStr = `${company.endereco || ''}, ${company.numero || ''} – ${company.bairro || ''} – ${company.cidade || ''} – ${company.estado || ''}`.toUpperCase();
-    const numbersStr = `CEP-${company.cep || ''}       -       CNPJ – ${company.cnpj || ''}       -       IE – ${company.inscricaoEstadual || 'Isento'}`;
-    const contactsStr = `Razão Social: ${company.razaoSocial || ''}       |       E-mail: ${company.email || ''}       |       Fone/WhatsApp: ${company.whatsapp || company.telefone || ''}`;
+    let currentDetailY = headerEndY + 6;
+    for (const line of detailLines) {
+      if (line.colorType === 'dark') {
+        doc.setTextColor(51, 51, 51); // Charcoal
+      } else if (line.colorType === 'grey') {
+        doc.setTextColor(80, 80, 80); // Neutral dark grey
+      } else {
+        doc.setTextColor(primaryColor.r, primaryColor.g, primaryColor.b); // Deep Blue
+      }
+      doc.text(line.text, pageWidth / 2, currentDetailY, { align: 'center' });
+      currentDetailY += 5.5;
+    }
 
-    doc.text(addressStr, pageWidth / 2, headerEndY + 6, { align: 'center' });
-    doc.setTextColor(80, 80, 80); // Neutral dark grey
-    doc.text(numbersStr, pageWidth / 2, headerEndY + 12, { align: 'center' });
-    doc.setTextColor(primaryColor.r, primaryColor.g, primaryColor.b); // Deep Blue emphasis
-    doc.text(contactsStr, pageWidth / 2, headerEndY + 18, { align: 'center' });
-
-    // Second solid red bar below the details block
+    // Second solid red bar below details block
     doc.setFillColor(accentColor.r, accentColor.g, accentColor.b); // #FF6600
-    doc.rect(0, headerEndY + 22, pageWidth, 1.2, 'F');
+    doc.rect(0, currentDetailY + 1, pageWidth, 1.2, 'F');
 
-    // Update layout cursor 'y' past the entire header area
-    y = headerEndY + 28;
+    y = currentDetailY + 7;
   } else {
-    // If not registered, we bring no info and collapse the layout cleanly
-    // Layout cursor starts right after the first red bar
     y = headerEndY + 6;
   }
 
-  // --- METADATA SECTOR (Two-column grid card) ---
-  ensureSpace(50);
+  // --- METADATA SECTOR (Dynamic Grid Card based on perfilConfig) ---
+  interface MetaItem {
+    label: string;
+    value: string;
+  }
+  const metaItems: MetaItem[] = [];
+
+  // Cliente
+  if (isCampoVisivel(perfilConfig, 'cliente')) {
+    metaItems.push({
+      label: getCampoLabel(perfilConfig, 'cliente', 'CLIENTE').toUpperCase(),
+      value: os.clienteNome || 'Não informado'
+    });
+  }
+
+  // Equipamento / Veículo / Máquina / Sistema
+  if (isCampoVisivel(perfilConfig, 'equipamento')) {
+    metaItems.push({
+      label: getCampoLabel(perfilConfig, 'equipamento', 'EQUIPAMENTO / MÁQUINA').toUpperCase(),
+      value: os.equipamento || 'Não informado'
+    });
+  }
+
+  // Técnico Responsável
+  metaItems.push({
+    label: (perfilConfig.labels.tecnico || 'TÉCNICO RESPONSÁVEL').toUpperCase(),
+    value: os.tecnico || 'Não informado'
+  });
+
+  // Abertura do Atendimento
+  metaItems.push({
+    label: 'ABERTURA DO ATENDIMENTO',
+    value: `${formatToBrazilianDate(os.dataAbertura)} às ${os.horaAbertura || '00:00'}`
+  });
+
+  // Placa (apenas se visível no perfil)
+  if (isCampoVisivel(perfilConfig, 'placa') && os.placa) {
+    metaItems.push({
+      label: getCampoLabel(perfilConfig, 'placa', 'PLACA DO EQUIPAMENTO').toUpperCase(),
+      value: os.placa.toUpperCase()
+    });
+  }
+
+  // Chassi (apenas se visível no perfil)
+  if (isCampoVisivel(perfilConfig, 'chassi') && os.chassi) {
+    metaItems.push({
+      label: getCampoLabel(perfilConfig, 'chassi', 'CHASSI').toUpperCase(),
+      value: os.chassi.toUpperCase()
+    });
+  }
+
+  // Quilometragem / Horímetro (Uso) - apenas se visíveis no perfil
+  const isKmVis = isCampoVisivel(perfilConfig, 'quilometragem');
+  const isHorVis = isCampoVisivel(perfilConfig, 'horimetro');
+  if ((isKmVis && os.quilometragem) || (isHorVis && os.horimetro)) {
+    let useLabel = 'USO';
+    if (isKmVis && isHorVis) {
+      useLabel = 'USO (QUILOMETRAGEM / HORÍMETRO)';
+    } else if (isKmVis) {
+      useLabel = getCampoLabel(perfilConfig, 'quilometragem', 'QUILOMETRAGEM').toUpperCase();
+    } else {
+      useLabel = getCampoLabel(perfilConfig, 'horimetro', 'HORÍMETRO').toUpperCase();
+    }
+
+    const usageParts: string[] = [];
+    if (isKmVis && os.quilometragem) usageParts.push(`${os.quilometragem} KM`);
+    if (isHorVis && os.horimetro) usageParts.push(`${os.horimetro} H`);
+
+    metaItems.push({
+      label: useLabel,
+      value: usageParts.join(' / ')
+    });
+  }
+
+  // Número de Série
+  if (isCampoVisivel(perfilConfig, 'numeroSerie') && os.numeroSerie) {
+    metaItems.push({
+      label: getCampoLabel(perfilConfig, 'numeroSerie', 'NÚMERO DE SÉRIE').toUpperCase(),
+      value: os.numeroSerie.toUpperCase()
+    });
+  }
+
+  // Patrimônio
+  if (isCampoVisivel(perfilConfig, 'patrimonio') && os.patrimonio) {
+    metaItems.push({
+      label: getCampoLabel(perfilConfig, 'patrimonio', 'PATRIMÔNIO').toUpperCase(),
+      value: os.patrimonio.toUpperCase()
+    });
+  }
+
+  // Local da Obra
+  if (isCampoVisivel(perfilConfig, 'localObra') && os.localObra) {
+    metaItems.push({
+      label: getCampoLabel(perfilConfig, 'localObra', 'LOCAL DA OBRA').toUpperCase(),
+      value: os.localObra
+    });
+  }
+
+  // Responsável pela Obra
+  if (isCampoVisivel(perfilConfig, 'responsavelObra') && os.responsavelObra) {
+    metaItems.push({
+      label: getCampoLabel(perfilConfig, 'responsavelObra', 'RESPONSÁVEL PELA OBRA').toUpperCase(),
+      value: os.responsavelObra
+    });
+  }
+
+  // Setor
+  if (isCampoVisivel(perfilConfig, 'setor') && os.setor) {
+    metaItems.push({
+      label: getCampoLabel(perfilConfig, 'setor', 'SETOR').toUpperCase(),
+      value: os.setor
+    });
+  }
+
+  // Linha de Produção
+  if (isCampoVisivel(perfilConfig, 'linhaProducao') && os.linhaProducao) {
+    metaItems.push({
+      label: getCampoLabel(perfilConfig, 'linhaProducao', 'LINHA DE PRODUÇÃO').toUpperCase(),
+      value: os.linhaProducao
+    });
+  }
+
+  // Draw Dynamic Two-Column Card
+  const rowCount = Math.ceil(metaItems.length / 2);
+  const rowHeight = 11;
+  const boxHeight = Math.max(rowCount * rowHeight + 4, 24);
+
+  ensureSpace(boxHeight + 8);
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(borderColor.r, borderColor.g, borderColor.b);
   doc.setLineWidth(0.3);
-  doc.rect(marginX, y, contentWidth, 36, 'FD');
+  doc.rect(marginX, y, contentWidth, boxHeight, 'FD');
 
   // Divide line down the middle
-  doc.line(pageWidth / 2, y + 2, pageWidth / 2, y + 34);
+  doc.line(pageWidth / 2, y + 2, pageWidth / 2, y + boxHeight - 2);
 
-  // Column 1 contents: General Equipment and Details
-  doc.setFontSize(8);
-  doc.setTextColor(110, 110, 110);
-  doc.setFont('helvetica', 'normal');
-  doc.text('CLIENTE', marginX + 5, y + 6);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  doc.setTextColor(textColor.r, textColor.g, textColor.b);
-  doc.text(os.clienteNome || 'Não informado', marginX + 5, y + 11);
+  metaItems.forEach((item, idx) => {
+    const col = idx % 2; // 0 (left) or 1 (right)
+    const row = Math.floor(idx / 2);
+    const itemX = col === 0 ? marginX + 5 : (pageWidth / 2) + 5;
+    const itemY = y + 5 + (row * rowHeight);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(110, 110, 110);
-  doc.text('EQUIPAMENTO / MÁQUINA', marginX + 5, y + 18);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  doc.setTextColor(textColor.r, textColor.g, textColor.b);
-  doc.text(os.equipamento, marginX + 5, y + 23);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(110, 110, 110);
+    doc.text(item.label, itemX, itemY);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(110, 110, 110);
-  doc.text('PLACA DO EQUIPAMENTO', marginX + 5, y + 30);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  doc.text(os.placa.toUpperCase(), marginX + 5, y + 35);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(textColor.r, textColor.g, textColor.b);
+    doc.text(item.value, itemX, itemY + 4.5);
+  });
 
-  // Column 2 contents: Opening & Tech details
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(110, 110, 110);
-  doc.text('TÉCNICO RESPONSÁVEL', (pageWidth / 2) + 5, y + 6);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  doc.setTextColor(textColor.r, textColor.g, textColor.b);
-  doc.text(os.tecnico, (pageWidth / 2) + 5, y + 11);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(110, 110, 110);
-  doc.text('ABERTURA DO ATENDIMENTO', (pageWidth / 2) + 5, y + 18);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  doc.text(`${formatToBrazilianDate(os.dataAbertura)} às ${os.horaAbertura}`, (pageWidth / 2) + 5, y + 23);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(110, 110, 110);
-  doc.text('USO (QUILOMETRAGEM / HORÍMETRO)', (pageWidth / 2) + 5, y + 30);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  
-  let usageStr = 'N/A';
-  if (os.quilometragem || os.horimetro) {
-    const parts: string[] = [];
-    if (os.quilometragem) parts.push(`${os.quilometragem} KM`);
-    if (os.horimetro) parts.push(`${os.horimetro} H`);
-    usageStr = parts.join(' / ');
-  }
-  doc.text(usageStr, (pageWidth / 2) + 5, y + 35);
-
-  y += 42;
+  y += boxHeight + 6;
 
   // --- SECTOR 2: DETALHES DE AVARIA (Etapa 2) ---
   if (os.descricaoAvaria) {

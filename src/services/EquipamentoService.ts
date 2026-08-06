@@ -5,6 +5,8 @@
 
 import { Equipamento } from '../types';
 import { FirestoreRepository } from './FirestoreRepository';
+import { IntegridadeService } from './IntegridadeService';
+import { RecuperacaoService } from './RecuperacaoService';
 
 export const EquipamentoService = {
   /**
@@ -15,7 +17,7 @@ export const EquipamentoService = {
   },
 
   /**
-   * Salva ou atualiza um equipamento via FirestoreRepository
+   * Salva ou atualiza um equipamento via FirestoreRepository após validação de duplicidade (Patrimônio / Série)
    */
   async saveEquipamento(equipamentoData: Equipamento, userEmail?: string): Promise<Equipamento> {
     const timestamp = new Date().toISOString();
@@ -28,6 +30,12 @@ export const EquipamentoService = {
       updatedAt: timestamp,
     };
 
+    // Validação de duplicidade centralizada (Patrimônio e Número de Série)
+    const dupValidation = await IntegridadeService.validateEquipamentoDuplicates(equipamento, equipamento.empresaId, userEmail);
+    if (!dupValidation.valid) {
+      throw new Error(dupValidation.message || 'Patrimônio ou Número de Série já cadastrado nesta empresa.');
+    }
+
     const saved = await FirestoreRepository.add('equipamentos', equipamento, equipamento.empresaId, userEmail);
 
     if (typeof window !== 'undefined') {
@@ -38,10 +46,20 @@ export const EquipamentoService = {
   },
 
   /**
-   * Exclui um equipamento via FirestoreRepository
+   * Exclui um equipamento via RecuperacaoService (Soft Delete) após validação de integridade e OS vinculadas
    */
   async deleteEquipamento(id: string, empresaId: string, userEmail?: string): Promise<void> {
-    await FirestoreRepository.delete('equipamentos', id, empresaId, userEmail);
+    // Validação de exclusão centralizada
+    const integrity = await IntegridadeService.canDeleteEquipamento(id, empresaId, userEmail);
+    if (!integrity.allowed) {
+      throw new Error(integrity.reason || 'Este equipamento possui registros vinculados e não pode ser excluído.');
+    }
+
+    const eq = await FirestoreRepository.get<Equipamento>('equipamentos', id, empresaId, userEmail);
+    const nome = (eq as any)?.nome || `${eq?.fabricante || ''} ${eq?.modelo || ''}`.trim() || 'Equipamento Sem Nome';
+    const ident = eq?.numeroSerie || eq?.placa || eq?.id || id;
+
+    await RecuperacaoService.softDeleteRecord('equipamentos', id, 'Equipamento', nome, ident, empresaId, userEmail, eq);
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('equipamentos_updated', { detail: { empresaId } }));

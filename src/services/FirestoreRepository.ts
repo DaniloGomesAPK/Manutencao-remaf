@@ -31,6 +31,7 @@ export const ALL_STORES = [
   'configuracoes',
   'company_profile',
   'servicos_inteligentes',
+  'lixeira',
 ] as const;
 
 export type StoreName = typeof ALL_STORES[number];
@@ -158,6 +159,8 @@ export const FirestoreRepository = {
       sincronizado: false,
       ultimaSincronizacao: data.ultimaSincronizacao || null,
     };
+
+    unmarkAsDeletedLocally(colecao, docId, tenantId);
 
     // 1. Grava no cache local primeiro (IndexedDB / LocalStorage)
     await saveLocalStoreItem(colecao, recordWithMeta);
@@ -328,6 +331,7 @@ export const FirestoreRepository = {
   ): Promise<T[]> {
     const startTime = performance.now();
     const validTenantId = validateEmpresaId(empresaId, 'getAll', colecao, userEmail);
+    const deletedIds = getDeletedLocallyIds(colecao, validTenantId);
 
     if (this.isOnline()) {
       try {
@@ -336,15 +340,18 @@ export const FirestoreRepository = {
         const remoteDocs: T[] = [];
 
         querySnapshot.forEach((docSnap) => {
-          remoteDocs.push({ id: docSnap.id, ...docSnap.data() } as T);
+          if (!deletedIds.includes(docSnap.id)) {
+            remoteDocs.push({ id: docSnap.id, ...docSnap.data() } as T);
+          }
         });
 
-        const localDocs = await getLocalStoreItems<T>(colecao, validTenantId);
+        const localDocs = (await getLocalStoreItems<T>(colecao, validTenantId)).filter(l => !deletedIds.includes(l.id));
         const mergedMap = new Map<string, T>();
 
         localDocs.forEach((lDoc) => mergedMap.set(lDoc.id, lDoc));
 
         remoteDocs.forEach((rDoc) => {
+          if (deletedIds.includes(rDoc.id)) return;
           const lDoc = mergedMap.get(rDoc.id);
           if (lDoc && lDoc.sincronizado === false) {
             return;
@@ -353,7 +360,7 @@ export const FirestoreRepository = {
           mergedMap.set(rDoc.id, mergedDoc);
         });
 
-        const mergedList = Array.from(mergedMap.values());
+        const mergedList = Array.from(mergedMap.values()).filter(doc => !deletedIds.includes(doc.id));
         await saveLocalStoreBatch(colecao, mergedList, validTenantId);
 
         LogService.logOperation(userEmail || 'usuario', colecao, 'all', 'getAll', performance.now() - startTime);
@@ -364,7 +371,7 @@ export const FirestoreRepository = {
       }
     }
 
-    const localDocs = await getLocalStoreItems<T>(colecao, validTenantId);
+    const localDocs = (await getLocalStoreItems<T>(colecao, validTenantId)).filter(l => !deletedIds.includes(l.id));
     LogService.logOperation(userEmail || 'usuario', colecao, 'all', 'getAll', performance.now() - startTime, 'Read from local cache');
     return localDocs;
   },
@@ -380,6 +387,7 @@ export const FirestoreRepository = {
   ): Promise<T[]> {
     const startTime = performance.now();
     const validTenantId = validateEmpresaId(empresaId, 'query', colecao, userEmail);
+    const deletedIds = getDeletedLocallyIds(colecao, validTenantId);
 
     if (this.isOnline()) {
       try {
@@ -389,7 +397,9 @@ export const FirestoreRepository = {
         const results: T[] = [];
 
         querySnapshot.forEach((docSnap) => {
-          results.push({ id: docSnap.id, ...docSnap.data() } as T);
+          if (!deletedIds.includes(docSnap.id)) {
+            results.push({ id: docSnap.id, ...docSnap.data() } as T);
+          }
         });
 
         LogService.logOperation(userEmail || 'usuario', colecao, 'query', 'query', performance.now() - startTime);
@@ -399,7 +409,7 @@ export const FirestoreRepository = {
       }
     }
 
-    const localAll = await getLocalStoreItems<T>(colecao, validTenantId);
+    const localAll = (await getLocalStoreItems<T>(colecao, validTenantId)).filter(l => !deletedIds.includes(l.id));
     LogService.logOperation(userEmail || 'usuario', colecao, 'query', 'query', performance.now() - startTime, 'Query executed on local cache');
     return localAll;
   },
@@ -417,6 +427,7 @@ export const FirestoreRepository = {
     const startTime = performance.now();
     const validTenantId = validateEmpresaId(empresaId, 'listen', colecao, userEmail);
     const collectionPath = getTenantCollectionPath(colecao, validTenantId, 'listen');
+    const deletedIds = getDeletedLocallyIds(colecao, validTenantId);
 
     try {
       const q = query(collection(db, collectionPath), ...constraints);
@@ -426,20 +437,23 @@ export const FirestoreRepository = {
         async (querySnapshot) => {
           const remoteDocs: T[] = [];
           querySnapshot.forEach((docSnap) => {
-            remoteDocs.push({ id: docSnap.id, ...docSnap.data() } as T);
+            if (!deletedIds.includes(docSnap.id)) {
+              remoteDocs.push({ id: docSnap.id, ...docSnap.data() } as T);
+            }
           });
 
-          const localDocs = await getLocalStoreItems<T>(colecao, validTenantId);
+          const localDocs = (await getLocalStoreItems<T>(colecao, validTenantId)).filter(l => !deletedIds.includes(l.id));
           const mergedMap = new Map<string, T>();
 
           localDocs.forEach((l) => mergedMap.set(l.id, l));
           remoteDocs.forEach((r) => {
+            if (deletedIds.includes(r.id)) return;
             const lDoc = mergedMap.get(r.id);
             if (lDoc && (lDoc as any).sincronizado === false) return;
             mergedMap.set(r.id, { ...lDoc, ...r, sincronizado: true });
           });
 
-          const finalList = Array.from(mergedMap.values());
+          const finalList = Array.from(mergedMap.values()).filter(doc => !deletedIds.includes(doc.id));
           await saveLocalStoreBatch(colecao, finalList, validTenantId);
 
           LogService.logOperation(userEmail || 'usuario', colecao, 'realtime_snapshot', 'listen', performance.now() - startTime);
@@ -448,14 +462,14 @@ export const FirestoreRepository = {
         (error) => {
           LogService.logOperation(userEmail || 'usuario', colecao, 'realtime_snapshot', 'listen', performance.now() - startTime, error);
           console.warn(`[FirestoreRepository] Erro no listener real-time de ${colecao}:`, error);
-          getLocalStoreItems<T>(colecao, validTenantId).then((localDocs) => callback(localDocs));
+          getLocalStoreItems<T>(colecao, validTenantId).then((localDocs) => callback(localDocs.filter(doc => !deletedIds.includes(doc.id))));
         }
       );
 
       return unsubscribe;
     } catch (err) {
       LogService.logOperation(userEmail || 'usuario', colecao, 'listen_fail', 'listen', performance.now() - startTime, err);
-      getLocalStoreItems<T>(colecao, validTenantId).then((localDocs) => callback(localDocs));
+      getLocalStoreItems<T>(colecao, validTenantId).then((localDocs) => callback(localDocs.filter(doc => !deletedIds.includes(doc.id))));
       return () => {};
     }
   },
@@ -525,10 +539,45 @@ export const FirestoreRepository = {
   }
 };
 
+export function markAsDeletedLocally(colecao: string, id: string, empresaId: string): void {
+  try {
+    const key = `remaf_deleted_${colecao}_${empresaId}`;
+    const stored = localStorage.getItem(key);
+    const list: string[] = stored ? JSON.parse(stored) : [];
+    if (!list.includes(id)) {
+      list.push(id);
+      localStorage.setItem(key, JSON.stringify(list));
+    }
+  } catch (_) {}
+}
+
+export function unmarkAsDeletedLocally(colecao: string, id: string, empresaId: string): void {
+  try {
+    const key = `remaf_deleted_${colecao}_${empresaId}`;
+    const stored = localStorage.getItem(key);
+    if (stored) {
+      const list: string[] = JSON.parse(stored);
+      const filtered = list.filter(x => x !== id);
+      localStorage.setItem(key, JSON.stringify(filtered));
+    }
+  } catch (_) {}
+}
+
+export function getDeletedLocallyIds(colecao: string, empresaId: string): string[] {
+  try {
+    const key = `remaf_deleted_${colecao}_${empresaId}`;
+    const stored = localStorage.getItem(key);
+    return stored ? JSON.parse(stored) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
 // --- FUNÇÕES AUXILIARES INTERNAS DE CACHE LOCAL ---
 
 async function getLocalStoreItems<T>(colecao: string, empresaId: string): Promise<T[]> {
   const validTenantId = validateEmpresaId(empresaId, 'getLocalStoreItems', colecao);
+  const deletedIds = getDeletedLocallyIds(colecao, validTenantId);
 
   try {
     const idbName = mapCollectionToStoreName(colecao);
@@ -542,7 +591,7 @@ async function getLocalStoreItems<T>(colecao: string, empresaId: string): Promis
         request.onerror = () => reject(request.error);
       });
 
-      const filtered = items.filter((i: any) => !i.empresaId || i.empresaId === validTenantId);
+      const filtered = items.filter((i: any) => (!i.empresaId || i.empresaId === validTenantId) && !deletedIds.includes(i.id));
       if (filtered.length > 0) return filtered;
     }
   } catch (_) {}
@@ -552,7 +601,7 @@ async function getLocalStoreItems<T>(colecao: string, empresaId: string): Promis
     const data = localStorage.getItem(key);
     if (data) {
       const parsed = JSON.parse(data);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) return parsed.filter((i: any) => !deletedIds.includes(i.id));
     }
   } catch (_) {}
 
@@ -561,6 +610,7 @@ async function getLocalStoreItems<T>(colecao: string, empresaId: string): Promis
 
 async function saveLocalStoreItem(colecao: string, item: any): Promise<void> {
   const empId = validateEmpresaId(item.empresaId, 'saveLocalStoreItem', colecao);
+  unmarkAsDeletedLocally(colecao, item.id, empId);
 
   try {
     const idbName = mapCollectionToStoreName(colecao);
@@ -601,6 +651,7 @@ async function saveLocalStoreBatch(colecao: string, items: any[], empresaId: str
       const tx = dbInstance.transaction(idbName, 'readwrite');
       const store = tx.objectStore(idbName);
       for (const item of items) {
+        unmarkAsDeletedLocally(colecao, item.id, validTenantId);
         store.put(item);
       }
     }
@@ -614,6 +665,7 @@ async function saveLocalStoreBatch(colecao: string, items: any[], empresaId: str
 
 async function deleteLocalStoreItem(colecao: string, id: string, empresaId: string): Promise<void> {
   const validTenantId = validateEmpresaId(empresaId, 'deleteLocalStoreItem', colecao);
+  markAsDeletedLocally(colecao, id, validTenantId);
 
   try {
     const idbName = mapCollectionToStoreName(colecao);
@@ -628,13 +680,22 @@ async function deleteLocalStoreItem(colecao: string, id: string, empresaId: stri
       });
     }
 
-    const key = `remaf_cache_${colecao}_${validTenantId}`;
-    const cached = localStorage.getItem(key);
-    if (cached) {
-      let list: any[] = JSON.parse(cached);
-      if (Array.isArray(list)) {
-        list = list.filter((x) => x.id !== id);
-        localStorage.setItem(key, JSON.stringify(list));
+    const keys = [
+      `remaf_cache_${colecao}_${validTenantId}`,
+      `remaf_cache_ordensServico_${validTenantId}`,
+      `remaf_cache_service_orders_${validTenantId}`,
+      `remaf_prod_service_orders_cache_${validTenantId}`,
+      `remaf_service_orders_${validTenantId}`
+    ];
+
+    for (const key of keys) {
+      const cached = localStorage.getItem(key);
+      if (cached) {
+        let list: any[] = JSON.parse(cached);
+        if (Array.isArray(list)) {
+          list = list.filter((x) => x.id !== id);
+          localStorage.setItem(key, JSON.stringify(list));
+        }
       }
     }
   } catch (e) {

@@ -45,6 +45,10 @@ export interface Equipamento {
   chassi: string;
   numeroSerie: string; // Número de Série / Identificação
   patrimonio?: string; // Opcional
+  localObra?: string;
+  responsavelObra?: string;
+  setor?: string;
+  linhaProducao?: string;
   quilometragem?: number; // Quilometragem Atual [opcional]
   horimetro?: number; // Horímetro Atual [opcional]
   observacoes?: string;
@@ -69,6 +73,15 @@ export interface OrdemDeServico {
   clienteNome?: string;
   quilometragem?: number;
   horimetro?: number;
+  chassi?: string;
+  modelo?: string;
+  fabricante?: string;
+  numeroSerie?: string;
+  patrimonio?: string;
+  localObra?: string;
+  responsavelObra?: string;
+  setor?: string;
+  linhaProducao?: string;
   equipamentoId?: string; // Preparação para o Prontuário do Equipamento (vínculo futuro)
   
   // Etapa 2

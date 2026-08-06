@@ -16,17 +16,22 @@ import {
   Building,
   Hash,
   Activity,
-  ArrowLeft,
   Percent,
   Wallet,
   CreditCard,
   Landmark,
-  Coins
+  Coins,
+  Briefcase,
+  ChevronDown,
+  RotateCcw
 } from 'lucide-react';
 import { Empresa } from '../models/Empresa';
 import { EmpresaService } from '../services/EmpresaService';
 import { EmpresaContext } from '../contexts/EmpresaContext';
 import CompanyLogo from '../components/CompanyLogo';
+import CentralRecuperacaoSection from '../components/CentralRecuperacaoSection';
+import { PERFIL_EMPRESA_OPCOES } from '../constants/perfilEmpresa';
+import { UIHeader, UICard, UIButton, UIBadge, UIAlert, UIFormGroup, UIInput, UISelect, UITextarea } from '../components/ui/UIComponents';
 
 interface MinhaEmpresaProps {
   onBack?: () => void;
@@ -40,9 +45,10 @@ export default function MinhaEmpresa({ onBack }: MinhaEmpresaProps) {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<'geral' | 'financeiro'>('geral');
+  const [activeTab, setActiveTab] = useState<'geral' | 'financeiro' | 'recuperacao'>('geral');
 
   // Form Fields State (Geral)
+  const [perfilEmpresa, setPerfilEmpresa] = useState('Oficina Mecânica');
   const [nomeFantasia, setNomeFantasia] = useState('');
   const [razaoSocial, setRazaoSocial] = useState('');
   const [cnpj, setCnpj] = useState('');
@@ -83,6 +89,7 @@ export default function MinhaEmpresa({ onBack }: MinhaEmpresaProps) {
   // Load existing company data
   useEffect(() => {
     if (company) {
+      setPerfilEmpresa(company.perfilEmpresa || 'Oficina Mecânica');
       setNomeFantasia(company.nomeFantasia || '');
       setRazaoSocial(company.razaoSocial || '');
       setCnpj(company.cnpj || '');
@@ -173,6 +180,7 @@ export default function MinhaEmpresa({ onBack }: MinhaEmpresaProps) {
 
     const empresaData: Empresa = {
       ...company,
+      perfilEmpresa: perfilEmpresa,
       nomeFantasia: nomeFantasia.trim(),
       razaoSocial: razaoSocial.trim(),
       cnpj: cnpj.trim(),
@@ -235,43 +243,43 @@ export default function MinhaEmpresa({ onBack }: MinhaEmpresaProps) {
   }
 
   return (
-    <div id="company-settings-page" className="space-y-6">
+    <div id="company-settings-page" className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 py-5">
       
-      {/* Page header controls */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          {onBack && (
-            <button
-              id="btn-back-from-company"
-              type="button"
-              onClick={onBack}
-              className="p-2 hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer text-slate-500"
-              title="Voltar"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-          )}
+      {/* Standardized Header */}
+      <UIHeader
+        title="Minha Empresa"
+        subtitle="Gerencie os dados e identidade corporativa da sua empresa para os relatórios em PDF."
+        icon={Building2}
+        onBack={onBack}
+        badge={<UIBadge status="info" label="SAAS READY" />}
+      />
+
+      {/* Informative Card: Active Profile */}
+      <div id="company-active-profile-card" className="bg-[#003366] text-white rounded-2xl p-5 shadow-xs border border-[#003366]/20 flex items-center justify-between">
+        <div className="flex items-center gap-3.5">
+          <div className="p-3 bg-white/10 text-[#FF6600] rounded-xl shrink-0">
+            <Briefcase className="w-6 h-6" />
+          </div>
           <div>
-            <h2 className="text-xl md:text-2xl font-black text-[#003366] uppercase tracking-tight">Minha Empresa</h2>
-            <p className="text-xs text-slate-500">Gerencie os dados e identidade corporativa da sua oficina para os relatórios em PDF.</p>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-300 block">
+              Perfil da Empresa Ativo
+            </span>
+            <h3 className="text-base sm:text-lg font-bold text-white tracking-tight mt-0.5">
+              {empresaCtx?.perfilConfig?.nome || company?.perfilEmpresa || 'Oficina Mecânica'}
+            </h3>
           </div>
         </div>
-        <span className="text-[9px] bg-[#003366]/5 border border-[#003366]/10 text-[#003366] px-3 py-1.5 rounded-full font-black uppercase tracking-widest hidden sm:inline-block">
-          MODO SAAS READY
-        </span>
+        <UIBadge status="warning" label="Segmento Configurado" className="hidden sm:inline-flex" />
       </div>
 
       {/* Success Banner */}
       {successMessage && (
-        <div id="company-save-success-alert" className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-2xl p-4 flex items-center gap-3 shadow-xs animate-in fade-in slide-in-from-top-4 duration-200">
-          <div className="p-1.5 bg-emerald-100 rounded-full shrink-0">
-            <ShieldCheck className="w-5 h-5 text-emerald-600" />
-          </div>
-          <div className="text-xs text-left">
-            <strong className="text-emerald-800 uppercase font-black tracking-wider text-[10px] block mb-0.5">Alteração Gravada</strong>
-            {successMessage} O cabeçalho dos novos relatórios em PDF foi atualizado imediatamente.
-          </div>
-        </div>
+        <UIAlert
+          type="success"
+          title="Alteração Gravada"
+          message={`${successMessage} O cabeçalho dos novos relatórios em PDF foi atualizado imediatamente.`}
+          onClose={() => setSuccessMessage(null)}
+        />
       )}
 
       {/* Pre-fill/Instruction Banner for New Users */}
@@ -302,11 +310,11 @@ export default function MinhaEmpresa({ onBack }: MinhaEmpresaProps) {
       )}
 
       {/* Tabs Selector */}
-      <div className="flex border-b border-slate-200 bg-white p-1 rounded-xl shadow-xs gap-1.5">
+      <div className="flex border-b border-slate-200 bg-white p-1 rounded-xl shadow-xs gap-1.5 overflow-x-auto">
         <button
           type="button"
           onClick={() => setActiveTab('geral')}
-          className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3 text-xs font-black uppercase tracking-widest rounded-lg transition duration-200 cursor-pointer ${
+          className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3 text-xs font-black uppercase tracking-widest rounded-lg transition duration-200 cursor-pointer whitespace-nowrap ${
             activeTab === 'geral'
               ? 'bg-[#003366] text-white shadow-sm'
               : 'text-slate-500 hover:text-[#003366] hover:bg-slate-50'
@@ -318,7 +326,7 @@ export default function MinhaEmpresa({ onBack }: MinhaEmpresaProps) {
         <button
           type="button"
           onClick={() => setActiveTab('financeiro')}
-          className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3 text-xs font-black uppercase tracking-widest rounded-lg transition duration-200 cursor-pointer ${
+          className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3 text-xs font-black uppercase tracking-widest rounded-lg transition duration-200 cursor-pointer whitespace-nowrap ${
             activeTab === 'financeiro'
               ? 'bg-[#003366] text-white shadow-sm'
               : 'text-slate-500 hover:text-[#003366] hover:bg-slate-50'
@@ -327,9 +335,24 @@ export default function MinhaEmpresa({ onBack }: MinhaEmpresaProps) {
           <Wallet className="w-4 h-4" />
           <span>Dados Financeiros</span>
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('recuperacao')}
+          className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3 text-xs font-black uppercase tracking-widest rounded-lg transition duration-200 cursor-pointer whitespace-nowrap ${
+            activeTab === 'recuperacao'
+              ? 'bg-[#003366] text-white shadow-sm'
+              : 'text-slate-500 hover:text-[#003366] hover:bg-slate-50'
+          }`}
+        >
+          <RotateCcw className="w-4 h-4" />
+          <span>Central de Recuperação</span>
+        </button>
       </div>
 
-      <form onSubmit={handleSave} className="space-y-6">
+      {activeTab === 'recuperacao' ? (
+        <CentralRecuperacaoSection />
+      ) : (
+        <form onSubmit={handleSave} className="space-y-6">
         
         {activeTab === 'geral' && (
           <div className="space-y-6">
@@ -350,6 +373,29 @@ export default function MinhaEmpresa({ onBack }: MinhaEmpresaProps) {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* Perfil da Empresa */}
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-[10px] font-black text-slate-500 tracking-wider flex items-center gap-1.5 uppercase">
+                    <Briefcase className="w-3.5 h-3.5 text-[#003366]" />
+                    Perfil da Empresa
+                  </label>
+                  <div className="relative">
+                    <select
+                      id="select-company-perfil"
+                      value={perfilEmpresa}
+                      onChange={(e) => setPerfilEmpresa(e.target.value)}
+                      className="w-full bg-white text-slate-800 border border-slate-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200 appearance-none font-semibold cursor-pointer"
+                    >
+                      {PERFIL_EMPRESA_OPCOES.map((opcao) => (
+                        <option key={opcao} value={opcao}>
+                          {opcao}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                </div>
+
                 {/* Nome Fantasia */}
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-500 tracking-wider flex items-center gap-1.5 uppercase">
@@ -877,6 +923,7 @@ export default function MinhaEmpresa({ onBack }: MinhaEmpresaProps) {
         </div>
 
       </form>
+      )}
     </div>
   );
 }

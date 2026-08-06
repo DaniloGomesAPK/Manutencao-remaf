@@ -5,6 +5,8 @@
 
 import { Cliente } from '../types';
 import { FirestoreRepository } from './FirestoreRepository';
+import { IntegridadeService } from './IntegridadeService';
+import { RecuperacaoService } from './RecuperacaoService';
 
 export const ClienteService = {
   /**
@@ -15,7 +17,7 @@ export const ClienteService = {
   },
 
   /**
-   * Salva ou atualiza um cliente via FirestoreRepository
+   * Salva ou atualiza um cliente via FirestoreRepository após validação de duplicidade
    */
   async saveCliente(clienteData: Cliente, userEmail?: string): Promise<Cliente> {
     const timestamp = new Date().toISOString();
@@ -28,6 +30,12 @@ export const ClienteService = {
       updatedAt: timestamp,
     };
 
+    // Validação de duplicidade centralizada
+    const dupValidation = await IntegridadeService.validateClienteDuplicates(cliente, cliente.empresaId, userEmail);
+    if (!dupValidation.valid) {
+      throw new Error(dupValidation.message || 'CPF/CNPJ já cadastrado para outro cliente nesta empresa.');
+    }
+
     const saved = await FirestoreRepository.add('clientes', cliente, cliente.empresaId, userEmail);
 
     if (typeof window !== 'undefined') {
@@ -38,10 +46,20 @@ export const ClienteService = {
   },
 
   /**
-   * Exclui um cliente via FirestoreRepository
+   * Exclui um cliente via RecuperacaoService (Soft Delete) após validação de integridade e vínculos ativos
    */
   async deleteCliente(id: string, empresaId: string, userEmail?: string): Promise<void> {
-    await FirestoreRepository.delete('clientes', id, empresaId, userEmail);
+    // Validação de exclusão centralizada
+    const integrity = await IntegridadeService.canDeleteCliente(id, empresaId, userEmail);
+    if (!integrity.allowed) {
+      throw new Error(integrity.reason || 'Este cliente possui registros vinculados e não pode ser excluído.');
+    }
+
+    const cliente = await FirestoreRepository.get<Cliente>('clientes', id, empresaId, userEmail);
+    const nome = cliente?.nome || 'Cliente Sem Nome';
+    const docIdent = cliente?.documento || cliente?.id || id;
+
+    await RecuperacaoService.softDeleteRecord('clientes', id, 'Cliente', nome, docIdent, empresaId, userEmail, cliente);
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('clientes_updated', { detail: { empresaId } }));

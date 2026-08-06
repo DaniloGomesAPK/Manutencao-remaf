@@ -5,6 +5,8 @@
 
 import { LancamentoFinanceiro } from '../types';
 import { FirestoreRepository } from './FirestoreRepository';
+import { IntegridadeService } from './IntegridadeService';
+import { RecuperacaoService } from './RecuperacaoService';
 
 export const FinanceiroService = {
   /**
@@ -15,7 +17,7 @@ export const FinanceiroService = {
   },
 
   /**
-   * Salva ou atualiza um lançamento financeiro via FirestoreRepository
+   * Salva ou atualiza um lançamento financeiro via FirestoreRepository após validação de referências
    */
   async saveLancamento(data: LancamentoFinanceiro, userEmail?: string): Promise<LancamentoFinanceiro> {
     const timestamp = new Date().toISOString();
@@ -28,6 +30,12 @@ export const FinanceiroService = {
       updatedAt: timestamp,
     };
 
+    // Validação de referências (clienteId, osId)
+    const refValidation = await IntegridadeService.validateFinanceiroReferences(lancamento, lancamento.empresaId, userEmail);
+    if (!refValidation.valid) {
+      throw new Error(refValidation.message || 'Lançamento possui referências inválidas.');
+    }
+
     const saved = await FirestoreRepository.add<LancamentoFinanceiro>('financeiro', lancamento, data.empresaId, userEmail);
 
     if (typeof window !== 'undefined') {
@@ -38,10 +46,14 @@ export const FinanceiroService = {
   },
 
   /**
-   * Exclui um lançamento financeiro via FirestoreRepository
+   * Exclui um lançamento financeiro via RecuperacaoService (Soft Delete)
    */
   async deleteLancamento(id: string, empresaId: string, userEmail?: string): Promise<void> {
-    await FirestoreRepository.delete('financeiro', id, empresaId, userEmail);
+    const lanc = await FirestoreRepository.get<LancamentoFinanceiro>('financeiro', id, empresaId, userEmail);
+    const desc = lanc?.descricao || 'Lançamento Financeiro';
+    const ident = `R$ ${(lanc?.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${lanc?.tipo || 'financeiro'})`;
+
+    await RecuperacaoService.softDeleteRecord('financeiro', id, 'Financeiro', desc, ident, empresaId, userEmail, lanc);
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('financeiro_updated', { detail: { empresaId } }));

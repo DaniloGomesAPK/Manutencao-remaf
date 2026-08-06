@@ -8,6 +8,7 @@ import { EmpresaContext, EmpresaContextType } from '../contexts/EmpresaContext';
 import { Empresa } from '../models/Empresa';
 import { EmpresaService } from '../services/EmpresaService';
 import { AuthContext } from '../contexts/AuthContext';
+import { getPerfilConfig } from '../config/perfis';
 
 interface EmpresaProviderProps {
   children: ReactNode;
@@ -17,6 +18,8 @@ export const EmpresaProvider: React.FC<EmpresaProviderProps> = ({ children }) =>
   const auth = useContext(AuthContext);
   const [empresa, setEmpresa] = useState<Empresa | null>(null);
   const [isLoadingEmpresa, setIsLoadingEmpresa] = useState<boolean>(false);
+
+  const perfilConfig = getPerfilConfig(empresa?.perfilEmpresa);
 
   const loadEmpresaForUser = async () => {
     if (!auth || !auth.currentUser) {
@@ -66,6 +69,7 @@ export const EmpresaProvider: React.FC<EmpresaProviderProps> = ({ children }) =>
 
   const value: EmpresaContextType = {
     empresa,
+    perfilConfig,
     isLoadingEmpresa,
     saveEmpresa,
     reloadEmpresa

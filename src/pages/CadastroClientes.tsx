@@ -3,7 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState, useContext, useEffect, useRef } from 'react';
+import { useEmpresa } from '../contexts/EmpresaContext';
+import { toPlural } from '../config/perfis';
 import { 
   User, 
   Search, 
@@ -23,12 +25,17 @@ import {
 } from 'lucide-react';
 import { ClienteContext } from '../contexts/ClienteContext';
 import { Cliente } from '../types';
+import { saveModuleState, getModuleState, applySmartFocus } from '../utils/navigationState';
+import { UIHeader, UICard, UIButton, UIFormGroup, UIInput, UITextarea, UITableContainer, UITableHeader, UITableTh, UITableRow, UITableTd } from '../components/ui/UIComponents';
 
 interface CadastroClientesProps {
   onBack?: () => void;
 }
 
 export default function CadastroClientes({ onBack }: CadastroClientesProps) {
+  const { perfilConfig } = useEmpresa();
+  const labels = perfilConfig.labels;
+
   const clienteCtx = useContext(ClienteContext);
   const { clientes, isLoadingClientes, saveCliente, deleteCliente } = clienteCtx || {
     clientes: [],
@@ -37,11 +44,39 @@ export default function CadastroClientes({ onBack }: CadastroClientesProps) {
     deleteCliente: async () => {},
   };
 
-  const [searchTerm, setSearchTerm] = useState('');
+  const initialNavState = getModuleState('clientes');
+  const [searchTerm, setSearchTerm] = useState<string>(initialNavState.searchTerm || '');
   const [filteredClientes, setFilteredClientes] = useState<Cliente[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const firstInputRef = useRef<HTMLInputElement>(null);
+
+  // Scroll restoration
+  useEffect(() => {
+    const savedScroll = initialNavState.scrollPos;
+    if (savedScroll && savedScroll > 0) {
+      setTimeout(() => window.scrollTo({ top: savedScroll, behavior: 'instant' as ScrollBehavior }), 50);
+    }
+
+    const onScroll = () => {
+      saveModuleState('clientes', { scrollPos: window.scrollY });
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // Smart focus
+  useEffect(() => {
+    if (isFormOpen) {
+      applySmartFocus(firstInputRef.current);
+    } else {
+      applySmartFocus(searchInputRef.current);
+    }
+  }, [isFormOpen]);
 
   // Form Fields
   const [nome, setNome] = useState('');
@@ -59,6 +94,7 @@ export default function CadastroClientes({ onBack }: CadastroClientesProps) {
 
   // Search filter
   useEffect(() => {
+    saveModuleState('clientes', { searchTerm });
     if (!searchTerm.trim()) {
       setFilteredClientes(clientes);
     } else {
@@ -116,9 +152,9 @@ export default function CadastroClientes({ onBack }: CadastroClientesProps) {
     if (window.confirm(`Tem certeza que deseja excluir o cliente "${nome}"?`)) {
       try {
         await deleteCliente(id);
-      } catch (err) {
+      } catch (err: any) {
         console.error('Erro ao excluir cliente:', err);
-        alert('Não foi possível excluir o cliente.');
+        alert(err.message || 'Não foi possível excluir o cliente.');
       }
     }
   };
@@ -191,48 +227,30 @@ export default function CadastroClientes({ onBack }: CadastroClientesProps) {
     try {
       await saveCliente(payload);
       setIsFormOpen(false);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao salvar cliente:', err);
-      alert('Erro ao salvar os dados do cliente.');
+      alert(err.message || 'Erro ao salvar os dados do cliente.');
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header card with action */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          {onBack && (
-            <button
-              id="btn-back-from-clientes"
-              type="button"
-              onClick={onBack}
-              className="p-2 hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer text-slate-500"
-              title="Voltar"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-          )}
-          <div>
-            <h2 className="text-lg font-black text-[#003366] uppercase tracking-tight flex items-center gap-2">
-              <User className="w-5 h-5 text-[#FF6600]" />
-              Cadastro de Clientes
-            </h2>
-            <p className="text-xs text-slate-500 font-medium">
-              Gerencie os clientes cadastrados no sistema para vincular em Ordens de Serviço.
-            </p>
-          </div>
-        </div>
-        <button
-          id="btn-new-cliente"
-          type="button"
-          onClick={handleOpenCreate}
-          className="flex items-center justify-center gap-2 bg-[#FF6600] hover:bg-[#e05900] active:scale-95 text-white font-bold px-4 py-2.5 rounded-xl text-xs uppercase tracking-wider transition cursor-pointer shadow-sm self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4 stroke-[3]" />
-          Novo Cliente
-        </button>
-      </div>
+    <div className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 py-5">
+      {/* Standardized Header */}
+      <UIHeader
+        title={`Cadastro de ${toPlural(labels.cliente)}`}
+        subtitle={`Gerencie os ${toPlural(labels.cliente.toLowerCase())} cadastrados no sistema para vincular em ${toPlural(labels.ordemServico)}.`}
+        icon={User}
+        onBack={onBack}
+        actions={
+          <UIButton
+            id="btn-new-cliente"
+            onClick={handleOpenCreate}
+            icon={Plus}
+          >
+            Novo {labels.cliente}
+          </UIButton>
+        }
+      />
 
       {/* Main List view */}
       {!isFormOpen && (
@@ -244,13 +262,24 @@ export default function CadastroClientes({ onBack }: CadastroClientesProps) {
                 <Search className="h-4 w-4 text-slate-400" />
               </span>
               <input
+                ref={searchInputRef}
                 id="input-search-clientes"
                 type="text"
                 placeholder="Pesquisar por Nome, CPF/CNPJ ou Telefone..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-white text-slate-800 border border-slate-200 rounded-xl pl-9 pr-4 py-2.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200 shadow-xs"
+                className="w-full bg-white text-slate-800 border border-slate-200 rounded-xl pl-9 pr-9 py-2.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200 shadow-xs"
               />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  title="Limpar pesquisa"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -420,6 +449,7 @@ export default function CadastroClientes({ onBack }: CadastroClientesProps) {
                     Nome Completo <span className="text-rose-500 font-black">*</span>
                   </label>
                   <input
+                    ref={firstInputRef}
                     id="cli-nome"
                     type="text"
                     required

@@ -6,6 +6,7 @@
 import { OrdemDeServico, Equipamento, Cliente } from '../types';
 import { Empresa } from '../models/Empresa';
 import { formatToBrazilianDate } from './dateFormatter';
+import { getPerfilConfig, isCampoVisivel, getCampoLabel } from '../config/perfis';
 
 /**
  * Loads a base64 image (or URL) into an HTMLImageElement asynchronously
@@ -66,6 +67,7 @@ export const generateProntuarioPDF = async (
   company: Empresa | null,
   client: Cliente | null
 ): Promise<string> => {
+  const perfilConfig = getPerfilConfig(company?.perfilEmpresa);
   const { jsPDF } = await import('jspdf');
   const doc = new jsPDF({
     orientation: 'p',
@@ -269,7 +271,12 @@ export const generateProntuarioPDF = async (
     doc.text(headerTitle, marginX, 7.5);
 
     doc.setFont('helvetica', 'normal');
-    const docMeta = `PRONTUÁRIO INTELECTUAL - PLACA: ${equipment.placa.toUpperCase()}`;
+    let mainIdent = equipment.placa;
+    if (!isCampoVisivel(perfilConfig, 'placa') || !mainIdent) {
+      mainIdent = equipment.numeroSerie || equipment.patrimonio || equipment.id;
+    }
+    const identLabel = (perfilConfig?.labels?.identificacao || 'IDENTIFICAÇÃO').toUpperCase();
+    const docMeta = `PRONTUÁRIO INTELECTUAL - ${identLabel}: ${(mainIdent || 'N/A').toUpperCase()}`;
     doc.text(docMeta, pageWidth - marginX, 7.5, { align: 'right' });
   };
 
@@ -372,11 +379,103 @@ export const generateProntuarioPDF = async (
   const splitDesc = doc.splitTextToSize(descTxt, 160);
   doc.text(splitDesc, 20, 102);
 
-  // Equipment Metadata Dossier Block (Elegant clean card) shifted upwards
+  // Equipment Metadata Dossier Block (Dynamic card based on perfilConfig)
+  interface DossierItem {
+    label: string;
+    value: string;
+  }
+  const dossierItems: DossierItem[] = [];
+
+  if (isCampoVisivel(perfilConfig, 'equipamento')) {
+    dossierItems.push({
+      label: `${getCampoLabel(perfilConfig, 'equipamento', 'EQUIPAMENTO / MÁQUINA').toUpperCase()}:`,
+      value: (equipment.tipo || equipment.modelo || 'N/A').toUpperCase()
+    });
+  }
+
+  if (isCampoVisivel(perfilConfig, 'fabricante') && equipment.fabricante) {
+    dossierItems.push({
+      label: `${getCampoLabel(perfilConfig, 'fabricante', 'FABRICANTE / MARCA').toUpperCase()}:`,
+      value: equipment.fabricante.toUpperCase()
+    });
+  }
+
+  if (isCampoVisivel(perfilConfig, 'modelo') && equipment.modelo) {
+    const anoStr = equipment.ano ? ` – ANO ${equipment.ano}` : '';
+    dossierItems.push({
+      label: `${getCampoLabel(perfilConfig, 'modelo', 'MODELO / ANO').toUpperCase()}:`,
+      value: `${equipment.modelo.toUpperCase()}${anoStr}`
+    });
+  }
+
+  if (isCampoVisivel(perfilConfig, 'placa') && equipment.placa) {
+    dossierItems.push({
+      label: `${getCampoLabel(perfilConfig, 'placa', 'PLACA / IDENTIFICAÇÃO').toUpperCase()}:`,
+      value: equipment.placa.toUpperCase()
+    });
+  }
+
+  if (isCampoVisivel(perfilConfig, 'cliente')) {
+    const clientName = client?.nome || equipment.clienteNome || 'CLIENTE NÃO VINCULADO';
+    dossierItems.push({
+      label: `${getCampoLabel(perfilConfig, 'cliente', 'PROPRIETÁRIO / CLIENTE').toUpperCase()}:`,
+      value: clientName.toUpperCase()
+    });
+  }
+
+  if (isCampoVisivel(perfilConfig, 'numeroSerie') && equipment.numeroSerie) {
+    dossierItems.push({
+      label: `${getCampoLabel(perfilConfig, 'numeroSerie', 'Nº DE SÉRIE').toUpperCase()}:`,
+      value: equipment.numeroSerie.toUpperCase()
+    });
+  }
+
+  if (isCampoVisivel(perfilConfig, 'patrimonio') && equipment.patrimonio) {
+    dossierItems.push({
+      label: `${getCampoLabel(perfilConfig, 'patrimonio', 'PATRIMÔNIO').toUpperCase()}:`,
+      value: equipment.patrimonio.toUpperCase()
+    });
+  }
+
+  if (isCampoVisivel(perfilConfig, 'localObra') && equipment.localObra) {
+    dossierItems.push({
+      label: `${getCampoLabel(perfilConfig, 'localObra', 'LOCAL DA OBRA').toUpperCase()}:`,
+      value: equipment.localObra.toUpperCase()
+    });
+  }
+
+  if (isCampoVisivel(perfilConfig, 'responsavelObra') && equipment.responsavelObra) {
+    dossierItems.push({
+      label: `${getCampoLabel(perfilConfig, 'responsavelObra', 'RESPONSÁVEL PELA OBRA').toUpperCase()}:`,
+      value: equipment.responsavelObra.toUpperCase()
+    });
+  }
+
+  if (isCampoVisivel(perfilConfig, 'setor') && equipment.setor) {
+    dossierItems.push({
+      label: `${getCampoLabel(perfilConfig, 'setor', 'SETOR').toUpperCase()}:`,
+      value: equipment.setor.toUpperCase()
+    });
+  }
+
+  if (isCampoVisivel(perfilConfig, 'linhaProducao') && equipment.linhaProducao) {
+    dossierItems.push({
+      label: `${getCampoLabel(perfilConfig, 'linhaProducao', 'LINHA DE PRODUÇÃO').toUpperCase()}:`,
+      value: equipment.linhaProducao.toUpperCase()
+    });
+  }
+
+  const isKmVisible = isCampoVisivel(perfilConfig, 'quilometragem');
+  const isHorVisible = isCampoVisivel(perfilConfig, 'horimetro');
+  const hasAdditionalData = (isKmVisible && equipment.quilometragem) || (isHorVisible && equipment.horimetro);
+
+  const dossierRows = Math.ceil(dossierItems.length / 2);
+  const cardHeight = Math.max(dossierRows * 14 + (hasAdditionalData ? 22 : 12), 60);
+
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(borderColor.r, borderColor.g, borderColor.b);
   doc.setLineWidth(0.4);
-  doc.rect(20, 125, contentWidth - 10, 75, 'FD');
+  doc.rect(20, 125, contentWidth - 10, cardHeight, 'FD');
 
   // Dossier title
   doc.setFillColor(primaryColor.r, primaryColor.g, primaryColor.b);
@@ -386,68 +485,45 @@ export const generateProntuarioPDF = async (
   doc.setTextColor(255, 255, 255);
   doc.text('DOSSIÊ TÉCNICO E IDENTIFICAÇÃO DO ATIVO', 25, 130.5);
 
-  // Two-column metadata details
-  doc.setFontSize(9);
-  doc.setTextColor(110, 110, 110);
-  
-  // Col 1
-  doc.setFont('helvetica', 'normal');
-  doc.text('EQUIPAMENTO / MÁQUINA:', 26, 142);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(textColor.r, textColor.g, textColor.b);
-  doc.text(equipment.tipo.toUpperCase() || 'N/A', 26, 147);
+  // Render items in 2 columns
+  dossierItems.forEach((item, idx) => {
+    const col = idx % 2;
+    const row = Math.floor(idx / 2);
+    const itemX = col === 0 ? 26 : 110;
+    const itemY = 142 + (row * 14);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(110, 110, 110);
-  doc.text('FABRICANTE / MARCA:', 26, 156);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(textColor.r, textColor.g, textColor.b);
-  doc.text(equipment.fabricante.toUpperCase() || 'N/A', 26, 161);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(110, 110, 110);
+    doc.text(item.label, itemX, itemY);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(110, 110, 110);
-  doc.text('MODELO / ANO:', 26, 170);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(textColor.r, textColor.g, textColor.b);
-  doc.text(`${equipment.modelo.toUpperCase()} – ANO ${equipment.ano || 'N/A'}`, 26, 175);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(textColor.r, textColor.g, textColor.b);
+    doc.text(item.value, itemX, itemY + 5);
+  });
 
-  // Col 2
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(110, 110, 110);
-  doc.text('PLACA / IDENTIFICAÇÃO:', 110, 142);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(accentColor.r, accentColor.g, accentColor.b); // Highlight plaque in Orange
-  doc.text(equipment.placa.toUpperCase() || 'N/A', 110, 147);
+  if (hasAdditionalData) {
+    const dividerY = 125 + cardHeight - 16;
+    doc.setDrawColor(226, 232, 240);
+    doc.line(26, dividerY, pageWidth - 26, dividerY);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(110, 110, 110);
-  doc.text('PROPRIETÁRIO / CLIENTE:', 110, 156);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(textColor.r, textColor.g, textColor.b);
-  const clientName = client?.nome || equipment.clienteNome || 'CLIENTE NÃO VINCULADO';
-  doc.text(clientName.toUpperCase(), 110, 161);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(110, 110, 110);
+    doc.text('DADOS ADICIONAIS:', 26, dividerY + 5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(textColor.r, textColor.g, textColor.b);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(110, 110, 110);
-  doc.text('Nº DE SÉRIE / PATRIMÔNIO:', 110, 170);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(textColor.r, textColor.g, textColor.b);
-  const serialNo = [equipment.numeroSerie, equipment.patrimonio].filter(Boolean).join(' / ');
-  doc.text(serialNo.toUpperCase() || 'N/A', 110, 175);
-
-  // Divider inside card
-  doc.setDrawColor(226, 232, 240);
-  doc.line(26, 182, pageWidth - 26, 182);
-
-  // Indicators summary in covering card
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(110, 110, 110);
-  doc.text('DADOS ADICIONAIS:', 26, 188);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(textColor.r, textColor.g, textColor.b);
-  const kmOrHour = `QUILOMETRAGEM ATUAL: ${equipment.quilometragem ? `${equipment.quilometragem} KM` : 'N/A'}     |     HORÍMETRO ATUAL: ${equipment.horimetro ? `${equipment.horimetro} H` : 'N/A'}`;
-  doc.text(kmOrHour.toUpperCase(), 26, 193);
+    const parts: string[] = [];
+    if (isKmVisible && equipment.quilometragem) {
+      parts.push(`${getCampoLabel(perfilConfig, 'quilometragem', 'QUILOMETRAGEM')}: ${equipment.quilometragem} KM`);
+    }
+    if (isHorVisible && equipment.horimetro) {
+      parts.push(`${getCampoLabel(perfilConfig, 'horimetro', 'HORÍMETRO')}: ${equipment.horimetro} H`);
+    }
+    doc.text(parts.join('     |     ').toUpperCase(), 26, dividerY + 10);
+  }
 
   // Cover Page Bottom Details (Emission)
   doc.setFont('helvetica', 'bold');

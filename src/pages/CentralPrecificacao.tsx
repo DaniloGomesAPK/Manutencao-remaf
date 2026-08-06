@@ -40,6 +40,8 @@ import { Servico } from '../types';
 import { PrecificacaoService } from '../services/PrecificacaoService';
 import { ImportExportService, ImportPreviewResult } from '../services/ImportExportService';
 import AssistentePrecificacaoModal from '../components/AssistentePrecificacaoModal';
+import { saveModuleState, getModuleState, applySmartFocus } from '../utils/navigationState';
+import { UIHeader, UICard, UIButton, UIBadge } from '../components/ui/UIComponents';
 
 interface CentralPrecificacaoProps {
   onBack?: () => void;
@@ -67,14 +69,54 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
 
   const { precificacoes } = precificacaoCtx || { precificacoes: [] };
 
+  const initialNavState = getModuleState('central_precificacao');
+
   // Mobile Tabs
-  const [activeMobileTab, setActiveMobileTab] = useState<'rapido' | 'assistente' | 'import_export' | 'banco'>('banco');
+  const [activeMobileTab, setActiveMobileTab] = useState<'rapido' | 'assistente' | 'import_export' | 'banco'>(
+    (initialNavState.activeTab as any) || 'banco'
+  );
 
   // Search & Filters
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('Todas');
-  const [selectedOrigin, setSelectedOrigin] = useState<'Todas' | 'Cadastro Rápido' | 'Assistente de Precificação'>('Todas');
+  const [searchTerm, setSearchTerm] = useState<string>(initialNavState.searchTerm || '');
+  const [selectedCategory, setSelectedCategory] = useState<string>(initialNavState.category || 'Todas');
+  const [selectedOrigin, setSelectedOrigin] = useState<'Todas' | 'Cadastro Rápido' | 'Assistente de Precificação'>(
+    (initialNavState.filterStatus as any) || 'Todas'
+  );
   const [filteredServicos, setFilteredServicos] = useState<Servico[]>([]);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // State persistence
+  useEffect(() => {
+    saveModuleState('central_precificacao', {
+      searchTerm,
+      category: selectedCategory,
+      filterStatus: selectedOrigin,
+      activeTab: activeMobileTab,
+    });
+  }, [searchTerm, selectedCategory, selectedOrigin, activeMobileTab]);
+
+  // Scroll restoration
+  useEffect(() => {
+    const savedScroll = initialNavState.scrollPos;
+    if (savedScroll && savedScroll > 0) {
+      setTimeout(() => window.scrollTo({ top: savedScroll, behavior: 'instant' as ScrollBehavior }), 50);
+    }
+
+    const onScroll = () => {
+      saveModuleState('central_precificacao', { scrollPos: window.scrollY });
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // Smart focus
+  useEffect(() => {
+    if (activeMobileTab === 'banco') {
+      applySmartFocus(searchInputRef.current);
+    }
+  }, [activeMobileTab]);
 
   // Cadastro Rápido States
   const [quickNome, setQuickNome] = useState('');
@@ -409,14 +451,18 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
   const handleDeleteConfirmed = async (id: string) => {
     if (!id) return;
     try {
-      setFilteredServicos(prev => prev.filter(s => s.id !== id));
       await deleteServico(id);
+      setFilteredServicos(prev => prev.filter(s => s.id !== id));
       if (reloadServicos) {
         await reloadServicos();
       }
       showNotification("Serviço excluído com sucesso!", "success");
-    } catch (err) {
-      showNotification("Erro ao excluir serviço.", "error");
+    } catch (err: any) {
+      console.error(err);
+      if (reloadServicos) {
+        await reloadServicos();
+      }
+      showNotification(err.message || "Erro ao excluir serviço.", "error");
     }
   };
 
@@ -457,45 +503,25 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
         </div>
       )}
       
-      {/* Page Header */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          {onBack && (
-            <button
-              id="btn-back-from-precificacao"
-              type="button"
-              onClick={onBack}
-              className="p-2 hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer text-slate-500"
-              title="Voltar"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-          )}
-          <div className="p-3 bg-[#FF6600]/10 rounded-2xl text-[#FF6600]">
-            <Calculator className="w-6 h-6" />
-          </div>
-          <div>
-            <h2 className="text-lg font-black text-[#003366] uppercase tracking-tight flex items-center gap-2">
-              Central de Precificação 2.0
-              <span className="text-[10px] bg-[#FF6600] text-white font-black px-2 py-0.5 rounded-full tracking-wider">OFFLINE-FIRST</span>
-            </h2>
-            <p className="text-xs text-slate-500 font-medium">
-              Formulação de preços rápida, assistentes detalhados de custos e importador inteligente via planilhas Excel.
-            </p>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
+      {/* Standardized Page Header */}
+      <UIHeader
+        title="Central de Precificação 2.0"
+        subtitle="Formulação de preços rápida, assistentes detalhados de custos e importador inteligente via planilhas Excel."
+        icon={Calculator}
+        onBack={onBack}
+        badge={<UIBadge status="warning" label="OFFLINE-FIRST" />}
+        actions={
+          <UIButton
+            variant="outline"
             onClick={handleRecalculateAll}
-            disabled={isRecalculatingAll || servicos.filter(s => s.tipoCadastro !== 'Cadastro Rápido').length === 0}
-            className="border border-[#FF6600] text-[#FF6600] hover:bg-[#FF6600]/5 disabled:opacity-50 font-bold text-xs uppercase tracking-wider px-5 py-3 rounded-xl transition shadow-xs flex items-center justify-center gap-2 cursor-pointer shrink-0"
+            loading={isRecalculatingAll}
+            disabled={servicos.filter(s => s.tipoCadastro !== 'Cadastro Rápido').length === 0}
+            icon={RefreshCw}
           >
-            <RefreshCw className={`w-4 h-4 ${isRecalculatingAll ? 'animate-spin' : ''}`} />
             Recalcular Custos ({servicos.filter(s => s.tipoCadastro !== 'Cadastro Rápido').length})
-          </button>
-        </div>
-      </div>
+          </UIButton>
+        }
+      />
 
       {/* METRICS ROW */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -928,12 +954,23 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
+                  ref={searchInputRef}
                   type="text"
                   placeholder="Pesquisar por nome, escopo ou categoria..."
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs font-semibold focus:outline-none focus:border-[#003366] transition"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-9 py-2 text-xs font-semibold focus:outline-none focus:border-[#003366] transition"
                 />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm('')}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    title="Limpar pesquisa"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
               </div>
 
               {/* Origin filter (Part 4 requirement) */}

@@ -7,12 +7,15 @@ import { doc, getDoc, setDoc, serverTimestamp, writeBatch, collection } from 'fi
 import { signInAnonymously, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import { auth, db } from '../config/firebase';
 import { Usuario } from '../models/Usuario';
+import { Empresa } from '../models/Empresa';
+import { FirestoreRepository } from './FirestoreRepository';
 
 export interface DadosCadastroTrial {
   nomeResponsavel: string;
   nomeEmpresa: string;
   email: string;
   whatsapp: string;
+  perfilEmpresa: string;
 }
 
 export async function cadastrarEmpresaTrial(dados: DadosCadastroTrial): Promise<{ empresaId: string; usuario: Usuario }> {
@@ -70,6 +73,8 @@ export async function cadastrarEmpresaTrial(dados: DadosCadastroTrial): Promise<
       nomeEmpresa: dados.nomeEmpresa.trim(),
       email: emailClean,
       whatsapp: dados.whatsapp.trim(),
+      perfilEmpresa: dados.perfilEmpresa,
+      configuracaoInicialConcluida: false,
       status: 'trial',
       criadoEm: serverTimestamp() // Seguro: Horário do servidor
     });
@@ -85,6 +90,34 @@ export async function cadastrarEmpresaTrial(dados: DadosCadastroTrial): Promise<
 
     // Executa as duas gravações simultaneamente
     await batch.commit();
+
+    // 3. Inicializa o documento 'company_profile' no repositório com perfilEmpresa e configuracaoInicialConcluida=false
+    const initialCompanyProfile: Empresa = {
+      id: empresaId,
+      nomeFantasia: dados.nomeEmpresa.trim(),
+      razaoSocial: dados.nomeEmpresa.trim(),
+      cnpj: '',
+      inscricaoEstadual: '',
+      endereco: '',
+      numero: '',
+      bairro: '',
+      cidade: '',
+      estado: '',
+      cep: '',
+      telefone: dados.whatsapp.trim(),
+      whatsapp: dados.whatsapp.trim(),
+      email: emailClean,
+      perfilEmpresa: dados.perfilEmpresa,
+      configuracaoInicialConcluida: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      await FirestoreRepository.add<Empresa>('company_profile', initialCompanyProfile, empresaId, emailClean);
+    } catch (profileErr) {
+      console.warn('[TrialService] Aviso ao inicializar company_profile:', profileErr);
+    }
 
     // Salva no localStorage para controle do PWA
     localStorage.setItem('empresaId', empresaId);

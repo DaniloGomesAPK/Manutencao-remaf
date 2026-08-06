@@ -3,13 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useContext, useMemo } from 'react';
-import { Search, Car, FileText, Calendar, Calculator, CheckCircle2, AlertTriangle, AlertCircle, ArrowLeft, BarChart2 } from 'lucide-react';
+import React, { useState, useContext, useMemo, useEffect, useRef } from 'react';
+import { Search, Car, FileText, Calendar, Calculator, CheckCircle2, AlertTriangle, AlertCircle, ArrowLeft, BarChart2, X } from 'lucide-react';
 import { EquipamentoContext } from '../contexts/EquipamentoContext';
 import { ClienteContext } from '../contexts/ClienteContext';
 import { EmpresaContext } from '../contexts/EmpresaContext';
 import { OrdemDeServico, Equipamento } from '../types';
 import { generateProntuarioPDF } from '../utils/prontuarioGenerator';
+import { getPerfilConfig, isCampoVisivel, getCampoLabel, getCampoPlaceholder } from '../config/perfis';
+import { saveModuleState, getModuleState, applySmartFocus } from '../utils/navigationState';
+import { UIHeader, UICard, UIButton, UIInput } from '../components/ui/UIComponents';
 
 interface RelatoriosProps {
   orders: OrdemDeServico[];
@@ -25,10 +28,39 @@ export default function Relatorios({ orders, onBack, onViewCustomPDF }: Relatori
   const { equipamentos } = equipCtx || { equipamentos: [] };
   const { clientes } = clienteCtx || { clientes: [] };
   const company = empresaCtx?.empresa || null;
+  const perfilConfig = empresaCtx?.perfilConfig || getPerfilConfig(company?.perfilEmpresa);
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedEqId, setSelectedEqId] = useState<string>('');
+  const initialNavState = getModuleState('relatorios');
+  const [searchTerm, setSearchTerm] = useState<string>(initialNavState.searchTerm || '');
+  const [selectedEqId, setSelectedEqId] = useState<string>(initialNavState.selectedId || '');
   const [generating, setGenerating] = useState(false);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Persistence
+  useEffect(() => {
+    saveModuleState('relatorios', { searchTerm, selectedId: selectedEqId });
+  }, [searchTerm, selectedEqId]);
+
+  // Scroll restoration
+  useEffect(() => {
+    const savedScroll = initialNavState.scrollPos;
+    if (savedScroll && savedScroll > 0) {
+      setTimeout(() => window.scrollTo({ top: savedScroll, behavior: 'instant' as ScrollBehavior }), 50);
+    }
+
+    const onScroll = () => {
+      saveModuleState('relatorios', { scrollPos: window.scrollY });
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // Smart focus
+  useEffect(() => {
+    applySmartFocus(searchInputRef.current);
+  }, []);
 
   // Unify and build complete list of equipment (from context AND any extra unique equipment found in orders)
   const unifiedEquipments = useMemo(() => {
@@ -140,33 +172,15 @@ export default function Relatorios({ orders, onBack, onViewCustomPDF }: Relatori
   };
 
   return (
-    <div id="relatorios-page-container" className="space-y-6">
+    <div id="relatorios-page-container" className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 py-5">
       
-      {/* Page Header */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          {onBack && (
-            <button
-              id="btn-back-from-reports-page"
-              type="button"
-              onClick={onBack}
-              className="p-2 hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer text-slate-500"
-              title="Voltar"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-          )}
-          <div className="text-left">
-            <h2 className="text-lg font-black text-[#003366] uppercase tracking-tight flex items-center gap-2">
-              <BarChart2 className="w-5 h-5 text-[#FF6600]" />
-              Prontuário Inteligente do Equipamento
-            </h2>
-            <p className="text-xs text-slate-500 font-medium">
-              Consolidação de histórico de atendimentos, análise de custos acumulados e diagnóstico preditivo de manutenção.
-            </p>
-          </div>
-        </div>
-      </div>
+      {/* Standardized Page Header */}
+      <UIHeader
+        title="Prontuário Inteligente do Equipamento"
+        subtitle="Consolidação de histórico de atendimentos, análise de custos acumulados e diagnóstico preditivo de manutenção."
+        icon={BarChart2}
+        onBack={onBack}
+      />
 
       {/* Main interactive grid area */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -182,12 +196,23 @@ export default function Relatorios({ orders, onBack, onViewCustomPDF }: Relatori
           <div className="relative">
             <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4.5 h-4.5 text-slate-400" />
             <input
+              ref={searchInputRef}
               type="text"
-              placeholder="Nome do Equipamento, Placa..."
+              placeholder={`Pesquisar por ${getCampoLabel(perfilConfig, 'equipamento', 'Equipamento')}, Identificação...`}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-3 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#001f3f]/10 focus:border-[#001f3f]/40 transition"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-9 py-3 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#001f3f]/10 focus:border-[#001f3f]/40 transition"
             />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 cursor-pointer"
+                title="Limpar pesquisa"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
           {/* Equipment list block */}
@@ -195,6 +220,16 @@ export default function Relatorios({ orders, onBack, onViewCustomPDF }: Relatori
             {filteredEquipments.length > 0 ? (
               filteredEquipments.map((eq) => {
                 const isSelected = eq.id === selectedEqId;
+                const mainIdent = (isCampoVisivel(perfilConfig, 'placa') && eq.placa)
+                  ? eq.placa
+                  : ((isCampoVisivel(perfilConfig, 'numeroSerie') && eq.numeroSerie)
+                    ? eq.numeroSerie
+                    : ((isCampoVisivel(perfilConfig, 'patrimonio') && eq.patrimonio)
+                      ? eq.patrimonio
+                      : ((isCampoVisivel(perfilConfig, 'localObra') && eq.localObra)
+                        ? eq.localObra
+                        : eq.id)));
+
                 return (
                   <button
                     key={eq.id}
@@ -207,18 +242,22 @@ export default function Relatorios({ orders, onBack, onViewCustomPDF }: Relatori
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className={`font-mono font-bold text-sm tracking-wider uppercase ${isSelected ? 'text-[#FF6600]' : 'text-slate-800'}`}>
-                          {eq.placa || 'SEM PLACA'}
+                          {mainIdent}
                         </span>
-                        <span className="text-[10px] bg-slate-200 text-slate-600 font-extrabold px-2 py-0.5 rounded-sm uppercase">
-                          {eq.ano}
-                        </span>
+                        {eq.ano && (
+                          <span className="text-[10px] bg-slate-200 text-slate-600 font-extrabold px-2 py-0.5 rounded-sm uppercase">
+                            {eq.ano}
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs font-bold text-slate-500 truncate mt-1">
                         {eq.fabricante} {eq.modelo}
                       </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Proprietário</span>
+                      <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">
+                        {getCampoLabel(perfilConfig, 'cliente', 'Proprietário')}
+                      </span>
                       <span className="text-xs font-extrabold text-[#001f3f] truncate block max-w-[150px]">
                         {eq.clienteNome || 'Não informado'}
                       </span>
@@ -229,7 +268,9 @@ export default function Relatorios({ orders, onBack, onViewCustomPDF }: Relatori
             ) : (
               <div className="p-12 text-center text-slate-400">
                 <AlertCircle className="w-8 h-8 mx-auto text-slate-300 mb-2" />
-                <p className="text-xs font-bold uppercase tracking-wider">Nenhum veículo ou equipamento localizado</p>
+                <p className="text-xs font-bold uppercase tracking-wider">
+                  Nenhum {getCampoLabel(perfilConfig, 'equipamento', 'equipamento').toLowerCase()} localizado
+                </p>
                 <p className="text-[11px] text-slate-400 mt-1">Tente pesquisar por outros termos.</p>
               </div>
             )}
@@ -242,17 +283,23 @@ export default function Relatorios({ orders, onBack, onViewCustomPDF }: Relatori
             <div className="space-y-5 text-left flex-1 flex flex-col justify-between">
               <div>
                 <div className="border-b border-slate-200 pb-3">
-                  <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Equipamento Selecionado</span>
+                  <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">
+                    {getCampoLabel(perfilConfig, 'equipamento', 'Equipamento')} Selecionado
+                  </span>
                   <h4 className="font-black text-base text-[#003366] uppercase leading-tight mt-1">
                     {selectedEquipment.fabricante} {selectedEquipment.modelo}
                   </h4>
                   <div className="flex items-center gap-2.5 mt-2">
                     <span className="font-mono text-xs font-extrabold text-[#FF6600] bg-[#FF6600]/10 px-2.5 py-1 rounded">
-                      {selectedEquipment.placa}
+                      {(isCampoVisivel(perfilConfig, 'placa') && selectedEquipment.placa)
+                        ? selectedEquipment.placa
+                        : (selectedEquipment.numeroSerie || selectedEquipment.patrimonio || selectedEquipment.id)}
                     </span>
-                    <span className="text-xs text-slate-500 font-bold">
-                      Ano: {selectedEquipment.ano}
-                    </span>
+                    {selectedEquipment.ano && (
+                      <span className="text-xs text-slate-500 font-bold">
+                        Ano: {selectedEquipment.ano}
+                      </span>
+                    )}
                   </div>
                 </div>
 

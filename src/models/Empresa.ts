@@ -24,6 +24,9 @@ export interface Empresa {
   slogan?: string;
   logomarca?: string;       // base64 representation of the logo
   
+  perfilEmpresa?: string;   // Ex: 'Oficina Mecânica', 'Lava Jato', etc.
+  configuracaoInicialConcluida?: boolean; // Flag de conclusão do assistente inicial
+  
   regimeTributario?: string; // 'Simples Nacional' | 'Lucro Presumido' | 'Lucro Real' | 'Isento' | 'Outro'
   aliquotaImposto?: number;  // Alíquota efetiva de imposto em porcentagem (ex: 6.00 para 6%)
   

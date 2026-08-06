@@ -3,7 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState, useContext, useEffect, useRef } from 'react';
+import { useEmpresa } from '../contexts/EmpresaContext';
+import {
+  toPlural,
+  isCampoVisivel,
+  isCampoObrigatorio,
+  getCampoLabel,
+  getCampoPlaceholder,
+  getCampoValidationMessage
+} from '../config/perfis';
 import { 
   Car, 
   Search, 
@@ -28,12 +37,17 @@ import { ClienteContext } from '../contexts/ClienteContext';
 import { Equipamento } from '../types';
 import * as XLSX from 'xlsx';
 import EquipamentoImportExport from '../components/EquipamentoImportExport';
+import { saveModuleState, getModuleState, applySmartFocus } from '../utils/navigationState';
+import { UIHeader, UICard, UIButton, UIFormGroup, UIInput, UISelect, UITextarea } from '../components/ui/UIComponents';
 
 interface CadastroEquipamentosProps {
   onBack?: () => void;
 }
 
 export default function CadastroEquipamentos({ onBack }: CadastroEquipamentosProps) {
+  const { perfilConfig } = useEmpresa();
+  const labels = perfilConfig.labels;
+
   const equipCtx = useContext(EquipamentoContext);
   const clienteCtx = useContext(ClienteContext);
 
@@ -47,12 +61,40 @@ export default function CadastroEquipamentos({ onBack }: CadastroEquipamentosPro
 
   const { clientes } = clienteCtx || { clientes: [] };
 
-  const [searchTerm, setSearchTerm] = useState('');
+  const initialNavState = getModuleState('equipamentos');
+  const [searchTerm, setSearchTerm] = useState<string>(initialNavState.searchTerm || '');
   const [filteredEquipamentos, setFilteredEquipamentos] = useState<Equipamento[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedEquipamento, setSelectedEquipamento] = useState<Equipamento | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isImportExportOpen, setIsImportExportOpen] = useState(false);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const firstInputRef = useRef<any>(null);
+
+  // Scroll restoration
+  useEffect(() => {
+    const savedScroll = initialNavState.scrollPos;
+    if (savedScroll && savedScroll > 0) {
+      setTimeout(() => window.scrollTo({ top: savedScroll, behavior: 'instant' as ScrollBehavior }), 50);
+    }
+
+    const onScroll = () => {
+      saveModuleState('equipamentos', { scrollPos: window.scrollY });
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // Smart focus
+  useEffect(() => {
+    if (isFormOpen) {
+      applySmartFocus(firstInputRef.current);
+    } else {
+      applySmartFocus(searchInputRef.current);
+    }
+  }, [isFormOpen]);
 
   // --- DOWNLOAD TEMPLATE EXCEL ---
   const handleDownloadTemplate = () => {
@@ -156,12 +198,17 @@ export default function CadastroEquipamentos({ onBack }: CadastroEquipamentosPro
   const [chassi, setChassi] = useState('');
   const [numeroSerie, setNumeroSerie] = useState('');
   const [patrimonio, setPatrimonio] = useState('');
+  const [localObra, setLocalObra] = useState('');
+  const [responsavelObra, setResponsavelObra] = useState('');
+  const [setor, setSetor] = useState('');
+  const [linhaProducao, setLinhaProducao] = useState('');
   const [quilometragem, setQuilometragem] = useState<number | ''>('');
   const [horimetro, setHorimetro] = useState<number | ''>('');
   const [observacoes, setObservacoes] = useState('');
 
   // Search filter
   useEffect(() => {
+    saveModuleState('equipamentos', { searchTerm });
     if (!searchTerm.trim()) {
       setFilteredEquipamentos(equipamentos);
     } else {
@@ -170,6 +217,9 @@ export default function CadastroEquipamentos({ onBack }: CadastroEquipamentosPro
         (e.placa && e.placa.toLowerCase().includes(term)) ||
         (e.chassi && e.chassi.toLowerCase().includes(term)) ||
         (e.numeroSerie && e.numeroSerie.toLowerCase().includes(term)) ||
+        (e.localObra && e.localObra.toLowerCase().includes(term)) ||
+        (e.responsavelObra && e.responsavelObra.toLowerCase().includes(term)) ||
+        (e.patrimonio && e.patrimonio.toLowerCase().includes(term)) ||
         (e.clienteNome && e.clienteNome.toLowerCase().includes(term)) ||
         (e.tipo && e.tipo.toLowerCase().includes(term)) ||
         (e.fabricante && e.fabricante.toLowerCase().includes(term)) ||
@@ -190,6 +240,10 @@ export default function CadastroEquipamentos({ onBack }: CadastroEquipamentosPro
     setChassi('');
     setNumeroSerie('');
     setPatrimonio('');
+    setLocalObra('');
+    setResponsavelObra('');
+    setSetor('');
+    setLinhaProducao('');
     setQuilometragem('');
     setHorimetro('');
     setObservacoes('');
@@ -207,6 +261,10 @@ export default function CadastroEquipamentos({ onBack }: CadastroEquipamentosPro
     setChassi(eq.chassi || '');
     setNumeroSerie(eq.numeroSerie || '');
     setPatrimonio(eq.patrimonio || '');
+    setLocalObra(eq.localObra || '');
+    setResponsavelObra(eq.responsavelObra || '');
+    setSetor(eq.setor || '');
+    setLinhaProducao(eq.linhaProducao || '');
     setQuilometragem(eq.quilometragem !== undefined ? eq.quilometragem : '');
     setHorimetro(eq.horimetro !== undefined ? eq.horimetro : '');
     setObservacoes(eq.observacoes || '');
@@ -219,12 +277,12 @@ export default function CadastroEquipamentos({ onBack }: CadastroEquipamentosPro
   };
 
   const handleDelete = async (id: string, identificacao: string) => {
-    if (window.confirm(`Tem certeza que deseja excluir o equipamento "${identificacao}"?`)) {
+    if (window.confirm(`Tem certeza que deseja excluir o registro "${identificacao}"?`)) {
       try {
         await deleteEquipamento(id);
-      } catch (err) {
+      } catch (err: any) {
         console.error('Erro ao excluir equipamento:', err);
-        alert('Não foi possível excluir o equipamento.');
+        alert(err.message || 'Não foi possível excluir o registro.');
       }
     }
   };
@@ -232,20 +290,53 @@ export default function CadastroEquipamentos({ onBack }: CadastroEquipamentosPro
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (isCampoObrigatorio(perfilConfig, 'cliente') && !clienteId) {
+      alert(getCampoValidationMessage(perfilConfig, 'cliente'));
+      return;
+    }
+    if (isCampoObrigatorio(perfilConfig, 'equipamento') && !tipo.trim()) {
+      alert(getCampoValidationMessage(perfilConfig, 'equipamento'));
+      return;
+    }
+    if (isCampoObrigatorio(perfilConfig, 'placa') && !placa.trim()) {
+      alert(getCampoValidationMessage(perfilConfig, 'placa'));
+      return;
+    }
+    if (isCampoObrigatorio(perfilConfig, 'localObra') && !localObra.trim()) {
+      alert(getCampoValidationMessage(perfilConfig, 'localObra'));
+      return;
+    }
+    if (isCampoObrigatorio(perfilConfig, 'responsavelObra') && !responsavelObra.trim()) {
+      alert(getCampoValidationMessage(perfilConfig, 'responsavelObra'));
+      return;
+    }
+    if (isCampoObrigatorio(perfilConfig, 'patrimonio') && !patrimonio.trim()) {
+      alert(getCampoValidationMessage(perfilConfig, 'patrimonio'));
+      return;
+    }
+    if (isCampoObrigatorio(perfilConfig, 'setor') && !setor.trim()) {
+      alert(getCampoValidationMessage(perfilConfig, 'setor'));
+      return;
+    }
+
     const payload: Equipamento = {
       id: selectedEquipamento?.id || '',
       empresaId: selectedEquipamento?.empresaId || '',
       clienteId,
-      tipo: tipo.trim() || 'Equipamento',
+      tipo: tipo.trim() || labels.equipamento,
       fabricante: fabricante.trim() || 'Não Informado',
       modelo: modelo.trim() || 'Não Informado',
       ano,
-      placa: placa.toUpperCase(),
-      chassi: chassi.toUpperCase(),
-      numeroSerie: numeroSerie.trim() || 'S/N',
-      patrimonio,
-      quilometragem: quilometragem !== '' ? Number(quilometragem) : undefined,
-      horimetro: horimetro !== '' ? Number(horimetro) : undefined,
+      placa: isCampoVisivel(perfilConfig, 'placa') ? placa.toUpperCase() : '',
+      chassi: isCampoVisivel(perfilConfig, 'chassi') ? chassi.toUpperCase() : '',
+      numeroSerie: isCampoVisivel(perfilConfig, 'numeroSerie') ? (numeroSerie.trim() || 'S/N') : 'S/N',
+      patrimonio: isCampoVisivel(perfilConfig, 'patrimonio') ? patrimonio.trim() : '',
+      localObra: isCampoVisivel(perfilConfig, 'localObra') ? localObra.trim() : '',
+      responsavelObra: isCampoVisivel(perfilConfig, 'responsavelObra') ? responsavelObra.trim() : '',
+      setor: isCampoVisivel(perfilConfig, 'setor') ? setor.trim() : '',
+      linhaProducao: isCampoVisivel(perfilConfig, 'linhaProducao') ? linhaProducao.trim() : '',
+      quilometragem: isCampoVisivel(perfilConfig, 'quilometragem') && quilometragem !== '' ? Number(quilometragem) : undefined,
+      horimetro: isCampoVisivel(perfilConfig, 'horimetro') && horimetro !== '' ? Number(horimetro) : undefined,
       observacoes,
       createdAt: selectedEquipamento?.createdAt,
     };
@@ -253,81 +344,60 @@ export default function CadastroEquipamentos({ onBack }: CadastroEquipamentosPro
     try {
       await saveEquipamento(payload);
       setIsFormOpen(false);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao salvar equipamento:', err);
-      alert('Erro ao salvar os dados do equipamento.');
+      alert(err.message || 'Erro ao salvar os dados do equipamento.');
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header card with action */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          {onBack && (
-            <button
-              id="btn-back-from-equipamentos"
-              type="button"
-              onClick={onBack}
-              className="p-2 hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer text-slate-500"
-              title="Voltar"
+    <div className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 py-5">
+      {/* Standardized Header */}
+      <UIHeader
+        title={`Cadastro de ${toPlural(labels.equipamento)}`}
+        subtitle={`Gerencie ${toPlural(labels.equipamento.toLowerCase())} e ativos vinculados a cada ${labels.cliente.toLowerCase()} do sistema.`}
+        icon={Car}
+        onBack={onBack}
+        actions={
+          <>
+            <UIButton
+              id="btn-new-equipamento"
+              onClick={handleOpenCreate}
+              icon={Plus}
             >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-          )}
-          <div>
-            <h2 className="text-lg font-black text-[#003366] uppercase tracking-tight flex items-center gap-2">
-              <Car className="w-5 h-5 text-[#FF6600]" />
-              Cadastro de Equipamentos
-            </h2>
-            <p className="text-xs text-slate-500 font-medium">
-              Gerencie frotas, máquinas e ativos vinculados a cada cliente do sistema.
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto w-full sm:w-auto justify-start sm:justify-end">
-          <button
-            id="btn-new-equipamento"
-            type="button"
-            onClick={handleOpenCreate}
-            className="flex items-center justify-center gap-1.5 bg-[#FF6600] hover:bg-[#e05900] active:scale-95 text-white font-bold px-3.5 py-2.5 rounded-xl text-xs uppercase tracking-wider transition cursor-pointer shadow-sm"
-          >
-            <Plus className="w-4 h-4 stroke-[3]" />
-            <span>Novo Equipamento</span>
-          </button>
-          
-          <button
-            id="btn-import-excel-equipamentos"
-            type="button"
-            onClick={() => setIsImportExportOpen(true)}
-            className="flex items-center justify-center gap-1.5 bg-[#003366] hover:bg-[#002244] active:scale-95 text-white font-bold px-3.5 py-2.5 rounded-xl text-xs uppercase tracking-wider transition cursor-pointer shadow-sm"
-          >
-            <Upload className="w-4 h-4" />
-            <span>Importar Ativos</span>
-          </button>
+              Novo {labels.equipamento}
+            </UIButton>
 
-          <button
-            id="btn-export-excel-equipamentos"
-            type="button"
-            onClick={handleExportEquipamentos}
-            className="flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 border border-slate-200 font-bold px-3.5 py-2.5 rounded-xl text-xs uppercase tracking-wider transition cursor-pointer shadow-sm"
-          >
-            <Download className="w-4 h-4" />
-            <span>Exportar</span>
-          </button>
+            <UIButton
+              id="btn-import-excel-equipamentos"
+              variant="outline"
+              onClick={() => setIsImportExportOpen(true)}
+              icon={Upload}
+            >
+              Importar Ativos
+            </UIButton>
 
-          <button
-            id="btn-download-template-equipamentos"
-            type="button"
-            onClick={handleDownloadTemplate}
-            className="flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 border border-slate-200 font-bold px-3.5 py-2.5 rounded-xl text-xs uppercase tracking-wider transition cursor-pointer shadow-sm"
-            title="Baixar Planilha Modelo Oficial"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-[#FF6600]" />
-            <span>Modelo Excel</span>
-          </button>
-        </div>
-      </div>
+            <UIButton
+              id="btn-export-excel-equipamentos"
+              variant="outline"
+              onClick={handleExportEquipamentos}
+              icon={Download}
+            >
+              Exportar
+            </UIButton>
+
+            <UIButton
+              id="btn-download-template-equipamentos"
+              variant="outline"
+              onClick={handleDownloadTemplate}
+              icon={FileSpreadsheet}
+              title="Baixar Planilha Modelo Oficial"
+            >
+              Modelo Excel
+            </UIButton>
+          </>
+        }
+      />
 
       {/* Main List view */}
       {!isFormOpen && (
@@ -339,13 +409,24 @@ export default function CadastroEquipamentos({ onBack }: CadastroEquipamentosPro
                 <Search className="h-4 w-4 text-slate-400" />
               </span>
               <input
+                ref={searchInputRef}
                 id="input-search-equipamentos"
                 type="text"
                 placeholder="Pesquisar por Placa, Chassi, Série, Cliente, Tipo, Marca ou Modelo..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-white text-slate-800 border border-slate-200 rounded-xl pl-9 pr-4 py-2.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200 shadow-xs"
+                className="w-full bg-white text-slate-800 border border-slate-200 rounded-xl pl-9 pr-9 py-2.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200 shadow-xs"
               />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  title="Limpar pesquisa"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -539,6 +620,7 @@ export default function CadastroEquipamentos({ onBack }: CadastroEquipamentosPro
                   </div>
                 ) : (
                   <select
+                    ref={firstInputRef}
                     id="eq-cli-select"
                     value={clienteId}
                     onChange={(e) => setClienteId(e.target.value)}
@@ -646,33 +728,101 @@ export default function CadastroEquipamentos({ onBack }: CadastroEquipamentosPro
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label htmlFor="eq-serie" className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                    Número de Série / Identificação (Opcional)
-                  </label>
-                  <input
-                    id="eq-serie"
-                    type="text"
-                    placeholder="Ex: SER-99281"
-                    value={numeroSerie}
-                    onChange={(e) => setNumeroSerie(e.target.value)}
-                    className="w-full bg-white text-slate-800 border border-slate-200 rounded-lg px-3 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200 font-mono"
-                  />
-                </div>
+                {isCampoVisivel(perfilConfig, 'numeroSerie') && (
+                  <div className="space-y-1">
+                    <label htmlFor="eq-serie" className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                      {getCampoLabel(perfilConfig, 'numeroSerie')} {isCampoObrigatorio(perfilConfig, 'numeroSerie') && '*'}
+                    </label>
+                    <input
+                      id="eq-serie"
+                      type="text"
+                      placeholder={getCampoPlaceholder(perfilConfig, 'numeroSerie')}
+                      value={numeroSerie}
+                      onChange={(e) => setNumeroSerie(e.target.value)}
+                      className="w-full bg-white text-slate-800 border border-slate-200 rounded-lg px-3 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200 font-mono"
+                    />
+                  </div>
+                )}
 
-                <div className="space-y-1">
-                  <label htmlFor="eq-patr" className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                    Nº Patrimônio (Opcional)
-                  </label>
-                  <input
-                    id="eq-patr"
-                    type="text"
-                    placeholder="Ex: PAT-291"
-                    value={patrimonio}
-                    onChange={(e) => setPatrimonio(e.target.value)}
-                    className="w-full bg-white text-slate-800 border border-slate-200 rounded-lg px-3 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200 font-mono"
-                  />
-                </div>
+                {isCampoVisivel(perfilConfig, 'patrimonio') && (
+                  <div className="space-y-1">
+                    <label htmlFor="eq-patr" className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                      {getCampoLabel(perfilConfig, 'patrimonio')} {isCampoObrigatorio(perfilConfig, 'patrimonio') && '*'}
+                    </label>
+                    <input
+                      id="eq-patr"
+                      type="text"
+                      placeholder={getCampoPlaceholder(perfilConfig, 'patrimonio')}
+                      value={patrimonio}
+                      onChange={(e) => setPatrimonio(e.target.value)}
+                      className="w-full bg-white text-slate-800 border border-slate-200 rounded-lg px-3 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200 font-mono"
+                    />
+                  </div>
+                )}
+
+                {isCampoVisivel(perfilConfig, 'localObra') && (
+                  <div className="space-y-1">
+                    <label htmlFor="eq-local-obra" className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                      {getCampoLabel(perfilConfig, 'localObra')} {isCampoObrigatorio(perfilConfig, 'localObra') && '*'}
+                    </label>
+                    <input
+                      id="eq-local-obra"
+                      type="text"
+                      placeholder={getCampoPlaceholder(perfilConfig, 'localObra')}
+                      value={localObra}
+                      onChange={(e) => setLocalObra(e.target.value)}
+                      className="w-full bg-white text-slate-800 border border-slate-200 rounded-lg px-3 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200"
+                    />
+                  </div>
+                )}
+
+                {isCampoVisivel(perfilConfig, 'responsavelObra') && (
+                  <div className="space-y-1">
+                    <label htmlFor="eq-resp-obra" className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                      {getCampoLabel(perfilConfig, 'responsavelObra')} {isCampoObrigatorio(perfilConfig, 'responsavelObra') && '*'}
+                    </label>
+                    <input
+                      id="eq-resp-obra"
+                      type="text"
+                      placeholder={getCampoPlaceholder(perfilConfig, 'responsavelObra')}
+                      value={responsavelObra}
+                      onChange={(e) => setResponsavelObra(e.target.value)}
+                      className="w-full bg-white text-slate-800 border border-slate-200 rounded-lg px-3 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200"
+                    />
+                  </div>
+                )}
+
+                {isCampoVisivel(perfilConfig, 'setor') && (
+                  <div className="space-y-1">
+                    <label htmlFor="eq-setor" className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                      {getCampoLabel(perfilConfig, 'setor')} {isCampoObrigatorio(perfilConfig, 'setor') && '*'}
+                    </label>
+                    <input
+                      id="eq-setor"
+                      type="text"
+                      placeholder={getCampoPlaceholder(perfilConfig, 'setor')}
+                      value={setor}
+                      onChange={(e) => setSetor(e.target.value)}
+                      className="w-full bg-white text-slate-800 border border-slate-200 rounded-lg px-3 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200"
+                    />
+                  </div>
+                )}
+
+                {isCampoVisivel(perfilConfig, 'linhaProducao') && (
+                  <div className="space-y-1">
+                    <label htmlFor="eq-linha-prod" className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                      {getCampoLabel(perfilConfig, 'linhaProducao')} {isCampoObrigatorio(perfilConfig, 'linhaProducao') && '*'}
+                    </label>
+                    <input
+                      id="eq-linha-prod"
+                      type="text"
+                      placeholder={getCampoPlaceholder(perfilConfig, 'linhaProducao')}
+                      value={linhaProducao}
+                      onChange={(e) => setLinhaProducao(e.target.value)}
+                      className="w-full bg-white text-slate-800 border border-slate-200 rounded-lg px-3 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200"
+                    />
+                  </div>
+                )}
               </div>
             </div>
 

@@ -5,6 +5,8 @@
 
 import { Servico } from '../types';
 import { FirestoreRepository } from './FirestoreRepository';
+import { IntegridadeService } from './IntegridadeService';
+import { RecuperacaoService } from './RecuperacaoService';
 
 export const ServicoInteligenteService = {
   /**
@@ -66,10 +68,19 @@ export const ServicoInteligenteService = {
   },
 
   /**
-   * Exclui um serviço inteligente via FirestoreRepository
+   * Exclui um serviço inteligente via RecuperacaoService (Soft Delete) após validação de integridade e OS vinculadas
    */
   async deleteServico(id: string, empresaId: string, userEmail?: string): Promise<void> {
-    await FirestoreRepository.delete('servicos_inteligentes', id, empresaId, userEmail);
+    const integrity = await IntegridadeService.canDeleteServico(id, empresaId, userEmail);
+    if (!integrity.allowed) {
+      throw new Error(integrity.reason || 'Este serviço possui registros vinculados e não pode ser excluído.');
+    }
+
+    const srv = await FirestoreRepository.get<Servico>('servicos_inteligentes', id, empresaId, userEmail);
+    const nome = srv?.nome || 'Serviço Sem Nome';
+    const ident = srv?.categoria || srv?.id || id;
+
+    await RecuperacaoService.softDeleteRecord('servicos_inteligentes', id, 'Serviço', nome, ident, empresaId, userEmail, srv);
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('servicos_updated', { detail: { empresaId } }));

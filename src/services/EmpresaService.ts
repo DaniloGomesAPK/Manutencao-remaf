@@ -3,9 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../config/firebase';
 import { Empresa } from '../models/Empresa';
 import { Usuario } from '../models/Usuario';
 import { FirestoreRepository } from './FirestoreRepository';
+import { IntegridadeService } from './IntegridadeService';
 
 export const EmpresaService = {
   /**
@@ -20,7 +23,7 @@ export const EmpresaService = {
   },
 
   /**
-   * Salva ou atualiza os dados da empresa via FirestoreRepository
+   * Salva ou atualiza os dados da empresa via FirestoreRepository após validação de duplicidade de CNPJ
    */
   async saveEmpresa(empresaData: Empresa, userEmail?: string): Promise<Empresa> {
     const timestamp = new Date().toISOString();
@@ -30,6 +33,13 @@ export const EmpresaService = {
       createdAt: empresaData.createdAt || timestamp,
       updatedAt: timestamp,
     };
+
+    if (company.cnpj) {
+      const dupValidation = await IntegridadeService.validateEmpresaDuplicates(company.cnpj, company.id, userEmail);
+      if (!dupValidation.valid) {
+        throw new Error(dupValidation.message || 'CNPJ já cadastrado em outra empresa.');
+      }
+    }
 
     const saved = await FirestoreRepository.add<Empresa>('company_profile', company, company.id, userEmail);
 
@@ -49,21 +59,40 @@ export const EmpresaService = {
       return existing;
     }
 
+    let perfilEmpresa = 'Oficina Mecânica';
+    let nomeEmpresa = 'DG Gestão em Orçamentos';
+    let whatsapp = '(11) 99999-9999';
+
+    try {
+      const empresaDocRef = doc(db, 'empresas', empresaId);
+      const snap = await getDoc(empresaDocRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.perfilEmpresa) perfilEmpresa = data.perfilEmpresa;
+        if (data.nomeEmpresa) nomeEmpresa = data.nomeEmpresa;
+        if (data.whatsapp) whatsapp = data.whatsapp;
+      }
+    } catch (_) {
+      // Ignora erro de acesso direto se for offline
+    }
+
     const defaultCompany: Empresa = {
       id: empresaId,
-      nomeFantasia: 'DG Gestão em Orçamentos',
-      razaoSocial: 'DG Gestão em Orçamentos LTDA',
-      cnpj: '00.000.000/0001-00',
-      inscricaoEstadual: 'Isento',
-      endereco: 'Rua Principal',
-      numero: '100',
-      bairro: 'Centro',
-      cidade: 'São Paulo',
-      estado: 'SP',
-      cep: '01000-000',
-      telefone: '(11) 99999-9999',
-      whatsapp: '(11) 99999-9999',
+      nomeFantasia: nomeEmpresa,
+      razaoSocial: nomeEmpresa,
+      cnpj: '',
+      inscricaoEstadual: '',
+      endereco: '',
+      numero: '',
+      bairro: '',
+      cidade: '',
+      estado: '',
+      cep: '',
+      telefone: whatsapp,
+      whatsapp: whatsapp,
       email: usuario?.email || 'contato@empresa.com.br',
+      perfilEmpresa: perfilEmpresa,
+      configuracaoInicialConcluida: false,
       usuarioProprietario: usuario,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
