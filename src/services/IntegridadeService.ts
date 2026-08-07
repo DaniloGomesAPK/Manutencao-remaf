@@ -19,7 +19,158 @@ export interface IntegrityValidationResult {
   message?: string;
 }
 
+/**
+ * Normaliza um identificador (Número de Série, Patrimônio, Placa, Chassi, Tag, Código Interno, etc.)
+ * - Remove espaços no início e no final;
+ * - Substitui múltiplos espaços internos por um único espaço;
+ * - Converte para letras maiúsculas;
+ * - Mantém hífens e números;
+ * - Converte variações genéricas para padrões únicos ("S/N", "N/A", "SEM NÚMERO", "NÃO POSSUI").
+ */
+export function normalizarIdentificador(valor?: string | null): string {
+  if (valor === null || valor === undefined) return '';
+  let str = String(valor).trim();
+  if (!str) return '';
+
+  // Substituir múltiplos espaços internos por um único
+  str = str.replace(/\s+/g, ' ');
+
+  // Converter para letras maiúsculas
+  str = str.toUpperCase();
+
+  // Mapeamento e padronização para valores genéricos conhecidos
+  const unaccented = str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const noSpaces = unaccented.replace(/[\s\/-]+/g, '');
+
+  if (noSpaces === 'SN' || str === 'S/N' || str === 'S-N' || str === 'SN') {
+    return 'S/N';
+  }
+  if (noSpaces === 'NA' || noSpaces === 'NAOAPLICAVEL' || str === 'N/A' || str === 'NA') {
+    return 'N/A';
+  }
+  if (noSpaces === 'SEMNUMERO') {
+    return 'SEM NÚMERO';
+  }
+  if (noSpaces === 'NAOPOSSUI') {
+    return 'NÃO POSSUI';
+  }
+
+  return str;
+}
+
+/**
+ * Normaliza todos os identificadores conhecidos de um equipamento.
+ */
+export function normalizarEquipamentoIdentificadores<T extends Partial<Equipamento>>(equipamentoData: T): T {
+  if (!equipamentoData) return equipamentoData;
+  const result = { ...equipamentoData };
+  const anyResult = result as any;
+
+  if (result.numeroSerie !== undefined && result.numeroSerie !== null) {
+    result.numeroSerie = normalizarIdentificador(result.numeroSerie);
+  }
+  if (result.patrimonio !== undefined && result.patrimonio !== null) {
+    result.patrimonio = normalizarIdentificador(result.patrimonio);
+  }
+  if (result.placa !== undefined && result.placa !== null) {
+    result.placa = normalizarIdentificador(result.placa);
+  }
+  if (result.chassi !== undefined && result.chassi !== null) {
+    result.chassi = normalizarIdentificador(result.chassi);
+  }
+  if (anyResult.tag !== undefined && anyResult.tag !== null) {
+    anyResult.tag = normalizarIdentificador(anyResult.tag);
+  }
+  if (anyResult.codigoInterno !== undefined && anyResult.codigoInterno !== null) {
+    anyResult.codigoInterno = normalizarIdentificador(anyResult.codigoInterno);
+  }
+  if (anyResult.identificadorAtivo !== undefined && anyResult.identificadorAtivo !== null) {
+    anyResult.identificadorAtivo = normalizarIdentificador(anyResult.identificadorAtivo);
+  }
+  if (anyResult.identificador !== undefined && anyResult.identificador !== null) {
+    anyResult.identificador = normalizarIdentificador(anyResult.identificador);
+  }
+
+  return result;
+}
+
+/**
+ * Verifica se um valor de identificador (Número de Série, Patrimônio, Placa, Chassi, Tag, Código Interno, etc.)
+ * é genérico ou indica ausência de um identificador único real (ex: S/N, SN, SEM NÚMERO, N/A, -, etc.).
+ */
+export function isIdentificadorGenerico(valor?: string | null): boolean {
+  if (valor === null || valor === undefined) return true;
+  const norm = normalizarIdentificador(valor);
+  if (!norm) return true;
+
+  const upper = norm.toUpperCase();
+  const unaccented = upper.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const noSpaces = unaccented.replace(/\s+/g, '');
+
+  const genericValues = new Set([
+    'S/N',
+    'SN',
+    'S/P',
+    'SP',
+    'S/C',
+    'SC',
+    'S/T',
+    'ST',
+    'SEM NUMERO',
+    'SEM NÚMERO',
+    'SEM PATRIMONIO',
+    'SEM PLACA',
+    'SEM CHASSI',
+    'SEM TAG',
+    'SEM CODIGO',
+    'SEM IDENTIFICADOR',
+    'NAO POSSUI',
+    'NÃO POSSUI',
+    'NAO APLICAVEL',
+    'NA',
+    'N/A',
+    '-',
+    '--',
+    '---',
+    'ZERO'
+  ]);
+
+  const genericNoSpaces = new Set([
+    'SN',
+    'SP',
+    'SC',
+    'ST',
+    'SEMNUMERO',
+    'SEMPATRIMONIO',
+    'SEMPLACA',
+    'SEMCHASSI',
+    'SEMTAG',
+    'SEMCODIGO',
+    'SEMIDENTIFICADOR',
+    'NAOPOSSUI',
+    'NAOAPLICAVEL',
+    'NA',
+    'N/A',
+    '-',
+    '--',
+    '---'
+  ]);
+
+  return (
+    genericValues.has(upper) ||
+    genericValues.has(unaccented) ||
+    genericNoSpaces.has(noSpaces)
+  );
+}
+
+// Alias para manter retrocompatibilidade com chamadas existentes
+export const isGenericNumeroSerie = isIdentificadorGenerico;
+
 export const IntegridadeService = {
+  normalizarIdentificador,
+  normalizarEquipamentoIdentificadores,
+  isIdentificadorGenerico,
+  isGenericNumeroSerie: isIdentificadorGenerico,
   /**
    * 1. VALIDAÇÃO DE EXCLUSÃO DE CLIENTE
    * Verifica se o cliente possui Orçamentos/OS, Lançamentos Financeiros ou Equipamentos vinculados.
@@ -114,7 +265,7 @@ export const IntegridadeService = {
       // Ordens de Serviço vinculadas
       const osVinculadas = ordens.filter(os => {
         if (os.equipamentoId === equipamentoId) return true;
-        if (eqSerie && os.numeroSerie?.trim().toLowerCase() === eqSerie) return true;
+        if (eqSerie && !isGenericNumeroSerie(eqSerie) && os.numeroSerie?.trim().toLowerCase() === eqSerie) return true;
         if (eqPatrimonio && os.patrimonio?.trim().toLowerCase() === eqPatrimonio) return true;
         return false;
       });
@@ -401,32 +552,59 @@ export const IntegridadeService = {
 
   /**
    * 8. VALIDAÇÃO DE DUPLICIDADE DE EQUIPAMENTO
-   * Impede Patrimônio e Número de Série duplicados dentro da mesma empresa.
+   * Impede identificadores reais duplicados (Número de Série, Patrimônio, Placa, Chassi, Tag, Código Interno, etc.)
+   * dentro da mesma empresa.
+   * Valores vazios ou genéricos (ex: S/N, N/A, SEM NÚMERO, -) são isentos de validação.
    */
   async validateEquipamentoDuplicates(equipamentoData: Partial<Equipamento>, empresaId: string, userEmail?: string): Promise<IntegrityValidationResult> {
     if (!empresaId) return { valid: true };
 
-    const patrimonioNorm = equipamentoData.patrimonio?.trim().toLowerCase() || '';
-    const numSerieNorm = equipamentoData.numeroSerie?.trim().toLowerCase() || '';
+    const normalizedTarget = normalizarEquipamentoIdentificadores(equipamentoData);
+    const eqDataAny = normalizedTarget as any;
 
-    if (!patrimonioNorm && !numSerieNorm) {
+    // Normalização e verificação de identificadores genéricos/ausentes
+    const rawNumSerie = normalizedTarget.numeroSerie;
+    const numSerieNorm = isIdentificadorGenerico(rawNumSerie) ? '' : rawNumSerie!;
+
+    const rawPatrimonio = normalizedTarget.patrimonio;
+    const patrimonioNorm = isIdentificadorGenerico(rawPatrimonio) ? '' : rawPatrimonio!;
+
+    const rawPlaca = normalizedTarget.placa;
+    const placaNorm = isIdentificadorGenerico(rawPlaca) ? '' : rawPlaca!;
+
+    const rawChassi = normalizedTarget.chassi;
+    const chassiNorm = isIdentificadorGenerico(rawChassi) ? '' : rawChassi!;
+
+    const rawTag = eqDataAny.tag;
+    const tagNorm = isIdentificadorGenerico(rawTag) ? '' : String(rawTag);
+
+    const rawCodigoInterno = eqDataAny.codigoInterno;
+    const codigoInternoNorm = isIdentificadorGenerico(rawCodigoInterno) ? '' : String(rawCodigoInterno);
+
+    const rawIdentificadorAtivo = eqDataAny.identificadorAtivo || eqDataAny.identificador;
+    const identificadorAtivoNorm = isIdentificadorGenerico(rawIdentificadorAtivo) ? '' : String(rawIdentificadorAtivo);
+
+    // Se nenhum identificador único real foi informado, permite cadastro direto
+    if (!numSerieNorm && !patrimonioNorm && !placaNorm && !chassiNorm && !tagNorm && !codigoInternoNorm && !identificadorAtivoNorm) {
       return { valid: true };
     }
 
     try {
       const equipamentos = await FirestoreRepository.getAll<Equipamento>('equipamentos', empresaId, userEmail);
 
-      for (const eq of equipamentos) {
-        if (equipamentoData.id && eq.id === equipamentoData.id) continue;
+      for (const eqRaw of equipamentos) {
+        if (normalizedTarget.id && eqRaw.id === normalizedTarget.id) continue;
+        const eq = normalizarEquipamentoIdentificadores(eqRaw);
+        const eqAny = eq as any;
 
-        // Validação de Patrimônio
-        if (patrimonioNorm && eq.patrimonio?.trim().toLowerCase() === patrimonioNorm) {
-          const message = `Não é possível cadastrar: O Patrimônio "${equipamentoData.patrimonio}" já está em uso nesta empresa (${eq.tipo || 'Equipamento'} - ${eq.modelo || eq.placa || eq.id}).`;
+        // Validação de Número de Série
+        if (numSerieNorm && !isIdentificadorGenerico(eq.numeroSerie) && eq.numeroSerie === numSerieNorm) {
+          const message = `Não é possível cadastrar: O Número de Série "${rawNumSerie}" já está em uso nesta empresa (${eq.tipo || 'Equipamento'} - ${eq.modelo || eq.placa || eq.id}).`;
 
           LogService.logError(
             'Equipamentos',
             'IntegridadeService',
-            `Tentativa de patrimônio duplicado (${equipamentoData.patrimonio}) na empresa ${empresaId}`,
+            `Tentativa de número de série duplicado (${rawNumSerie}) na empresa ${empresaId}`,
             undefined,
             'tentativa_cadastro_duplicado'
           );
@@ -434,14 +612,90 @@ export const IntegridadeService = {
           return { valid: false, message };
         }
 
-        // Validação de Número de Série
-        if (numSerieNorm && eq.numeroSerie?.trim().toLowerCase() === numSerieNorm) {
-          const message = `Não é possível cadastrar: O Número de Série "${equipamentoData.numeroSerie}" já está em uso nesta empresa (${eq.tipo || 'Equipamento'} - ${eq.modelo || eq.placa || eq.id}).`;
+        // Validação de Patrimônio
+        if (patrimonioNorm && !isIdentificadorGenerico(eq.patrimonio) && eq.patrimonio === patrimonioNorm) {
+          const message = `Não é possível cadastrar: O Patrimônio "${rawPatrimonio}" já está em uso nesta empresa (${eq.tipo || 'Equipamento'} - ${eq.modelo || eq.placa || eq.id}).`;
 
           LogService.logError(
             'Equipamentos',
             'IntegridadeService',
-            `Tentativa de número de série duplicado (${equipamentoData.numeroSerie}) na empresa ${empresaId}`,
+            `Tentativa de patrimônio duplicado (${rawPatrimonio}) na empresa ${empresaId}`,
+            undefined,
+            'tentativa_cadastro_duplicado'
+          );
+
+          return { valid: false, message };
+        }
+
+        // Validação de Placa
+        if (placaNorm && !isIdentificadorGenerico(eq.placa) && eq.placa === placaNorm) {
+          const message = `Não é possível cadastrar: A Placa "${rawPlaca}" já está em uso nesta empresa (${eq.tipo || 'Equipamento'} - ${eq.modelo || eq.id}).`;
+
+          LogService.logError(
+            'Equipamentos',
+            'IntegridadeService',
+            `Tentativa de placa duplicada (${rawPlaca}) na empresa ${empresaId}`,
+            undefined,
+            'tentativa_cadastro_duplicado'
+          );
+
+          return { valid: false, message };
+        }
+
+        // Validação de Chassi
+        if (chassiNorm && !isIdentificadorGenerico(eq.chassi) && eq.chassi === chassiNorm) {
+          const message = `Não é possível cadastrar: O Chassi "${rawChassi}" já está em uso nesta empresa (${eq.tipo || 'Equipamento'} - ${eq.modelo || eq.id}).`;
+
+          LogService.logError(
+            'Equipamentos',
+            'IntegridadeService',
+            `Tentativa de chassi duplicado (${rawChassi}) na empresa ${empresaId}`,
+            undefined,
+            'tentativa_cadastro_duplicado'
+          );
+
+          return { valid: false, message };
+        }
+
+        // Validação de Tag
+        if (tagNorm && !isIdentificadorGenerico(eqAny.tag) && String(eqAny.tag) === tagNorm) {
+          const message = `Não é possível cadastrar: A Tag "${rawTag}" já está em uso nesta empresa (${eq.tipo || 'Equipamento'} - ${eq.modelo || eq.id}).`;
+
+          LogService.logError(
+            'Equipamentos',
+            'IntegridadeService',
+            `Tentativa de tag duplicada (${rawTag}) na empresa ${empresaId}`,
+            undefined,
+            'tentativa_cadastro_duplicado'
+          );
+
+          return { valid: false, message };
+        }
+
+        // Validação de Código Interno
+        if (codigoInternoNorm && !isIdentificadorGenerico(eqAny.codigoInterno) && String(eqAny.codigoInterno) === codigoInternoNorm) {
+          const message = `Não é possível cadastrar: O Código Interno "${rawCodigoInterno}" já está em uso nesta empresa (${eq.tipo || 'Equipamento'} - ${eq.modelo || eq.id}).`;
+
+          LogService.logError(
+            'Equipamentos',
+            'IntegridadeService',
+            `Tentativa de código interno duplicado (${rawCodigoInterno}) na empresa ${empresaId}`,
+            undefined,
+            'tentativa_cadastro_duplicado'
+          );
+
+          return { valid: false, message };
+        }
+
+        // Validação de Identificador do Ativo
+        const eqIdentificador = eqAny.identificadorAtivo || eqAny.identificador;
+        if (identificadorAtivoNorm && !isIdentificadorGenerico(eqIdentificador) && String(eqIdentificador) === identificadorAtivoNorm) {
+          const message = `Não é possível cadastrar: O Identificador do Ativo "${rawIdentificadorAtivo}" já está em uso nesta empresa (${eq.tipo || 'Equipamento'} - ${eq.modelo || eq.id}).`;
+
+          LogService.logError(
+            'Equipamentos',
+            'IntegridadeService',
+            `Tentativa de identificador de ativo duplicado (${rawIdentificadorAtivo}) na empresa ${empresaId}`,
             undefined,
             'tentativa_cadastro_duplicado'
           );

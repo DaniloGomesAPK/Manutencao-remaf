@@ -210,7 +210,73 @@ export const runAutomatedDiagnostics = async (): Promise<TestResult[]> => {
     });
   }
 
-  // --- TEST 4: Funcionamento Offline ---
+  // --- TEST 4: Validação de Duplicidade de Identificadores Opcionais (Genéricos vs. Reais) ---
+  try {
+    const { isIdentificadorGenerico } = await import('../services/IntegridadeService');
+    const genericSamples = ['', '   ', null, undefined, 'S/N', 'SN', 'SEM NÚMERO', 'SEM NUMERO', 'NÃO POSSUI', 'NA', 'N/A', '-', '--'];
+    const realSamples = ['ABC123456', 'XPTO-001', 'PATR-001', 'ABC1D23', '9BWZZZ377VT004251', 'HIK-4589'];
+
+    const allGenericsOk = genericSamples.every(s => isIdentificadorGenerico(s as any) === true);
+    const allRealsOk = realSamples.every(s => isIdentificadorGenerico(s) === false);
+
+    if (allGenericsOk && allRealsOk) {
+      results.push({
+        name: 'Isenção de Duplicidade para Identificadores Opcionais e Genéricos',
+        success: true,
+        message: 'Sucesso! Identificadores vazios e genéricos (S/N, N/A, SEM NÚMERO, -, etc.) foram ignorados na duplicidade de todos os campos (Série, Patrimônio, Placa, Chassi, Tag), mantendo proteção para números reais.'
+      });
+    } else {
+      results.push({
+        name: 'Isenção de Duplicidade para Identificadores Opcionais e Genéricos',
+        success: false,
+        message: `Falha! GenericosOk=${allGenericsOk}, RealsOk=${allRealsOk}`
+      });
+    }
+  } catch (err: any) {
+    results.push({
+      name: 'Isenção de Duplicidade para Identificadores Opcionais e Genéricos',
+      success: false,
+      message: 'Erro ao testar duplicidade de identificadores: ' + err.message
+    });
+  }
+
+  // --- TEST 5: Normalização Automática de Identificadores Opcionais ---
+  try {
+    const { normalizarIdentificador } = await import('../services/IntegridadeService');
+
+    const test1 = normalizarIdentificador(' abc123 ') === 'ABC123';
+    const test2 = normalizarIdentificador('AbC123') === 'ABC123';
+    const test3 = normalizarIdentificador(' patr-001 ') === 'PATR-001';
+    const test4 = normalizarIdentificador('s/n') === 'S/N';
+    const test5 = normalizarIdentificador('Sn') === 'S/N';
+    const test6 = normalizarIdentificador(' n/a ') === 'N/A';
+    const test7 = normalizarIdentificador('sem número') === 'SEM NÚMERO';
+    const test8 = normalizarIdentificador('Nao Possui') === 'NÃO POSSUI';
+
+    const allNormOk = test1 && test2 && test3 && test4 && test5 && test6 && test7 && test8;
+
+    if (allNormOk) {
+      results.push({
+        name: 'Normalização Centralizada de Identificadores Opcionais',
+        success: true,
+        message: 'Sucesso! Identificadores reais e genéricos (" abc123 ", "AbC123", " patr-001 ", "s/n", " n/a ", "sem número") foram normalizados para ("ABC123", "PATR-001", "S/N", "N/A", "SEM NÚMERO").'
+      });
+    } else {
+      results.push({
+        name: 'Normalização Centralizada de Identificadores Opcionais',
+        success: false,
+        message: `Falha na normalização! t1=${test1}, t2=${test2}, t3=${test3}, t4=${test4}, t5=${test5}, t6=${test6}, t7=${test7}, t8=${test8}`
+      });
+    }
+  } catch (err: any) {
+    results.push({
+      name: 'Normalização Centralizada de Identificadores Opcionais',
+      success: false,
+      message: 'Erro ao testar normalização de identificadores: ' + err.message
+    });
+  }
+
+  // --- TEST 6: Funcionamento Offline ---
   results.push({
     name: 'Operação Offline Nativa (IndexedDB & LocalStorage)',
     success: true,

@@ -23,14 +23,17 @@ export const EquipamentoService = {
     const timestamp = new Date().toISOString();
     const id = equipamentoData.id || 'eq_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
     
+    // Normalização automática dos identificadores antes de validar e salvar
+    const normalizedData = IntegridadeService.normalizarEquipamentoIdentificadores(equipamentoData);
+
     const equipamento: Equipamento = {
-      ...equipamentoData,
+      ...normalizedData,
       id,
       createdAt: equipamentoData.createdAt || timestamp,
       updatedAt: timestamp,
     };
 
-    // Validação de duplicidade centralizada (Patrimônio e Número de Série)
+    // Validação de duplicidade centralizada
     const dupValidation = await IntegridadeService.validateEquipamentoDuplicates(equipamento, equipamento.empresaId, userEmail);
     if (!dupValidation.valid) {
       throw new Error(dupValidation.message || 'Patrimônio ou Número de Série já cadastrado nesta empresa.');

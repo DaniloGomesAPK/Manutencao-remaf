@@ -180,6 +180,9 @@ export interface Servico {
   precoSelecionado?: number;
   modalidadePreco?: 'minimo' | 'recomendado' | 'premium';
   tipoCadastro?: 'Cadastro Rápido' | 'Assistente de Precificação';
+  tipoItem?: 'servico' | 'peca';
+  unidade?: string;
+  observacoes?: string;
   dataCriacao: string;
   ultimaAtualizacao: string;
   quantidadeUtilizacoes: number;

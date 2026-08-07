@@ -292,10 +292,25 @@ export const ImportExportService = {
             const categoriaRaw = row['Categoria'];
             const categoria = typeof categoriaRaw === 'string' ? categoriaRaw.trim() : (categoriaRaw ? String(categoriaRaw).trim() : '');
 
-            const valorTotalVal = parseFloat(row['Valor Total'] !== undefined ? row['Valor Total'] : 0);
-            const horasVal = parseFloat(row['Horas'] !== undefined ? row['Horas'] : 0);
-            const valorHoraVal = parseFloat(row['Valor Hora'] !== undefined ? row['Valor Hora'] : 0);
-            const custosFixosVal = parseFloat(row['Custos Fixos'] !== undefined ? row['Custos Fixos'] : 0);
+            const parseNum = (val: any): number => {
+              if (val === undefined || val === null || val === '') return 0;
+              if (typeof val === 'number') return isNaN(val) ? 0 : val;
+              let str = String(val).trim();
+              if (str.includes(',')) {
+                if (str.includes('.')) {
+                  str = str.replace(/\./g, '').replace(',', '.');
+                } else {
+                  str = str.replace(',', '.');
+                }
+              }
+              const n = parseFloat(str);
+              return isNaN(n) ? 0 : n;
+            };
+
+            const valorTotalVal = parseNum(row['Valor Total'] !== undefined ? row['Valor Total'] : 0);
+            const horasVal = parseNum(row['Horas'] !== undefined ? row['Horas'] : 0);
+            const valorHoraVal = parseNum(row['Valor Hora'] !== undefined ? row['Valor Hora'] : 0);
+            const custosFixosVal = parseNum(row['Custos Fixos'] !== undefined ? row['Custos Fixos'] : 0);
 
             let rowHasError = false;
             const rowErrors: string[] = [];
