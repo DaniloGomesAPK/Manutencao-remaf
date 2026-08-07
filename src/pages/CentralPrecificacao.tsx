@@ -30,7 +30,9 @@ import {
   Download,
   FileSpreadsheet,
   Database,
-  Filter
+  Filter,
+  Package,
+  Box
 } from 'lucide-react';
 import { ServicoContext } from '../contexts/ServicoContext';
 import { PrecificacaoContext } from '../contexts/PrecificacaoContext';
@@ -118,11 +120,32 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
     }
   }, [activeMobileTab]);
 
-  // Cadastro Rápido States
+  // Cadastro Rápido States (Serviços e Peças)
+  const [quickType, setQuickType] = useState<'servico' | 'peca'>('servico');
   const [quickNome, setQuickNome] = useState('');
   const [quickCategoria, setQuickCategoria] = useState('Manutenção');
+  const [quickUnidade, setQuickUnidade] = useState('UN');
   const [quickValor, setQuickValor] = useState('');
+  const [quickObservacoes, setQuickObservacoes] = useState('');
   const [isSavingQuick, setIsSavingQuick] = useState(false);
+  const [isQuickModalOpen, setIsQuickModalOpen] = useState(false);
+
+  // Helper to parse monetary decimal values in Brazilian/global format (e.g. 0,01, 0,50, 125,80)
+  const parseMonetaryValue = (val: string | number): number => {
+    if (typeof val === 'number') return isNaN(val) ? 0 : val;
+    if (!val) return 0;
+    
+    let cleaned = val.toString().trim();
+    if (cleaned.includes(',')) {
+      if (cleaned.includes('.')) {
+        cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+      } else {
+        cleaned = cleaned.replace(',', '.');
+      }
+    }
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : num;
+  };
 
   // Import Export Inline States
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -166,7 +189,6 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
 
     if (selectedOrigin !== 'Todas') {
       result = result.filter(s => {
-        // If a service has no tipoCadastro, default to Assistente de Precificação (or if quick is not set)
         const origin = s.tipoCadastro || 'Assistente de Precificação';
         return origin === selectedOrigin;
       });
@@ -177,7 +199,9 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
       result = result.filter(s => 
         s.nome.toLowerCase().includes(term) ||
         s.descricao?.toLowerCase().includes(term) ||
-        s.categoria.toLowerCase().includes(term)
+        s.categoria.toLowerCase().includes(term) ||
+        s.unidade?.toLowerCase().includes(term) ||
+        s.observacoes?.toLowerCase().includes(term)
       );
     }
 
@@ -185,15 +209,18 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
   }, [searchTerm, selectedCategory, selectedOrigin, servicos]);
 
   // Cadastro Rápido Save Logic
-  const handleQuickSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!quickNome.trim()) {
-      showNotification('O nome do serviço é obrigatório.', 'error');
+  const handleQuickSave = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const isPeca = quickType === 'peca';
+    const nomeTrimmed = quickNome.trim();
+
+    if (!nomeTrimmed) {
+      showNotification(isPeca ? 'O nome da peça é obrigatório.' : 'O nome do serviço é obrigatório.', 'error');
       return;
     }
-    const valorNum = parseFloat(quickValor);
-    if (isNaN(valorNum) || valorNum <= 0) {
-      showNotification('O valor total do serviço deve ser maior que zero.', 'error');
+    const valorNum = parseMonetaryValue(quickValor);
+    if (valorNum <= 0) {
+      showNotification('O valor deve ser maior que zero (ex: 0,01, 0,50, 125,80).', 'error');
       return;
     }
 
@@ -202,9 +229,9 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
       const newSrv: Servico = {
         id: 'srv_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now(),
         empresaId: empresaId,
-        nome: quickNome.trim(),
-        categoria: quickCategoria,
-        descricao: 'Serviço cadastrado via Cadastro Rápido',
+        nome: nomeTrimmed,
+        categoria: quickCategoria || (isPeca ? 'Peças / Componentes' : 'Manutenção'),
+        descricao: quickObservacoes.trim() || (isPeca ? 'Peça cadastrada via Cadastro Rápido' : 'Serviço cadastrado via Cadastro Rápido'),
         materiais: [],
         tempoMedioExecucao: 0,
         valorHora: 0,
@@ -218,6 +245,9 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
         precoSelecionado: valorNum,
         modalidadePreco: 'recomendado',
         tipoCadastro: 'Cadastro Rápido',
+        tipoItem: isPeca ? 'peca' : 'servico',
+        unidade: isPeca ? (quickUnidade || 'UN') : undefined,
+        observacoes: quickObservacoes.trim(),
         dataCriacao: new Date().toISOString(),
         ultimaAtualizacao: new Date().toISOString(),
         quantidadeUtilizacoes: 0,
@@ -225,18 +255,39 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
       };
 
       await saveServico(newSrv);
+
+      // Immediate state update
+      setFilteredServicos(prev => [newSrv, ...prev.filter(s => s.id !== newSrv.id)]);
+
       if (reloadServicos) {
         await reloadServicos();
       }
-      showNotification(`Serviço "${newSrv.nome}" cadastrado com sucesso via Cadastro Rápido!`, 'success');
+      showNotification(
+        isPeca 
+          ? `Peça "${newSrv.nome}" cadastrada com sucesso via Cadastro Rápido!` 
+          : `Serviço "${newSrv.nome}" cadastrado com sucesso via Cadastro Rápido!`, 
+        'success'
+      );
       setQuickNome('');
       setQuickValor('');
+      setQuickObservacoes('');
+      setIsQuickModalOpen(false);
     } catch (err) {
       console.error(err);
-      showNotification('Erro ao salvar serviço rápido.', 'error');
+      showNotification('Erro ao salvar no banco.', 'error');
     } finally {
       setIsSavingQuick(false);
     }
+  };
+
+  const handleOpenQuickModal = (type: 'servico' | 'peca') => {
+    setQuickType(type);
+    if (type === 'peca') {
+      setQuickCategoria('Peças / Componentes');
+    } else {
+      setQuickCategoria('Manutenção');
+    }
+    setIsQuickModalOpen(true);
   };
 
   // Import Action Handlers
@@ -511,15 +562,32 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
         onBack={onBack}
         badge={<UIBadge status="warning" label="OFFLINE-FIRST" />}
         actions={
-          <UIButton
-            variant="outline"
-            onClick={handleRecalculateAll}
-            loading={isRecalculatingAll}
-            disabled={servicos.filter(s => s.tipoCadastro !== 'Cadastro Rápido').length === 0}
-            icon={RefreshCw}
-          >
-            Recalcular Custos ({servicos.filter(s => s.tipoCadastro !== 'Cadastro Rápido').length})
-          </UIButton>
+          <div className="flex flex-wrap items-center gap-2">
+            <UIButton
+              variant="primary"
+              onClick={() => handleOpenQuickModal('peca')}
+              icon={Package}
+              className="bg-[#003366] hover:bg-[#002244]"
+            >
+              Nova Peça
+            </UIButton>
+            <UIButton
+              variant="outline"
+              onClick={() => handleOpenQuickModal('servico')}
+              icon={Plus}
+            >
+              Novo Serviço
+            </UIButton>
+            <UIButton
+              variant="outline"
+              onClick={handleRecalculateAll}
+              loading={isRecalculatingAll}
+              disabled={servicos.filter(s => s.tipoCadastro !== 'Cadastro Rápido').length === 0}
+              icon={RefreshCw}
+            >
+              Recalcular Custos ({servicos.filter(s => s.tipoCadastro !== 'Cadastro Rápido').length})
+            </UIButton>
+          </div>
         }
       />
 
@@ -583,76 +651,165 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
           
           {/* CARD 1: CADASTRO RÁPIDO */}
           <div className={`${activeMobileTab === 'rapido' ? 'block' : 'hidden lg:block'} bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden`}>
-            <div className="p-4 bg-slate-50 border-b border-slate-150 flex items-center gap-2">
-              <div className="p-1.5 bg-[#FF6600]/10 rounded-lg text-[#FF6600]">
-                <Plus className="w-4 h-4 stroke-[2.5]" />
-              </div>
-              <div>
-                <h3 className="text-xs font-black text-[#003366] uppercase tracking-wider">⚡ Cadastro Rápido</h3>
-                <p className="text-[10px] text-slate-500">Adicione um preço fixado instantaneamente</p>
+            <div className="p-4 bg-slate-50 border-b border-slate-150 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-[#FF6600]/10 rounded-lg text-[#FF6600]">
+                  {quickType === 'peca' ? <Package className="w-4 h-4 stroke-[2.5]" /> : <Plus className="w-4 h-4 stroke-[2.5]" />}
+                </div>
+                <div>
+                  <h3 className="text-xs font-black text-[#003366] uppercase tracking-wider">⚡ Cadastro Rápido</h3>
+                  <p className="text-[10px] text-slate-500">Adicione peças ou serviços com preço fixo</p>
+                </div>
               </div>
             </div>
-            <form onSubmit={handleQuickSave} className="p-4 space-y-3.5">
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Nome do Serviço *</label>
-                <input
-                  type="text"
-                  placeholder="Ex: Alinhamento e Balanceamento Simples"
-                  value={quickNome}
-                  onChange={e => setQuickNome(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-250 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#FF6600]/10 focus:border-[#FF6600]"
-                  required
-                />
+
+            <div className="p-4 pt-3 space-y-3.5">
+              {/* Type Switcher Tabs */}
+              <div className="flex bg-slate-100 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuickType('servico');
+                    setQuickCategoria('Manutenção');
+                  }}
+                  className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition flex items-center justify-center gap-1 cursor-pointer ${
+                    quickType === 'servico' ? 'bg-white text-[#FF6600] shadow-xs' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Sparkles className="w-3 h-3" />
+                  Serviço
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuickType('peca');
+                    setQuickCategoria('Peças / Componentes');
+                  }}
+                  className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition flex items-center justify-center gap-1 cursor-pointer ${
+                    quickType === 'peca' ? 'bg-white text-[#003366] shadow-xs' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Package className="w-3 h-3" />
+                  Peça
+                </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <form onSubmit={handleQuickSave} className="space-y-3.5">
                 <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Categoria</label>
-                  <select
-                    value={quickCategoria}
-                    onChange={e => setQuickCategoria(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-250 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none"
-                  >
-                    <option value="Manutenção">Manutenção</option>
-                    <option value="Elétrica">Elétrica</option>
-                    <option value="Hidráulica">Hidráulica</option>
-                    <option value="Motor">Motor</option>
-                    <option value="Transmissão">Transmissão</option>
-                    <option value="Pintura/Funilaria">Pintura/Chaparia</option>
-                    <option value="Usinagem">Torno e Solda</option>
-                    <option value="Outros">Outros</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Valor Total (R$) *</label>
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">
+                    {quickType === 'peca' ? 'Nome da Peça *' : 'Nome do Serviço *'}
+                  </label>
                   <input
-                    type="number"
-                    min="1"
-                    step="0.01"
-                    placeholder="250,00"
-                    value={quickValor}
-                    onChange={e => setQuickValor(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-250 rounded-xl px-3 py-2 text-xs font-semibold font-mono text-slate-800 focus:outline-none"
+                    type="text"
+                    placeholder={quickType === 'peca' ? 'Ex: Filtro de Óleo Mann HU 711/51' : 'Ex: Alinhamento e Balanceamento Simples'}
+                    value={quickNome}
+                    onChange={e => setQuickNome(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-250 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#FF6600]/10 focus:border-[#FF6600]"
                     required
                   />
                 </div>
-              </div>
 
-              <button
-                type="submit"
-                disabled={isSavingQuick}
-                className="w-full py-2.5 bg-[#FF6600] hover:bg-[#dd5500] text-white font-black text-[10px] uppercase tracking-wider rounded-xl transition shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                {isSavingQuick ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <>
-                    <Check className="w-3.5 h-3.5 stroke-[3]" />
-                    Salvar Serviço Rápido
-                  </>
-                )}
-              </button>
-            </form>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Categoria</label>
+                    <select
+                      value={quickCategoria}
+                      onChange={e => setQuickCategoria(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-250 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none"
+                    >
+                      {quickType === 'peca' ? (
+                        <>
+                          <option value="Peças / Componentes">Peças / Componentes</option>
+                          <option value="Filtros">Filtros</option>
+                          <option value="Óleos / Fluidos">Óleos / Fluidos</option>
+                          <option value="Freios">Freios</option>
+                          <option value="Suspensão">Suspensão</option>
+                          <option value="Motor">Motor</option>
+                          <option value="Elétrica">Elétrica</option>
+                          <option value="Transmissão">Transmissão</option>
+                          <option value="Pneus">Pneus</option>
+                          <option value="Geral">Geral</option>
+                          <option value="Outros">Outros</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="Manutenção">Manutenção</option>
+                          <option value="Elétrica">Elétrica</option>
+                          <option value="Hidráulica">Hidráulica</option>
+                          <option value="Motor">Motor</option>
+                          <option value="Transmissão">Transmissão</option>
+                          <option value="Pintura/Chaparia">Pintura/Chaparia</option>
+                          <option value="Torno e Solda">Torno e Solda</option>
+                          <option value="Outros">Outros</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+
+                  {quickType === 'peca' && (
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Unidade</label>
+                      <select
+                        value={quickUnidade}
+                        onChange={e => setQuickUnidade(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-250 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none"
+                      >
+                        <option value="UN">Unidade (UN)</option>
+                        <option value="KG">Quilograma (KG)</option>
+                        <option value="L">Litro (L)</option>
+                        <option value="M">Metro (M)</option>
+                        <option value="JOGO">Jogo (JOGO)</option>
+                        <option value="PAR">Par (PAR)</option>
+                        <option value="CX">Caixa (CX)</option>
+                        <option value="GALAO">Galão (GALAO)</option>
+                        <option value="KT">Kit (KT)</option>
+                      </select>
+                    </div>
+                  )}
+
+                  <div className={`space-y-1 ${quickType === 'peca' ? 'col-span-1' : ''}`}>
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">
+                      {quickType === 'peca' ? 'Valor Unitário (R$) *' : 'Valor Total (R$) *'}
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0,01 | 0,50 | 125,80"
+                      value={quickValor}
+                      onChange={e => setQuickValor(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-250 rounded-xl px-3 py-2 text-xs font-semibold font-mono text-slate-800 focus:outline-none"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Observações (Opcional)</label>
+                  <input
+                    type="text"
+                    placeholder={quickType === 'peca' ? 'Ex: Código OEM, especificação...' : 'Ex: Detalhes adicionais...'}
+                    value={quickObservacoes}
+                    onChange={e => setQuickObservacoes(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-250 rounded-xl px-3 py-1.5 text-xs font-semibold focus:outline-none"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSavingQuick}
+                  className="w-full py-2.5 bg-[#FF6600] hover:bg-[#dd5500] text-white font-black text-[10px] uppercase tracking-wider rounded-xl transition shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  {isSavingQuick ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5 stroke-[3]" />
+                      {quickType === 'peca' ? 'Salvar Peça Rápida' : 'Salvar Serviço Rápido'}
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
           </div>
 
           {/* CARD 2: ASSISTENTE DE PRECIFICAÇÃO */}
@@ -1009,14 +1166,32 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
 
           {/* BANCO DE SERVIÇOS LIST (Part 4) */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="px-5 py-4 bg-[#003366]/5 border-b border-slate-100 flex items-center justify-between">
+            <div className="px-5 py-4 bg-[#003366]/5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Database className="w-4 h-4 text-[#003366]" />
-                <h3 className="text-xs font-black text-[#003366] uppercase tracking-wider">📋 Banco de Serviços Inteligente</h3>
+                <h3 className="text-xs font-black text-[#003366] uppercase tracking-wider">📋 Banco de Itens & Serviços</h3>
               </div>
-              <span className="text-[10px] bg-emerald-500 text-white font-black px-2 py-0.5 rounded-full uppercase">
-                {filteredServicos.length} Serviços
-              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleOpenQuickModal('peca')}
+                  className="px-2.5 py-1 bg-[#003366] hover:bg-[#002244] text-white font-black text-[9px] uppercase tracking-wider rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs"
+                >
+                  <Package className="w-3 h-3 text-[#FF6600]" />
+                  + Nova Peça
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenQuickModal('servico')}
+                  className="px-2.5 py-1 bg-white border border-slate-200 text-[#003366] hover:bg-slate-50 font-black text-[9px] uppercase tracking-wider rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs"
+                >
+                  <Plus className="w-3 h-3 text-[#FF6600]" />
+                  + Novo Serviço
+                </button>
+                <span className="text-[10px] bg-emerald-500 text-white font-black px-2 py-0.5 rounded-full uppercase">
+                  {filteredServicos.length} Itens
+                </span>
+              </div>
             </div>
 
             {isLoadingServicos ? (
@@ -1028,7 +1203,7 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
               <div className="p-16 text-center text-slate-400 max-w-sm mx-auto space-y-3">
                 <Layers className="w-10 h-10 text-slate-300 mx-auto" />
                 <div>
-                  <p className="text-xs font-bold text-slate-700">Nenhum serviço localizado</p>
+                  <p className="text-xs font-bold text-slate-700">Nenhum item ou serviço localizado</p>
                   <p className="text-[10px] text-slate-500 mt-1">Experimente remover os termos de busca ou filtros ativos de categoria e origem.</p>
                 </div>
               </div>
@@ -1037,7 +1212,7 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-50/50 border-b border-slate-200 text-slate-500 text-[9px] font-black uppercase tracking-wider">
-                      <th className="px-4 py-3">Serviço / Categoria</th>
+                      <th className="px-4 py-3">Item / Serviço</th>
                       <th className="px-4 py-3">Origem</th>
                       <th className="px-4 py-3">Estrutura de Custos</th>
                       <th className="px-4 py-3">Preço Recomendado</th>
@@ -1047,6 +1222,7 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
                   <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
                     {filteredServicos.map((s) => {
                       const origin = s.tipoCadastro || 'Assistente de Precificação';
+                      const isPeca = s.tipoItem === 'peca' || s.categoria?.toLowerCase().includes('peça') || s.categoria?.toLowerCase().includes('filtro') || s.categoria?.toLowerCase().includes('óleo');
                       const totalInsumos = s.materiais?.reduce((sum, m) => sum + (m.custoTotal || 0), 0) || 0;
                       const totalMaoDeObra = (s.tempoMedioExecucao || 0) * (s.valorHora || 0);
                       const totalCustos = totalInsumos + totalMaoDeObra + (s.custosFixos || 0);
@@ -1054,7 +1230,15 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
                       return (
                         <tr key={s.id} className="hover:bg-slate-50/30">
                           <td className="px-4 py-3.5">
-                            <p className="font-bold text-slate-800 text-xs">{s.nome}</p>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="font-bold text-slate-800 text-xs">{s.nome}</p>
+                              {isPeca && (
+                                <span className="bg-amber-100 text-amber-900 font-extrabold text-[8px] px-1.5 py-0.5 rounded uppercase flex items-center gap-0.5">
+                                  <Package className="w-2.5 h-2.5" />
+                                  Peça {s.unidade ? `(${s.unidade})` : ''}
+                                </span>
+                              )}
+                            </div>
                             <span className="inline-block bg-slate-100 text-slate-500 font-extrabold text-[8px] px-1.5 py-0.5 rounded uppercase mt-1">
                               {s.categoria}
                             </span>
@@ -1063,14 +1247,19 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
                             )}
                           </td>
                           
-                          {/* Origin Type Column Badge (Part 4 requirement) */}
+                          {/* Origin Type Column Badge */}
                           <td className="px-4 py-3.5">
-                            {origin === 'Cadastro Rápido' ? (
-                              <span className="inline-flex items-center gap-0.5 bg-amber-50 border border-amber-100 text-amber-800 font-black text-[9px] px-2 py-0.5 rounded-full">
+                            {isPeca ? (
+                              <span className="inline-flex items-center gap-1 bg-amber-50 border border-amber-100 text-amber-800 font-black text-[9px] px-2 py-0.5 rounded-full">
+                                <Package className="w-3 h-3 text-[#FF6600]" />
+                                <span>Peça Rápida</span>
+                              </span>
+                            ) : origin === 'Cadastro Rápido' ? (
+                              <span className="inline-flex items-center gap-1 bg-amber-50 border border-amber-100 text-amber-800 font-black text-[9px] px-2 py-0.5 rounded-full">
                                 <span>⚡ Rápido</span>
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-0.5 bg-blue-50 border border-blue-100 text-blue-800 font-black text-[9px] px-2 py-0.5 rounded-full">
+                              <span className="inline-flex items-center gap-1 bg-blue-50 border border-blue-100 text-blue-800 font-black text-[9px] px-2 py-0.5 rounded-full">
                                 <span>🤖 Assistente</span>
                               </span>
                             )}
@@ -1163,6 +1352,192 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
         </div>
 
       </div>
+
+      {/* Cadastro Rápido Modal (Peça ou Serviço) */}
+      {isQuickModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-4 bg-slate-50 border-b border-slate-150 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-[#FF6600]/10 rounded-xl text-[#FF6600]">
+                  {quickType === 'peca' ? <Package className="w-5 h-5 stroke-[2.5]" /> : <Plus className="w-5 h-5 stroke-[2.5]" />}
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-[#003366] uppercase tracking-wider">
+                    {quickType === 'peca' ? 'Cadastro Rápido de Peça' : 'Cadastro Rápido de Serviço'}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    {quickType === 'peca' ? 'Cadastre uma nova peça no banco de precificação' : 'Cadastre um novo serviço direto no banco'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsQuickModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-150 rounded-xl transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickSave} className="p-5 space-y-4">
+              {/* Type Switcher inside Modal */}
+              <div className="flex bg-slate-100 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuickType('servico');
+                    setQuickCategoria('Manutenção');
+                  }}
+                  className={`flex-1 py-1.5 text-xs font-black uppercase tracking-wider rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                    quickType === 'servico' ? 'bg-white text-[#FF6600] shadow-xs' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Serviço
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuickType('peca');
+                    setQuickCategoria('Peças / Componentes');
+                  }}
+                  className={`flex-1 py-1.5 text-xs font-black uppercase tracking-wider rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                    quickType === 'peca' ? 'bg-white text-[#003366] shadow-xs' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Package className="w-3.5 h-3.5" />
+                  Peça
+                </button>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
+                  {quickType === 'peca' ? 'Nome da Peça *' : 'Nome do Serviço *'}
+                </label>
+                <input
+                  type="text"
+                  placeholder={quickType === 'peca' ? 'Ex: Filtro de Óleo Mann HU 711/51' : 'Ex: Alinhamento e Balanceamento Simples'}
+                  value={quickNome}
+                  onChange={e => setQuickNome(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#FF6600]/20 focus:border-[#FF6600]"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">Categoria</label>
+                  <select
+                    value={quickCategoria}
+                    onChange={e => setQuickCategoria(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none"
+                  >
+                    {quickType === 'peca' ? (
+                      <>
+                        <option value="Peças / Componentes">Peças / Componentes</option>
+                        <option value="Filtros">Filtros</option>
+                        <option value="Óleos / Fluidos">Óleos / Fluidos</option>
+                        <option value="Freios">Freios</option>
+                        <option value="Suspensão">Suspensão</option>
+                        <option value="Motor">Motor</option>
+                        <option value="Elétrica">Elétrica</option>
+                        <option value="Transmissão">Transmissão</option>
+                        <option value="Pneus">Pneus</option>
+                        <option value="Geral">Geral</option>
+                        <option value="Outros">Outros</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="Manutenção">Manutenção</option>
+                        <option value="Elétrica">Elétrica</option>
+                        <option value="Hidráulica">Hidráulica</option>
+                        <option value="Motor">Motor</option>
+                        <option value="Transmissão">Transmissão</option>
+                        <option value="Pintura/Chaparia">Pintura/Chaparia</option>
+                        <option value="Torno e Solda">Torno e Solda</option>
+                        <option value="Outros">Outros</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+
+                {quickType === 'peca' && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">Unidade</label>
+                    <select
+                      value={quickUnidade}
+                      onChange={e => setQuickUnidade(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none"
+                    >
+                      <option value="UN">Unidade (UN)</option>
+                      <option value="KG">Quilograma (KG)</option>
+                      <option value="L">Litro (L)</option>
+                      <option value="M">Metro (M)</option>
+                      <option value="JOGO">Jogo (JOGO)</option>
+                      <option value="PAR">Par (PAR)</option>
+                      <option value="CX">Caixa (CX)</option>
+                      <option value="GALAO">Galão (GALAO)</option>
+                      <option value="KT">Kit (KT)</option>
+                    </select>
+                  </div>
+                )}
+
+                <div className={`space-y-1 ${quickType === 'peca' ? 'col-span-1' : ''}`}>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
+                    {quickType === 'peca' ? 'Valor Unitário (R$) *' : 'Valor Total (R$) *'}
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0,01 | 0,50 | 125,80"
+                    value={quickValor}
+                    onChange={e => setQuickValor(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold font-mono text-slate-800 focus:outline-none focus:border-[#FF6600]"
+                    required
+                  />
+                  <p className="text-[9px] text-slate-400">Aceita centavos (ex: 0,01 ou 0.50)</p>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">Observações / Código (Opcional)</label>
+                <textarea
+                  rows={2}
+                  placeholder={quickType === 'peca' ? 'Ex: Código OEM 123456, aplicação VW Gol 1.0...' : 'Ex: Descrição do escopo do serviço...'}
+                  value={quickObservacoes}
+                  onChange={e => setQuickObservacoes(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-medium focus:outline-none focus:border-[#FF6600]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsQuickModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingQuick}
+                  className="px-5 py-2 bg-[#FF6600] hover:bg-[#dd5500] text-white text-xs font-black uppercase tracking-wider rounded-xl transition shadow-md cursor-pointer flex items-center gap-1.5"
+                >
+                  {isSavingQuick ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 stroke-[3]" />
+                      {quickType === 'peca' ? 'Salvar Peça' : 'Salvar Serviço'}
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Assistente de Precificação Modal integration */}
       <AssistentePrecificacaoModal
