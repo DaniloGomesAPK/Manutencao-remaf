@@ -13,12 +13,12 @@ interface PlansPageProps {
 
 export const PlansPage: React.FC<PlansPageProps> = ({ onBack }) => {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between relative overflow-hidden font-sans">
+    <div className="min-h-screen min-h-[100dvh] bg-slate-950 text-slate-100 flex flex-col justify-between relative overflow-hidden font-sans pt-safe pb-safe pl-safe pr-safe">
       {/* Background Glow */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[400px] bg-[#003366]/30 rounded-full blur-[140px] pointer-events-none" />
 
       {/* Header Bar */}
-      <header className="w-full max-w-7xl mx-auto px-6 pt-4 pb-2 flex items-center justify-end z-10">
+      <header className="w-full max-w-7xl mx-auto px-6 pt-safe-header pb-2 flex items-center justify-end z-10">
         {onBack && (
           <button
             onClick={onBack}
@@ -177,7 +177,7 @@ export const PlansPage: React.FC<PlansPageProps> = ({ onBack }) => {
       </main>
 
       {/* Footer */}
-      <footer className="w-full border-t border-slate-900 px-6 py-6 text-center text-xs text-slate-500 z-10">
+      <footer className="w-full border-t border-slate-900 px-6 py-6 pb-safe text-center text-xs text-slate-500 z-10">
         © {new Date().getFullYear()} DG Gestão em Orçamentos.
       </footer>
     </div>

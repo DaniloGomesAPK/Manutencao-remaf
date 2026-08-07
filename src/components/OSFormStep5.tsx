@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { ArrowLeft, Save, FileText, Clipboard, CheckCircle2, AlertCircle, Info, Calendar, Clock } from 'lucide-react';
 import { OrdemDeServico, ItemOrcamento } from '../types';
 import { formatToBrazilianDate } from '../utils/dateFormatter';
+import { UIButton } from './ui/UIComponents';
 
 interface OSFormStep5Props {
   initialData: Partial<OrdemDeServico>;
@@ -15,13 +16,31 @@ interface OSFormStep5Props {
   onCancel?: () => void;
   onSaveDraftAndPDF?: (data: Partial<OrdemDeServico>) => void;
   isSaving?: boolean;
+  onSaveProgress?: (data: Partial<OrdemDeServico>) => void;
 }
 
-export default function OSFormStep5({ initialData, onSave, onBack, onCancel, onSaveDraftAndPDF, isSaving = false }: OSFormStep5Props) {
+export default function OSFormStep5({ initialData, onSave, onBack, onCancel, onSaveDraftAndPDF, isSaving = false, onSaveProgress }: OSFormStep5Props) {
   const [status, setStatus] = useState<'Pendente' | 'Concluído'>(initialData.status === 'Concluído' ? 'Concluído' : 'Pendente');
   const [descricaoAvaria, setDescricaoAvaria] = useState(initialData.descricaoAvaria || '');
   const [servicoExecutado, setServicoExecutado] = useState(initialData.servicoExecutado || '');
   const [observacoesFinais, setObservacoesFinais] = useState(initialData.observacoesFinais || '');
+
+  const getCurrentStep5Data = (): Partial<OrdemDeServico> => {
+    return {
+      descricaoAvaria: descricaoAvaria.trim(),
+      servicoExecutado: servicoExecutado.trim(),
+      observacoesFinais: observacoesFinais.trim(),
+      status,
+      faseAtual: 5,
+    };
+  };
+
+  const handleSaveClick = (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    if (onSaveProgress) {
+      onSaveProgress(getCurrentStep5Data());
+    }
+  };
 
   const formatBudgetItemsText = (itemsList: ItemOrcamento[], includeQty: boolean = true) => {
     if (!itemsList || itemsList.length === 0) return '';
@@ -244,14 +263,14 @@ export default function OSFormStep5({ initialData, onSave, onBack, onCancel, onS
       </div>
 
       {/* Actions and navigation buttons */}
-      <div className="flex flex-col sm:flex-row gap-3 pt-6">
+      <div className="flex flex-col sm:flex-row flex-wrap gap-2.5 pt-6 border-t border-slate-200">
         {onCancel && (
           <button
             id="btn-cancel-step-5"
             type="button"
             disabled={isSaving}
             onClick={() => onCancel()}
-            className="w-full sm:w-1/4 border-2 border-rose-200 text-rose-600 bg-transparent rounded-full py-3.5 font-bold tracking-widest text-[10px] uppercase hover:bg-rose-50 active:scale-98 transition duration-200 cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+            className="w-full sm:w-auto px-4 border border-rose-200 text-rose-600 bg-transparent rounded-xl py-2.5 font-bold tracking-wider text-xs uppercase hover:bg-rose-50 transition duration-200 cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
           >
             <span>Cancelar</span>
           </button>
@@ -262,18 +281,35 @@ export default function OSFormStep5({ initialData, onSave, onBack, onCancel, onS
           type="button"
           disabled={isSaving}
           onClick={onBack}
-          className="w-full sm:w-1/4 border-2 border-slate-200 text-slate-500 bg-transparent rounded-full py-3.5 font-bold tracking-widest text-[10px] uppercase hover:bg-slate-50 active:scale-98 transition duration-200 cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+          className="w-full sm:w-auto px-4 border border-slate-200 text-slate-600 bg-transparent rounded-xl py-2.5 font-bold tracking-wider text-xs uppercase hover:bg-slate-50 transition duration-200 cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
         >
           <ArrowLeft className="w-4 h-4 text-slate-500" />
           <span>Voltar</span>
         </button>
+
+        <div className="flex-1 hidden sm:block"></div>
+
+        {onSaveProgress && (
+          <UIButton
+            type="button"
+            variant="secondary"
+            size="md"
+            icon={Save}
+            loading={isSaving}
+            onClick={handleSaveClick}
+            id="btn-save-progress-step5"
+            className="w-full sm:w-auto font-bold uppercase tracking-wider text-xs border-slate-300 text-slate-700 hover:bg-slate-50"
+          >
+            {isSaving ? 'Salvando...' : 'Salvar'}
+          </UIButton>
+        )}
 
         <button
           id="btn-generate-pdf-final"
           type="button"
           disabled={isSaving}
           onClick={handleGeneratePDFDraft}
-          className="w-full sm:w-2/5 border-2 border-[#003366] text-[#003366] bg-white rounded-full py-3.5 px-3 font-bold tracking-widest text-[10px] uppercase hover:bg-[#003366]/5 active:scale-98 transition duration-200 cursor-pointer flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
+          className="w-full sm:w-auto border border-[#003366] text-[#003366] bg-white rounded-xl py-2.5 px-4 font-bold tracking-wider text-xs uppercase hover:bg-[#003366]/5 transition duration-200 cursor-pointer flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50"
         >
           {isSaving ? (
             <div className="w-4 h-4 border-2 border-[#003366] border-t-transparent rounded-full animate-spin"></div>
@@ -287,7 +323,7 @@ export default function OSFormStep5({ initialData, onSave, onBack, onCancel, onS
           id="btn-save-step-5"
           type="submit"
           disabled={isSaving}
-          className="w-full sm:w-2/5 bg-[#FF6600] text-white rounded-full py-3.5 px-6 font-bold tracking-[0.12em] text-[10px] uppercase shadow-lg shadow-[#FF6600]/25 hover:bg-[#E05500] hover:shadow-xl active:scale-[0.99] flex items-center justify-center gap-2 transition duration-200 cursor-pointer disabled:opacity-50"
+          className="w-full sm:w-auto bg-[#FF6600] text-white rounded-xl py-2.5 px-6 font-bold tracking-wider text-xs uppercase shadow-md hover:bg-[#E05500] flex items-center justify-center gap-2 transition duration-200 cursor-pointer disabled:opacity-50"
         >
           {isSaving ? (
             <>
@@ -296,7 +332,7 @@ export default function OSFormStep5({ initialData, onSave, onBack, onCancel, onS
             </>
           ) : (
             <>
-              <Save className="w-4 h-4 text-white" />
+              <CheckCircle2 className="w-4 h-4 text-white" />
               <span>Concluir OS</span>
             </>
           )}

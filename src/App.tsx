@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, Suspense, lazy, useContext } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ClipboardCheck, Sparkles, BookOpen, Layers, Check, Calendar, HardHat, FileText, Settings, Car, Building2, Users, Calculator, Menu, Wifi, WifiOff, Cloud, CloudOff, RefreshCw, ArrowLeft, Eye, EyeOff, KeyRound, Mail, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ClipboardCheck, Sparkles, BookOpen, Layers, Check, Calendar, HardHat, FileText, Settings, Car, Building2, Users, Calculator, Menu, Wifi, WifiOff, Cloud, CloudOff, RefreshCw, ArrowLeft, Eye, EyeOff, KeyRound, Mail, CheckCircle2, AlertCircle, Save } from 'lucide-react';
 
 import { OrdemDeServico, OSStep } from './types';
 import { 
@@ -25,7 +25,7 @@ import { SyncContext } from './contexts/SyncContext';
 import { generateOSReportPDF } from './utils/pdfGenerator';
 import { formatToBrazilianDate } from './utils/dateFormatter';
 
-import officialAppBanner from './assets/images/official_app_banner_1784242870138.jpg';
+import officialAppBanner from './assets/images/image2.png';
 
 import OfflineIndicator from './components/OfflineIndicator';
 import PWAInstallBanner from './components/PWAInstallBanner';
@@ -132,6 +132,7 @@ export default function App() {
   });
 
   const [isSaving, setIsSaving] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [activeSubView, setActiveSubView] = useState<'dashboard' | 'list' | 'company' | 'clientes' | 'equipamentos' | 'banco_servicos' | 'precificacao' | 'licensing' | 'configuracoes' | 'relatorios'>(() => {
     try {
       const saved = sessionStorage.getItem('remaf_active_subview');
@@ -300,12 +301,60 @@ export default function App() {
   // Continue a draft OS in Progress
   const handleEditOS = (os: OrdemDeServico) => {
     setFormData(os);
-    if (!os.descricaoAvaria) {
-      setCurrentStep(2);
+    if (os.faseAtual && os.faseAtual >= 1 && os.faseAtual <= 5) {
+      setCurrentStep(os.faseAtual);
     } else {
-      setCurrentStep(3);
+      setCurrentStep(1);
     }
     setViewingForm(true);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  // Explicit Save Progress Handler across any phase (1-5)
+  const handleSaveProgress = async (stepData: Partial<OrdemDeServico>, targetStep?: OSStep) => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const docId = formData.id || stepData.id || generateNewDocumentId();
+      const empresaId = activeUser?.empresaId || 'default_tenant';
+      const activeStep = targetStep || currentStep;
+
+      const updatedOS: OrdemDeServico = {
+        ...formData,
+        ...stepData,
+        id: docId,
+        empresaId,
+        faseAtual: activeStep,
+        status: formData.status || stepData.status || 'Pendente',
+      } as OrdemDeServico;
+
+      // Retain latest id and fields in local form state
+      setFormData(updatedOS);
+
+      // Save using existing persistence architecture
+      await saveOrdemDeServico(updatedOS);
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ordens_servico_updated', { detail: { empresaId, osId: docId } }));
+      }
+
+      // Refresh service orders list silently
+      if (activeUser?.empresaId) {
+        const updatedList = await fetchAllServiceOrders(activeUser.empresaId);
+        setServiceOrders(updatedList);
+      }
+
+      // Toast feedback notification
+      setToastMessage("Orçamento salvo com sucesso.");
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (err) {
+      console.error("Erro ao salvar orçamento:", err);
+      alert("Erro ao salvar orçamento: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Duplicate an OS to facilitate creating the same budget for a different equipment
@@ -412,6 +461,7 @@ export default function App() {
       ...step1Data,
       id: docId,
       empresaId,
+      faseAtual: 2,
       status: formData.status || 'Pendente',
     } as OrdemDeServico;
 
@@ -443,6 +493,7 @@ export default function App() {
       ...step2Data,
       id: docId,
       empresaId,
+      faseAtual: 3,
       status: formData.status || 'Pendente',
     } as OrdemDeServico;
 
@@ -474,6 +525,7 @@ export default function App() {
       ...step3Data,
       id: docId,
       empresaId,
+      faseAtual: 4,
       status: formData.status || 'Pendente',
     } as OrdemDeServico;
 
@@ -502,6 +554,7 @@ export default function App() {
       ...step4Data,
       id: docId,
       empresaId,
+      faseAtual: 5,
       status: formData.status || 'Pendente',
     } as OrdemDeServico;
 
@@ -693,17 +746,22 @@ export default function App() {
     }
 
     return (
-      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4 sm:p-6 font-sans text-slate-800 relative">
-        <button
-          type="button"
-          onClick={() => setSaasView('welcome')}
-          className="absolute top-6 left-6 flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-600 hover:text-slate-900 shadow-sm transition z-20"
-        >
-          <ArrowLeft className="w-4 h-4 text-slate-500" />
-          <span>Voltar ao Início</span>
-        </button>
+      <div className="min-h-screen min-h-[100dvh] bg-[#F8FAFC] flex flex-col justify-between p-4 sm:p-6 pb-safe pl-safe pr-safe font-sans text-slate-800">
+        {/* Top Header with safe area padding for iOS devices */}
+        <header className="w-full max-w-md md:max-w-5xl mx-auto pt-safe-header pb-2 flex items-center justify-start z-20 shrink-0">
+          <button
+            type="button"
+            onClick={() => setSaasView('welcome')}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-xs sm:text-sm font-bold text-slate-700 hover:text-slate-900 hover:bg-slate-50 shadow-xs transition duration-150 z-20 cursor-pointer min-h-[44px] active:scale-98"
+          >
+            <ArrowLeft className="w-4 h-4 text-slate-500" />
+            <span>Voltar ao Início</span>
+          </button>
+        </header>
 
-        <div className="w-full max-w-md md:max-w-5xl bg-white border border-slate-200 rounded-3xl md:grid md:grid-cols-12 overflow-hidden shadow-xl animate-in fade-in zoom-in-95 duration-300">
+        {/* Main Login Card */}
+        <div className="w-full max-w-md md:max-w-5xl mx-auto my-auto py-2 flex-1 flex items-center justify-center">
+          <div className="w-full bg-white border border-slate-200 rounded-3xl md:grid md:grid-cols-12 overflow-hidden shadow-xl animate-in fade-in zoom-in-95 duration-300">
           
           {/* Banner Pane - Hidden on mobile, beautiful on desktop */}
           <div className="hidden md:block md:col-span-7 relative bg-[#001f3f] overflow-hidden group">
@@ -941,8 +999,9 @@ export default function App() {
 
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   // 3. Authenticated State Machine Navigation
   const uid = activeUser?.id || '';
@@ -1336,6 +1395,48 @@ export default function App() {
 
                 {/* Right Column: Working Area */}
                 <div className="flex-1 w-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                  {/* Working Area Header Bar */}
+                  <div className="bg-slate-50 border-b border-slate-200 px-5 py-3.5 flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#FF6600]"></span>
+                      <span className="text-xs font-bold text-[#003366] uppercase tracking-wider">
+                        Fase {currentStep} de 5: {
+                          currentStep === 1 ? 'Identificação e Protocolo' :
+                          currentStep === 2 ? 'Registro Fotográfico (Antes)' :
+                          currentStep === 3 ? 'Itens do Orçamento e Mão de Obra' :
+                          currentStep === 4 ? 'Registro Fotográfico (Depois)' : 'Conclusão e Relatório Final'
+                        }
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={isSaving}
+                      onClick={() => {
+                        const activeBtn = document.getElementById(`btn-save-progress-step${currentStep}`);
+                        if (activeBtn) {
+                          activeBtn.click();
+                        } else {
+                          handleSaveProgress({}, currentStep);
+                        }
+                      }}
+                      className="bg-[#003366] hover:bg-[#002244] text-white px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer disabled:opacity-50"
+                      title="Salvar progresso atual"
+                    >
+                      {isSaving ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>Salvando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-3.5 h-3.5 text-sky-300" />
+                          <span>Salvar</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
                   {/* Form step rendered panel */}
                   <div className="p-5 sm:p-6">
                     <Suspense fallback={
@@ -1346,48 +1447,60 @@ export default function App() {
                     }>
                       {currentStep === 1 && (
                         <OSFormStep1
+                          key={`step1_${formData.id || 'new'}`}
                           initialData={formData}
                           onNext={handleStep1Submit}
                           onCancel={handleCancelForm}
                           serviceOrders={serviceOrders}
+                          onSaveProgress={(data) => handleSaveProgress(data, 1)}
+                          isSaving={isSaving}
                         />
                       )}
                       {currentStep === 2 && (
                         <OSFormStep2
+                          key={`step2_${formData.id || 'new'}`}
                           initialData={formData}
                           onNext={handleStep2Submit}
                           onBack={() => setCurrentStep(1)}
                           onCancel={handleCancelForm}
                           onSaveDraftAndPDF={handleSaveDraftAndPDF}
                           isSavingDraft={isSaving}
+                          onSaveProgress={(data) => handleSaveProgress(data, 2)}
                         />
                       )}
                       {currentStep === 3 && (
                         <OSFormStep3
+                          key={`step3_${formData.id || 'new'}`}
                           initialData={formData}
                           onNext={handleStep3Submit}
                           onBack={() => setCurrentStep(2)}
                           onCancel={handleCancelForm}
+                          onSaveProgress={(data) => handleSaveProgress(data, 3)}
+                          isSaving={isSaving}
                         />
                       )}
                       {currentStep === 4 && (
                         <OSFormStep4
+                          key={`step4_${formData.id || 'new'}`}
                           initialData={formData}
                           onNext={handleStep4Submit}
                           onBack={() => setCurrentStep(3)}
                           onCancel={handleCancelForm}
                           onSaveDraftAndPDF={handleSaveDraftAndPDF}
                           isSavingDraft={isSaving}
+                          onSaveProgress={(data) => handleSaveProgress(data, 4)}
                         />
                       )}
                       {currentStep === 5 && (
                         <OSFormStep5
+                          key={`step5_${formData.id || 'new'}`}
                           initialData={formData}
                           onSave={handleFullOSSave}
                           onBack={() => setCurrentStep(4)}
                           onCancel={handleCancelForm}
                           onSaveDraftAndPDF={handleSaveDraftAndPDF}
                           isSaving={isSaving}
+                          onSaveProgress={(data) => handleSaveProgress(data, 5)}
                         />
                       )}
                     </Suspense>
@@ -1625,6 +1738,14 @@ export default function App() {
         </footer>
 
       </div> {/* Closes Right Panel Container */}
+
+      {/* Toast Notification Banner */}
+      {toastMessage && (
+        <div className="fixed bottom-14 right-6 z-50 bg-[#003366] text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-sky-400/30 animate-bounce">
+          <div className="w-2.5 h-2.5 bg-emerald-400 rounded-full animate-ping"></div>
+          <span className="text-xs font-bold tracking-wider uppercase">{toastMessage}</span>
+        </div>
+      )}
 
       {/* Overlay: PDF Document Previewer modal */}
       {showPDFPreview && activeReport && (

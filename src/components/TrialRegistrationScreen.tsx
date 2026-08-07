@@ -97,7 +97,7 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between relative overflow-hidden font-sans">
+    <div className="min-h-screen min-h-[100dvh] bg-slate-950 text-slate-100 flex flex-col justify-between relative overflow-hidden font-sans pt-safe pb-safe pl-safe pr-safe">
       {/* Background Glows */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[350px] bg-sky-600/10 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-[#003366]/20 rounded-full blur-[140px] pointer-events-none" />
@@ -306,7 +306,7 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
       </main>
 
       {/* Footer */}
-      <footer className="w-full border-t border-slate-900 px-6 py-6 text-center text-xs text-slate-500 z-10">
+      <footer className="w-full border-t border-slate-900 px-6 py-6 pb-safe text-center text-xs text-slate-500 z-10">
         © {new Date().getFullYear()} DG Gestão em Orçamentos. Todos os direitos reservados.
       </footer>
     </div>

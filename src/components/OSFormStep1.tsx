@@ -20,7 +20,9 @@ import {
   Cpu,
   Factory,
   Layers,
-  HelpCircle
+  HelpCircle,
+  Save,
+  ArrowRight
 } from 'lucide-react';
 import { generateNextOSNumber } from '../db';
 import { OrdemDeServico, Cliente } from '../types';
@@ -36,15 +38,18 @@ import {
   getCampoValidationMessage
 } from '../config/perfis';
 import { applySmartFocus } from '../utils/navigationState';
+import { UIButton } from './ui/UIComponents';
 
 interface OSFormStep1Props {
   initialData?: Partial<OrdemDeServico>;
   onNext: (data: Partial<OrdemDeServico>) => void;
   onCancel: () => void;
   serviceOrders?: OrdemDeServico[];
+  onSaveProgress?: (data: Partial<OrdemDeServico>) => void;
+  isSaving?: boolean;
 }
 
-export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrders }: OSFormStep1Props) {
+export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrders, onSaveProgress, isSaving = false }: OSFormStep1Props) {
   const { perfilConfig } = useEmpresa();
 
   const clienteCtx = useContext(ClienteContext);
@@ -106,6 +111,34 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
   useEffect(() => {
     applySmartFocus(firstInputRef.current);
   }, []);
+
+  // Sync state when editing a different OS
+  useEffect(() => {
+    if (initialData) {
+      if (initialData.numeroOS) setNumeroOS(initialData.numeroOS);
+      if (initialData.dataAbertura) setDataAbertura(initialData.dataAbertura);
+      if (initialData.horaAbertura) setHoraAbertura(initialData.horaAbertura);
+      if (initialData.tecnico !== undefined) setTecnico(initialData.tecnico);
+      if (initialData.equipamento !== undefined) setEquipamento(initialData.equipamento);
+      if (initialData.placa !== undefined) setPlaca(initialData.placa);
+      if (initialData.chassi !== undefined) setChassi(initialData.chassi);
+      if (initialData.modelo !== undefined) setModelo(initialData.modelo);
+      if (initialData.fabricante !== undefined) setFabricante(initialData.fabricante);
+      if (initialData.numeroSerie !== undefined) setNumeroSerie(initialData.numeroSerie);
+      if (initialData.patrimonio !== undefined) setPatrimonio(initialData.patrimonio);
+      if (initialData.localObra !== undefined) setLocalObra(initialData.localObra);
+      if (initialData.responsavelObra !== undefined) setResponsavelObra(initialData.responsavelObra);
+      if (initialData.setor !== undefined) setSetor(initialData.setor);
+      if (initialData.linhaProducao !== undefined) setLinhaProducao(initialData.linhaProducao);
+      if (initialData.quilometragem !== undefined) setQuilometragem(String(initialData.quilometragem));
+      if (initialData.horimetro !== undefined) setHorimetro(String(initialData.horimetro));
+      if (initialData.clienteId !== undefined) setClienteId(initialData.clienteId);
+      if (initialData.clienteNome !== undefined) {
+        setClienteNome(initialData.clienteNome);
+        setSearchQuery(initialData.clienteNome);
+      }
+    }
+  }, [initialData?.id]);
 
   // Automatic protocol sequence calculation on load if empty
   useEffect(() => {
@@ -239,6 +272,38 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
       quilometragem: isCampoVisivel(perfilConfig, 'quilometragem') && quilometragem ? Number(quilometragem) : undefined,
       horimetro: isCampoVisivel(perfilConfig, 'horimetro') && horimetro ? Number(horimetro) : undefined,
     });
+  };
+
+  const getCurrentStep1Data = (): Partial<OrdemDeServico> => {
+    return {
+      numeroOS: numeroOS.trim(),
+      dataAbertura,
+      horaAbertura,
+      tecnico: tecnico.trim(),
+      clienteId: clienteId || undefined,
+      clienteNome: clienteNome || undefined,
+      equipamento: equipamento.trim(),
+      placa: isCampoVisivel(perfilConfig, 'placa') ? placa.trim().toUpperCase() : '',
+      chassi: isCampoVisivel(perfilConfig, 'chassi') ? chassi.trim() : '',
+      modelo: isCampoVisivel(perfilConfig, 'modelo') ? modelo.trim() : '',
+      fabricante: isCampoVisivel(perfilConfig, 'fabricante') ? fabricante.trim() : '',
+      numeroSerie: isCampoVisivel(perfilConfig, 'numeroSerie') ? numeroSerie.trim() : '',
+      patrimonio: isCampoVisivel(perfilConfig, 'patrimonio') ? patrimonio.trim() : '',
+      localObra: isCampoVisivel(perfilConfig, 'localObra') ? localObra.trim() : '',
+      responsavelObra: isCampoVisivel(perfilConfig, 'responsavelObra') ? responsavelObra.trim() : '',
+      setor: isCampoVisivel(perfilConfig, 'setor') ? setor.trim() : '',
+      linhaProducao: isCampoVisivel(perfilConfig, 'linhaProducao') ? linhaProducao.trim() : '',
+      quilometragem: isCampoVisivel(perfilConfig, 'quilometragem') && quilometragem ? Number(quilometragem) : undefined,
+      horimetro: isCampoVisivel(perfilConfig, 'horimetro') && horimetro ? Number(horimetro) : undefined,
+      faseAtual: 1,
+    };
+  };
+
+  const handleSaveClick = (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    if (onSaveProgress) {
+      onSaveProgress(getCurrentStep1Data());
+    }
   };
 
   // Filter clients based on search input
@@ -749,22 +814,40 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
         </div>
 
         {/* Buttons footer */}
-        <div className="flex items-center justify-between pt-6 border-t border-slate-200">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-6 border-t border-slate-200">
           <button
             type="button"
             onClick={onCancel}
-            className="px-5 py-2.5 rounded-lg text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition cursor-pointer"
+            disabled={isSaving}
+            className="w-full sm:w-auto px-5 py-2.5 rounded-lg text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition cursor-pointer disabled:opacity-50"
           >
             Cancelar
           </button>
-          <button
-            id="btn-next-step1"
-            type="submit"
-            className="bg-[#003366] hover:bg-[#002244] text-white px-7 py-3 rounded-lg text-xs font-bold flex items-center gap-2 shadow-md hover:shadow-lg transition duration-200 cursor-pointer"
-          >
-            Avançar para Registros
-            <X className="w-4 h-4 rotate-180" />
-          </button>
+          <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+            {onSaveProgress && (
+              <UIButton
+                type="button"
+                variant="secondary"
+                size="md"
+                icon={Save}
+                loading={isSaving}
+                onClick={handleSaveClick}
+                id="btn-save-progress-step1"
+                className="w-full sm:w-auto font-bold uppercase tracking-wider text-xs border-slate-300 text-slate-700 hover:bg-slate-50"
+              >
+                {isSaving ? 'Salvando...' : 'Salvar'}
+              </UIButton>
+            )}
+            <button
+              id="btn-next-step1"
+              type="submit"
+              disabled={isSaving}
+              className="w-full sm:w-auto bg-[#003366] hover:bg-[#002244] text-white px-7 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition duration-200 cursor-pointer disabled:opacity-50"
+            >
+              <span>Avançar para Registros</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </form>
 

@@ -19,7 +19,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   onOpenLogin
 }) => {
   return (
-    <div className="min-h-screen bg-[#031533] text-white flex flex-col justify-between relative overflow-x-hidden font-sans select-none">
+    <div className="min-h-screen min-h-[100dvh] bg-[#031533] text-white flex flex-col justify-between relative overflow-x-hidden font-sans select-none pt-safe pb-safe pl-safe pr-safe">
       {/* Background Radial Light Glow Effects */}
       <div 
         className="absolute inset-0 pointer-events-none" 
@@ -30,17 +30,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
       <div className="absolute top-1/4 right-10 w-[450px] h-[450px] bg-sky-600/15 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute top-10 left-10 w-[300px] h-[300px] bg-blue-500/10 rounded-full blur-[100px] pointer-events-none" />
 
-      {/* Header Bar */}
-      <header className="w-full max-w-7xl mx-auto px-6 pt-4 pb-2 flex items-center justify-end z-20">
-        <button
-          onClick={onOpenLogin}
-          type="button"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-950/60 border border-sky-500/30 text-xs sm:text-sm font-bold text-sky-200 hover:text-white hover:bg-sky-900/80 hover:border-sky-400 transition duration-200 shadow-md backdrop-blur-md cursor-pointer"
-        >
-          <LogIn className="w-4 h-4 text-sky-400" />
-          <span>Já sou Cliente</span>
-        </button>
-      </header>
+
 
       {/* Main Hero Container */}
       <main className="w-full max-w-7xl mx-auto px-6 pt-1 md:pt-2 pb-6 md:pb-8 flex-1 flex flex-col justify-center z-10">
@@ -84,7 +74,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
             </p>
 
             {/* Action Buttons Stack */}
-            <div className="w-full max-w-md lg:max-w-lg space-y-4 pt-2">
+            <div className="w-full max-w-md lg:max-w-lg space-y-3.5 sm:space-y-4 pt-2">
               {/* Button 1: Experimentar Gratuitamente */}
               <button
                 onClick={onRegisterTrial}
@@ -103,6 +93,16 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
               >
                 <CreditCard className="w-6 h-6 sm:w-7 sm:h-7 text-white absolute left-5 sm:left-7 shrink-0 group-hover:scale-110 transition duration-200" />
                 <span className="text-center w-full pl-8 pr-2">Assinar Agora</span>
+              </button>
+
+              {/* Button 3: Acessar Área do Cliente / Já sou Cliente - Directly below Assinar Agora */}
+              <button
+                onClick={onOpenLogin}
+                type="button"
+                className="w-full bg-sky-950/70 hover:bg-sky-900 active:bg-sky-950 border border-sky-400/40 text-sky-200 hover:text-white font-bold py-3.5 sm:py-4 px-6 sm:px-8 rounded-2xl shadow-md flex items-center justify-center relative transition duration-200 text-base sm:text-lg tracking-wide border border-sky-400/30 cursor-pointer group backdrop-blur-md active:scale-[0.99]"
+              >
+                <LogIn className="w-5 h-5 sm:w-6 sm:h-6 text-sky-400 absolute left-5 sm:left-7 shrink-0 group-hover:scale-110 transition duration-200" />
+                <span className="text-center w-full pl-8 pr-2">Acessar Área do Cliente</span>
               </button>
             </div>
 
@@ -131,17 +131,10 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
         </div>
       </main>
 
-      {/* Footer Bar */}
-      <footer className="w-full border-t border-sky-950/60 py-4 px-6 text-center text-xs text-sky-300/60 z-10">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+      {/* Footer Bar with safe-area padding */}
+      <footer className="w-full border-t border-sky-950/60 py-4 px-6 pb-safe text-center text-xs text-sky-300/60 z-10">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-2">
           <span>© {new Date().getFullYear()} DG Orçamentos. Todos os direitos reservados.</span>
-          <button
-            onClick={onOpenLogin}
-            type="button"
-            className="hover:text-white transition underline cursor-pointer"
-          >
-            Acessar Área do Cliente
-          </button>
         </div>
       </footer>
     </div>

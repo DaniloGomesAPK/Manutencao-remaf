@@ -31,15 +31,18 @@ import { ServicoContext } from '../contexts/ServicoContext';
 import { EmpresaContext } from '../contexts/EmpresaContext';
 import { ServicoInteligenteService } from '../services/ServicoInteligenteService';
 import AssistentePrecificacaoModal from './AssistentePrecificacaoModal';
+import { UIButton } from './ui/UIComponents';
 
 interface OSFormStep3Props {
   initialData: Partial<OrdemDeServico>;
   onNext: (data: Partial<OrdemDeServico>) => void;
   onBack: () => void;
   onCancel?: () => void;
+  onSaveProgress?: (data: Partial<OrdemDeServico>) => void;
+  isSaving?: boolean;
 }
 
-export default function OSFormStep3({ initialData, onNext, onBack, onCancel }: OSFormStep3Props) {
+export default function OSFormStep3({ initialData, onNext, onBack, onCancel, onSaveProgress, isSaving = false }: OSFormStep3Props) {
   const servicoCtx = useContext(ServicoContext);
   const { servicos } = servicoCtx || { servicos: [] };
 
@@ -123,6 +126,36 @@ export default function OSFormStep3({ initialData, onNext, onBack, onCancel }: O
       }
     }
   }, [company]);
+
+  const getCurrentStep3Data = (): Partial<OrdemDeServico> => {
+    const total = items.reduce((acc, item) => acc + (item.valorTotal || 0), 0);
+    return {
+      orcamento: items,
+      valorTotalOrcamento: total,
+      formaPagamento,
+      tipoChavePix,
+      chavePix,
+      favorecidoPix,
+      banco,
+      agencia,
+      conta,
+      tipoConta,
+      favorecidoConta,
+      cpfCnpjConta,
+      parcelamento,
+      numeroPedidoCompra,
+      observacoesCheque,
+      observacoesComerciais,
+      faseAtual: 3,
+    };
+  };
+
+  const handleSaveClick = (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    if (onSaveProgress) {
+      onSaveProgress(getCurrentStep3Data());
+    }
+  };
 
   const formasPagamentoList = [
     { id: 'PIX', label: 'PIX', icon: Coins },
@@ -903,13 +936,14 @@ export default function OSFormStep3({ initialData, onNext, onBack, onCancel }: O
       </div>
 
       {/* Actions and navigation buttons */}
-      <div className="flex flex-col sm:flex-row gap-3 pt-6">
+      <div className="flex flex-col sm:flex-row flex-wrap gap-2.5 pt-6 border-t border-slate-200">
         {onCancel && (
           <button
             id="btn-cancel-step-3"
             type="button"
+            disabled={isSaving}
             onClick={() => onCancel()}
-            className="w-full sm:w-1/4 border-2 border-rose-200 text-rose-600 bg-transparent rounded-full py-3.5 font-bold tracking-widest text-[10px] uppercase hover:bg-rose-50 active:scale-98 transition duration-200 cursor-pointer flex items-center justify-center gap-1.5"
+            className="w-full sm:w-auto px-4 border border-rose-200 text-rose-600 bg-transparent rounded-xl py-2.5 font-bold tracking-wider text-xs uppercase hover:bg-rose-50 transition duration-200 cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
           >
             <span>Cancelar</span>
           </button>
@@ -918,17 +952,36 @@ export default function OSFormStep3({ initialData, onNext, onBack, onCancel }: O
         <button
           id="btn-back-step-3"
           type="button"
+          disabled={isSaving}
           onClick={onBack}
-          className="w-full sm:w-1/4 border-2 border-slate-200 text-slate-500 bg-transparent rounded-full py-3.5 font-bold tracking-widest text-[10px] uppercase hover:bg-slate-50 active:scale-98 transition duration-200 cursor-pointer flex items-center justify-center gap-1.5"
+          className="w-full sm:w-auto px-4 border border-slate-200 text-slate-600 bg-transparent rounded-xl py-2.5 font-bold tracking-wider text-xs uppercase hover:bg-slate-50 transition duration-200 cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
         >
           <ArrowLeft className="w-4 h-4 text-slate-500" />
           <span>Voltar</span>
         </button>
 
+        <div className="flex-1 hidden sm:block"></div>
+
+        {onSaveProgress && (
+          <UIButton
+            type="button"
+            variant="secondary"
+            size="md"
+            icon={Save}
+            loading={isSaving}
+            onClick={handleSaveClick}
+            id="btn-save-progress-step3"
+            className="w-full sm:w-auto font-bold uppercase tracking-wider text-xs border-slate-300 text-slate-700 hover:bg-slate-50"
+          >
+            {isSaving ? 'Salvando...' : 'Salvar'}
+          </UIButton>
+        )}
+
         <button
           id="btn-save-step-3"
           type="submit"
-          className="w-full sm:w-2/4 bg-[#FF6600] text-white rounded-full py-3.5 px-6 font-bold tracking-[0.12em] text-[10px] uppercase shadow-lg shadow-[#FF6600]/25 hover:bg-[#E05500] hover:shadow-xl active:scale-[0.99] flex items-center justify-center gap-2 transition duration-200 cursor-pointer"
+          disabled={isSaving}
+          className="w-full sm:w-auto bg-[#FF6600] text-white rounded-xl py-2.5 px-6 font-bold tracking-wider text-xs uppercase shadow-md hover:bg-[#E05500] flex items-center justify-center gap-2 transition duration-200 cursor-pointer disabled:opacity-50"
         >
           <span>Salvar e Continuar</span>
           <ArrowLeft className="w-4 h-4 text-white rotate-180" />
