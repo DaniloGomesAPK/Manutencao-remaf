@@ -67,6 +67,7 @@ export interface OrdemDeServico {
   equipamento: string;
   placa: string;
   tecnico: string;
+  faseAtual?: OSStep; // Preserva a fase atual em que o orçamento foi salvo
   
   // Novos campos integrados
   clienteId?: string;

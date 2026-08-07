@@ -723,17 +723,11 @@ export const IntegridadeService = {
         const clientes = await FirestoreRepository.getAll<Cliente>('clientes', empresaId, userEmail);
         const clienteExiste = clientes.some(c => c.id === osData.clienteId);
         if (!clienteExiste) {
-          const message = `Gravação bloqueada: O cliente selecionado (ID: ${osData.clienteId}) não existe mais no sistema. Por favor, selecione um cliente válido.`;
-
-          LogService.logError(
+          LogService.logWarning(
             'OrdensServico',
             'IntegridadeService',
-            `Inconsistência de referência: Cliente ${osData.clienteId} inexistente ao salvar OS #${osData.numeroOS || 'Nova'}`,
-            undefined,
-            'tentativa_gravação_inconsistente'
+            `Aviso de referência: Cliente ${osData.clienteId} não localizado na tabela de clientes para OS #${osData.numeroOS || 'Nova'}. Permitindo gravação com clienteNome: ${osData.clienteNome || 'N/A'}`
           );
-
-          return { valid: false, message };
         }
       }
 
@@ -741,17 +735,11 @@ export const IntegridadeService = {
         const equipamentos = await FirestoreRepository.getAll<Equipamento>('equipamentos', empresaId, userEmail);
         const eqExiste = equipamentos.some(e => e.id === osData.equipamentoId);
         if (!eqExiste) {
-          const message = `Gravação bloqueada: O equipamento selecionado (ID: ${osData.equipamentoId}) não existe mais no sistema. Por favor, selecione um equipamento válido.`;
-
-          LogService.logError(
+          LogService.logWarning(
             'OrdensServico',
             'IntegridadeService',
-            `Inconsistência de referência: Equipamento ${osData.equipamentoId} inexistente ao salvar OS #${osData.numeroOS || 'Nova'}`,
-            undefined,
-            'tentativa_gravação_inconsistente'
+            `Aviso de referência: Equipamento ${osData.equipamentoId} não localizado na tabela para OS #${osData.numeroOS || 'Nova'}. Permitindo gravação com equipamento: ${osData.equipamento || 'N/A'}`
           );
-
-          return { valid: false, message };
         }
       }
 

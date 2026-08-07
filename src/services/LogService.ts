@@ -194,6 +194,14 @@ export const LogService = {
   },
 
   /**
+   * Registra um aviso no LogService.
+   */
+  logWarning(modulo: string, componente: string, mensagem: string): void {
+    console.warn(`[LogService Warning] [${modulo}] [${componente}]: ${mensagem}`);
+    this.logError(modulo, componente, `[WARNING] ${mensagem}`);
+  },
+
+  /**
    * Limpa todos os logs de erro e operações.
    */
   clearLogs(): void {
