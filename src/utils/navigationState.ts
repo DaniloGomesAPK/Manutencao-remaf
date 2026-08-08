@@ -10,6 +10,7 @@ export interface ModuleNavState {
   selectedId?: string;
   scrollPos?: number;
   activeTab?: string;
+  showTable?: boolean;
   extra?: Record<string, any>;
 }
 

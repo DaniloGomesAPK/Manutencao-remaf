@@ -289,6 +289,19 @@ export const RecuperacaoService = {
       0,
       `Registro de ${registro.tipo} (${registro.nome}) restaurado com sucesso.`
     );
+
+    // 4. Disparar evento customizado para atualizar a interface/Histórico imediatamente
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('ordens_servico_updated', {
+          detail: {
+            colecao: registro.colecaoOrigem,
+            originalId: registro.originalId,
+            timestamp: Date.now(),
+          },
+        })
+      );
+    }
   },
 
   /**

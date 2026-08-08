@@ -45,7 +45,10 @@ export const PrecificacaoService = {
   },
 
   /**
-   * Calcula valores totais de insumos, mão de obra, impostos, markup e margem de uma precificação
+   * Calcula valores totais de insumos, mão de obra, impostos, markup e margem de uma precificação.
+   * Regras Matemáticas:
+   * 1. Preço Mínimo (Margem 0%): CustoTotal / (1 - PercentualImposto) -> Garante Lucro Líquido = R$ 0,00
+   * 2. Preço Recomendado (Margem Escolhida): CustoTotal / (1 - PercentualImposto - margemEscolhida)
    */
   calcularValores(precificacao: Partial<Precificacao>) {
     const materiais = precificacao.materiais || [];
@@ -57,14 +60,21 @@ export const PrecificacaoService = {
     const aliquotaImposto = (precificacao.impostos || 0) / 100;
     const margem = (precificacao.margemUtilizada || 0) / 100;
 
-    const divisorMarkup = 1 - (aliquotaImposto + margem);
-    const markup = divisorMarkup > 0 ? 1 / divisorMarkup : 1.5;
+    // 1. Preço Mínimo (Margem 0%): CustoBase / (1 - PercentualImposto)
+    const divisorMinimo = 1 - aliquotaImposto;
+    const precoMinimo = divisorMinimo > 0 ? custoBase / divisorMinimo : custoBase;
 
-    const precoRecomendado = custoBase * markup;
-    const precoMinimo = precoRecomendado * 0.9;
+    // 2. Preço Recomendado (Margem Escolhida): CustoBase / (1 - PercentualImposto - margemEscolhida)
+    const divisorRecomendado = 1 - (aliquotaImposto + margem);
+    const precoRecomendado = divisorRecomendado > 0 ? custoBase / divisorRecomendado : custoBase;
+
     const precoPremium = precoRecomendado * 1.2;
+
+    const markupMinimo = custoBase > 0 ? precoMinimo / custoBase : 1;
+    const markupRecomendado = custoBase > 0 ? precoRecomendado / custoBase : 1;
+
     const custoTotalImpostos = precoRecomendado * aliquotaImposto;
-    const lucroEsperado = precoRecomendado * margem;
+    const lucroEsperado = precoRecomendado - custoBase - custoTotalImpostos;
 
     return {
       custoTotalMateriais,
@@ -72,8 +82,9 @@ export const PrecificacaoService = {
       custoTotalFixos,
       custoBase,
       custoTotalSemImpostos: custoBase,
-      markup,
-      markupFinal: markup,
+      markup: markupRecomendado,
+      markupFinal: markupRecomendado,
+      markupMinimo,
       precoMinimo,
       precoRecomendado,
       precoPremium,
