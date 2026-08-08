@@ -43,7 +43,7 @@ const oficinaMecanica: PerfilConfig = {
   camposObrigatorios: {
     cliente: true,
     equipamento: true,
-    placa: true,
+    placa: false,
     chassi: false,
     quilometragem: false,
     horimetro: false,

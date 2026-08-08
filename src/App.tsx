@@ -165,6 +165,25 @@ export default function App() {
     }
   }, [activeUser?.empresaId]);
 
+  // Ouvinte global do evento "ordens_servico_updated" para recarregar imediatamente as ordens de serviço
+  useEffect(() => {
+    const handleOrdersUpdated = async () => {
+      if (activeUser?.empresaId) {
+        try {
+          const list = await fetchAllServiceOrders(activeUser.empresaId);
+          setServiceOrders(list);
+        } catch (err) {
+          console.error("Erro ao atualizar ordens de serviço via evento:", err);
+        }
+      }
+    };
+
+    window.addEventListener('ordens_servico_updated', handleOrdersUpdated);
+    return () => {
+      window.removeEventListener('ordens_servico_updated', handleOrdersUpdated);
+    };
+  }, [activeUser?.empresaId]);
+
   // 1. Persist the draft when viewingForm, currentStep or formData changes
   useEffect(() => {
     try {

@@ -40,7 +40,7 @@ const lavaJato: PerfilConfig = {
   camposObrigatorios: {
     cliente: true,
     equipamento: true,
-    placa: true,
+    placa: false,
     modelo: false,
     fabricante: false,
     chassi: false,

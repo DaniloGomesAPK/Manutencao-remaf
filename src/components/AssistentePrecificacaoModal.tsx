@@ -344,17 +344,24 @@ export default function AssistentePrecificacaoModal({
   // Calculate chart & stat metrics safely and dynamically based on selected modality and any user custom edits
   const activePreco = !calculated ? 0 : (
     modalidadePreco === 'minimo'
-      ? (customPrecoMinimo !== '' ? Number(customPrecoMinimo) : calculated.precoMinimo)
+      ? (customPrecoMinimo !== '' && !isNaN(Number(customPrecoMinimo)) ? Number(customPrecoMinimo) : calculated.precoMinimo)
       : modalidadePreco === 'premium'
-      ? (customPrecoPremium !== '' ? Number(customPrecoPremium) : calculated.precoPremium)
-      : (customPrecoRecomendado !== '' ? Number(customPrecoRecomendado) : calculated.precoRecomendado)
+      ? (customPrecoPremium !== '' && !isNaN(Number(customPrecoPremium)) ? Number(customPrecoPremium) : calculated.precoPremium)
+      : (customPrecoRecomendado !== '' && !isNaN(Number(customPrecoRecomendado)) ? Number(customPrecoRecomendado) : calculated.precoRecomendado)
   );
 
   const materialsCost = calculated?.custoTotalMateriais || 0;
   const laborCost = calculated?.custoTotalMaoDeObra || 0;
   const fixedCost = calculated?.custoTotalFixos || 0;
-  const taxCost = activePreco * (aliquotaEfetiva / 100);
-  const profitCost = activePreco - taxCost - (materialsCost + laborCost + fixedCost);
+  const custoTotal = calculated?.custoTotalSemImpostos || (materialsCost + laborCost + fixedCost);
+  const percentualImposto = (aliquotaEfetiva || 0) / 100;
+
+  // Impostos Devidos = Preço do Card Selecionado * PercentualImposto
+  const taxCost = activePreco * percentualImposto;
+  // Lucro Líquido = Preço do Card Selecionado - CustoTotal - Impostos Devidos
+  const rawProfitCost = activePreco - custoTotal - taxCost;
+  const profitCost = Math.abs(rawProfitCost) < 0.0001 ? 0 : rawProfitCost;
+
   const totalCalculated = activePreco || 1;
 
   const matPct = (materialsCost / totalCalculated) * 100;
@@ -363,9 +370,9 @@ export default function AssistentePrecificacaoModal({
   const taxPct = (taxCost / totalCalculated) * 100;
   const prfPct = (profitCost / totalCalculated) * 100;
 
-  // Markup dynamically calculated as Price / Cost sem impostos
-  const markupFinal = calculated && calculated.custoTotalSemImpostos > 0 
-    ? activePreco / calculated.custoTotalSemImpostos 
+  // Fator Markup = Preço do Card Selecionado / CustoTotal
+  const markupFinal = custoTotal > 0 
+    ? activePreco / custoTotal 
     : (calculated?.markupFinal || 1);
 
   const activeMargem = modalidadePreco === 'minimo'
@@ -881,14 +888,14 @@ export default function AssistentePrecificacaoModal({
                   onClick={() => setModalidadePreco('minimo')}
                   className={`text-left p-5 rounded-3xl relative overflow-hidden border-2 cursor-pointer transition duration-200 ${
                     modalidadePreco === 'minimo'
-                      ? 'bg-slate-100 border-[#003366] ring-2 ring-[#003366]/20'
+                      ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/20 shadow-md'
                       : 'bg-white border-slate-200 hover:border-slate-350 shadow-sm'
                   }`}
                 >
-                  <div className="absolute right-3 top-3 text-[9px] font-black uppercase text-slate-500 bg-slate-200/50 px-2.5 py-1 rounded-md">Margem 0%</div>
+                  <div className="absolute right-3 top-3 text-[9px] font-black uppercase text-amber-700 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-md">Margem 0%</div>
                   <div className="flex items-center gap-1.5 mb-1">
-                    <h5 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Preço Mínimo</h5>
-                    {modalidadePreco === 'minimo' && <Check className="w-4 h-4 text-slate-700" />}
+                    <h5 className="text-[11px] font-black text-amber-900 uppercase tracking-wider">Preço Mínimo</h5>
+                    {modalidadePreco === 'minimo' && <Check className="w-4 h-4 text-amber-600 font-bold" />}
                   </div>
                   
                   {/* Editable input field */}
@@ -899,12 +906,16 @@ export default function AssistentePrecificacaoModal({
                       step="0.01"
                       placeholder={calculated ? calculated.precoMinimo.toFixed(2) : '0.00'}
                       value={customPrecoMinimo}
-                      onChange={(e) => setCustomPrecoMinimo(e.target.value)}
-                      className="w-full bg-transparent font-mono font-black text-slate-700 text-sm focus:outline-none"
+                      onChange={(e) => {
+                        setCustomPrecoMinimo(e.target.value);
+                        setModalidadePreco('minimo');
+                      }}
+                      onFocus={() => setModalidadePreco('minimo')}
+                      className="w-full bg-transparent font-mono font-black text-slate-800 text-sm focus:outline-none"
                     />
                   </div>
                   
-                  <p className="text-xs text-slate-600 font-medium mt-1">Cobre todos os custos e mantém a operação sustentável.</p>
+                  <p className="text-xs text-slate-600 font-medium mt-1">Cobre apenas os custos e impostos (Lucro Líquido: R$ 0,00).</p>
                 </button>
 
                 {/* Recomendado */}
@@ -914,30 +925,34 @@ export default function AssistentePrecificacaoModal({
                   onClick={() => setModalidadePreco('recomendado')}
                   className={`text-left p-5 rounded-3xl relative overflow-hidden border-2 cursor-pointer transition duration-200 ${
                     modalidadePreco === 'recomendado'
-                      ? 'bg-[#003366]/10 border-[#003366] ring-2 ring-[#003366]/20'
+                      ? 'bg-emerald-500/10 border-emerald-500 ring-2 ring-emerald-500/20 shadow-md'
                       : 'bg-[#003366]/5 border-slate-200 hover:border-[#003366]/30 shadow-sm'
                   }`}
                 >
-                  <div className="absolute right-3 top-3 text-[9px] font-black uppercase text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md">Margem {margemUtilizada}%</div>
+                  <div className="absolute right-3 top-3 text-[9px] font-black uppercase text-emerald-700 bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-md">Margem {margemUtilizada}%</div>
                   <div className="flex items-center gap-1.5 mb-1">
-                    <h5 className="text-[11px] font-black text-[#003366] uppercase tracking-wider">Preço Recomendado</h5>
-                    {modalidadePreco === 'recomendado' && <Check className="w-4 h-4 text-[#003366]" />}
+                    <h5 className="text-[11px] font-black text-emerald-900 uppercase tracking-wider">Preço Recomendado</h5>
+                    {modalidadePreco === 'recomendado' && <Check className="w-4 h-4 text-emerald-600 font-bold" />}
                   </div>
                   
                   {/* Editable input field */}
                   <div className="mt-3 mb-3 bg-white rounded-xl border border-slate-200 px-3 py-2 flex items-center gap-1 shadow-xs" onClick={(e) => e.stopPropagation()}>
-                    <span className="text-xs font-bold text-[#003366] font-mono">R$</span>
+                    <span className="text-xs font-bold text-emerald-700 font-mono">R$</span>
                     <input 
                       type="number"
                       step="0.01"
                       placeholder={calculated ? calculated.precoRecomendado.toFixed(2) : '0.00'}
                       value={customPrecoRecomendado}
-                      onChange={(e) => setCustomPrecoRecomendado(e.target.value)}
-                      className="w-full bg-transparent font-mono font-black text-[#003366] text-base focus:outline-none"
+                      onChange={(e) => {
+                        setCustomPrecoRecomendado(e.target.value);
+                        setModalidadePreco('recomendado');
+                      }}
+                      onFocus={() => setModalidadePreco('recomendado')}
+                      className="w-full bg-transparent font-mono font-black text-emerald-800 text-base focus:outline-none"
                     />
                   </div>
                   
-                  <p className="text-xs text-slate-600 font-medium mt-1">Preço sugerido para maior equilíbrio entre competitividade e lucratividade.</p>
+                  <p className="text-xs text-slate-600 font-medium mt-1">Aplica a margem escolhida de {margemUtilizada}% sobre o preço de venda.</p>
                 </button>
               </div>
 

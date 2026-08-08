@@ -19,6 +19,9 @@ import {
   AlertCircle,
   Clock,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  Eye,
   Calculator,
   CheckCircle2,
   AlertTriangle,
@@ -78,6 +81,9 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
     (initialNavState.activeTab as any) || 'banco'
   );
 
+  // Table Visibility Toggle State (Default false - hidden)
+  const [showTable, setShowTable] = useState<boolean>(initialNavState.showTable || false);
+
   // Search & Filters
   const [searchTerm, setSearchTerm] = useState<string>(initialNavState.searchTerm || '');
   const [selectedCategory, setSelectedCategory] = useState<string>(initialNavState.category || 'Todas');
@@ -88,15 +94,22 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  // Auto-expand table when user types a search query
+  useEffect(() => {
+    if (searchTerm.trim() !== '') {
+      setShowTable(true);
+    }
+  }, [searchTerm]);
+
   // State persistence
   useEffect(() => {
     saveModuleState('central_precificacao', {
       searchTerm,
       category: selectedCategory,
       filterStatus: selectedOrigin,
-      activeTab: activeMobileTab,
+      showTable,
     });
-  }, [searchTerm, selectedCategory, selectedOrigin, activeMobileTab]);
+  }, [searchTerm, selectedCategory, selectedOrigin, showTable]);
 
   // Scroll restoration
   useEffect(() => {
@@ -561,38 +574,10 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
         icon={Calculator}
         onBack={onBack}
         badge={<UIBadge status="warning" label="OFFLINE-FIRST" />}
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <UIButton
-              variant="primary"
-              onClick={() => handleOpenQuickModal('peca')}
-              icon={Package}
-              className="bg-[#003366] hover:bg-[#002244]"
-            >
-              Nova Peça
-            </UIButton>
-            <UIButton
-              variant="outline"
-              onClick={() => handleOpenQuickModal('servico')}
-              icon={Plus}
-            >
-              Novo Serviço
-            </UIButton>
-            <UIButton
-              variant="outline"
-              onClick={handleRecalculateAll}
-              loading={isRecalculatingAll}
-              disabled={servicos.filter(s => s.tipoCadastro !== 'Cadastro Rápido').length === 0}
-              icon={RefreshCw}
-            >
-              Recalcular Custos ({servicos.filter(s => s.tipoCadastro !== 'Cadastro Rápido').length})
-            </UIButton>
-          </div>
-        }
       />
 
       {/* METRICS ROW */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Total de Serviços</p>
           <p className="text-lg font-black text-[#003366] mt-0.5">{servicos.length}</p>
@@ -613,57 +598,49 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
           <p className="text-lg font-black text-[#FF6600] mt-0.5">{aliquotaEfetiva.toFixed(2)}%</p>
           <p className="text-[8px] text-slate-500 mt-0.5">configurada em Minha Empresa</p>
         </div>
-      </div>
-
-      {/* MOBILE TABS MENU switcher */}
-      <div className="lg:hidden flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
         <button
-          onClick={() => setActiveMobileTab('rapido')}
-          className={`flex-1 py-2 text-center text-[10px] font-black uppercase tracking-wider rounded-lg transition ${activeMobileTab === 'rapido' ? 'bg-white text-[#FF6600] shadow-xs' : 'text-slate-500'}`}
+          type="button"
+          onClick={handleRecalculateAll}
+          disabled={isRecalculatingAll || servicos.filter(s => s.tipoCadastro !== 'Cadastro Rápido').length === 0}
+          className={`p-4 rounded-2xl border shadow-xs transition cursor-pointer flex flex-col justify-between text-left group ${
+            isRecalculatingAll || servicos.filter(s => s.tipoCadastro !== 'Cadastro Rápido').length === 0
+              ? 'bg-slate-50 border-slate-200 opacity-60 cursor-not-allowed'
+              : 'bg-white hover:bg-slate-50 border-slate-200 hover:border-[#003366]'
+          }`}
+          title="Recalcular custos de todos os serviços do assistente com base nas alíquotas e insumos atuais"
         >
-          ⚡ Rápido
-        </button>
-        <button
-          onClick={() => setActiveMobileTab('assistente')}
-          className={`flex-1 py-2 text-center text-[10px] font-black uppercase tracking-wider rounded-lg transition ${activeMobileTab === 'assistente' ? 'bg-white text-[#003366] shadow-xs' : 'text-slate-500'}`}
-        >
-          🤖 Assistente
-        </button>
-        <button
-          onClick={() => setActiveMobileTab('import_export')}
-          className={`flex-1 py-2 text-center text-[10px] font-black uppercase tracking-wider rounded-lg transition ${activeMobileTab === 'import_export' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500'}`}
-        >
-          📥 Imp/Exp
-        </button>
-        <button
-          onClick={() => setActiveMobileTab('banco')}
-          className={`flex-1 py-2 text-center text-[10px] font-black uppercase tracking-wider rounded-lg transition ${activeMobileTab === 'banco' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500'}`}
-        >
-          📋 Banco ({filteredServicos.length})
+          <div className="flex items-center justify-between w-full">
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider group-hover:text-[#003366] transition">Recalcular Custos</p>
+            <RefreshCw className={`w-3.5 h-3.5 text-[#003366] shrink-0 ${isRecalculatingAll ? 'animate-spin' : ''}`} />
+          </div>
+          <p className="text-lg font-black text-[#003366] mt-0.5">
+            {servicos.filter(s => s.tipoCadastro !== 'Cadastro Rápido').length}
+          </p>
+          <p className="text-[8px] text-slate-500 mt-0.5">
+            {isRecalculatingAll ? 'Recalculando...' : 'serviços para recalcular'}
+          </p>
         </button>
       </div>
 
-      {/* RESPONSIVE LAYOUT WORKSPACE */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      {/* TOP SECTION: 3 ACTION CARDS SIDE-BY-SIDE */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch">
         
-        {/* SIDEBAR OPERAÇÕES (Desktop sidebar columns, on Mobile rendered only when matching activeMobileTab) */}
-        <div className="lg:col-span-4 space-y-6 flex flex-col">
-          
-          {/* CARD 1: CADASTRO RÁPIDO */}
-          <div className={`${activeMobileTab === 'rapido' ? 'block' : 'hidden lg:block'} bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden`}>
-            <div className="p-4 bg-slate-50 border-b border-slate-150 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-[#FF6600]/10 rounded-lg text-[#FF6600]">
-                  {quickType === 'peca' ? <Package className="w-4 h-4 stroke-[2.5]" /> : <Plus className="w-4 h-4 stroke-[2.5]" />}
-                </div>
-                <div>
-                  <h3 className="text-xs font-black text-[#003366] uppercase tracking-wider">⚡ Cadastro Rápido</h3>
-                  <p className="text-[10px] text-slate-500">Adicione peças ou serviços com preço fixo</p>
-                </div>
+        {/* CARD 1: CADASTRO RÁPIDO */}
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden flex flex-col">
+          <div className="p-4 bg-slate-50 border-b border-slate-150 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-[#FF6600]/10 rounded-lg text-[#FF6600]">
+                {quickType === 'peca' ? <Package className="w-4 h-4 stroke-[2.5]" /> : <Plus className="w-4 h-4 stroke-[2.5]" />}
+              </div>
+              <div>
+                <h3 className="text-xs font-black text-[#003366] uppercase tracking-wider">⚡ Cadastro Rápido</h3>
+                <p className="text-[10px] text-slate-500">Adicione peças ou serviços com preço fixo</p>
               </div>
             </div>
+          </div>
 
-            <div className="p-4 pt-3 space-y-3.5">
+          <div className="p-4 pt-3 space-y-3.5 flex-1 flex flex-col justify-between">
+            <div className="space-y-3.5">
               {/* Type Switcher Tabs */}
               <div className="flex bg-slate-100 p-1 rounded-xl">
                 <button
@@ -694,7 +671,7 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
                 </button>
               </div>
 
-              <form onSubmit={handleQuickSave} className="space-y-3.5">
+              <form id="quick-save-form" onSubmit={handleQuickSave} className="space-y-3.5">
                 <div className="space-y-1">
                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">
                     {quickType === 'peca' ? 'Nome da Peça *' : 'Nome do Serviço *'}
@@ -793,27 +770,30 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
                     className="w-full bg-slate-50 border border-slate-250 rounded-xl px-3 py-1.5 text-xs font-semibold focus:outline-none"
                   />
                 </div>
-
-                <button
-                  type="submit"
-                  disabled={isSavingQuick}
-                  className="w-full py-2.5 bg-[#FF6600] hover:bg-[#dd5500] text-white font-black text-[10px] uppercase tracking-wider rounded-xl transition shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  {isSavingQuick ? (
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <>
-                      <Check className="w-3.5 h-3.5 stroke-[3]" />
-                      {quickType === 'peca' ? 'Salvar Peça Rápida' : 'Salvar Serviço Rápido'}
-                    </>
-                  )}
-                </button>
               </form>
             </div>
-          </div>
 
-          {/* CARD 2: ASSISTENTE DE PRECIFICAÇÃO */}
-          <div className={`${activeMobileTab === 'assistente' ? 'block' : 'hidden lg:block'} bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden`}>
+            <button
+              type="submit"
+              form="quick-save-form"
+              disabled={isSavingQuick}
+              className="w-full mt-4 py-2.5 bg-[#FF6600] hover:bg-[#dd5500] text-white font-black text-[10px] uppercase tracking-wider rounded-xl transition shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+            >
+              {isSavingQuick ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <>
+                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  {quickType === 'peca' ? 'Salvar Peça Rápida' : 'Salvar Serviço Rápido'}
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* CARD 2: ASSISTENTE DE PRECIFICAÇÃO */}
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden flex flex-col justify-between">
+          <div>
             <div className="p-4 bg-slate-50 border-b border-slate-150 flex items-center gap-2">
               <div className="p-1.5 bg-[#003366]/5 rounded-lg text-[#003366]">
                 <Sparkles className="w-4 h-4 text-[#FF6600]" />
@@ -828,33 +808,37 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
                 Estime o preço sugerido do serviço de forma científica calculando detalhadamente os insumos alocados, horas de mão de obra técnica e rateio de custos de funcionamento da sua oficina.
               </p>
               
-              <div className="bg-slate-50 rounded-xl p-3 border border-slate-150 space-y-1.5 text-[10px]">
-                <div className="flex justify-between">
-                  <span className="text-slate-500 font-bold">✔ Custos de Materiais</span>
-                  <span className="text-slate-800 font-black">Markup</span>
+              <div className="bg-slate-50 rounded-xl p-3 border border-slate-150 space-y-2 text-[10px]">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-600 font-bold">✔ Custos de Materiais</span>
+                  <span className="text-slate-800 font-black bg-white px-2 py-0.5 rounded border border-slate-200">Markup</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500 font-bold">✔ Mão de Obra</span>
-                  <span className="text-slate-800 font-black">Horas Trabalhadas</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-600 font-bold">✔ Mão de Obra Técnica</span>
+                  <span className="text-slate-800 font-black bg-white px-2 py-0.5 rounded border border-slate-200">Horas Reais</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500 font-bold">✔ Custos Operacionais</span>
-                  <span className="text-slate-800 font-black">Rateio Fixo</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-600 font-bold">✔ Custos Operacionais</span>
+                  <span className="text-slate-800 font-black bg-white px-2 py-0.5 rounded border border-slate-200">Rateio Fixo</span>
                 </div>
               </div>
-
-              <button
-                onClick={handleOpenCreate}
-                className="w-full py-2.5 bg-[#003366] hover:bg-[#002244] text-white font-black text-[10px] uppercase tracking-widest rounded-xl transition shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Iniciar Novo Assistente
-              </button>
             </div>
           </div>
 
-          {/* CARD 3: IMPORTAÇÃO & EXPORTAÇÃO */}
-          <div className={`${activeMobileTab === 'import_export' ? 'block' : 'hidden lg:block'} bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden`}>
+          <div className="p-4 pt-0">
+            <button
+              onClick={handleOpenCreate}
+              className="w-full py-2.5 bg-[#003366] hover:bg-[#002244] text-white font-black text-[10px] uppercase tracking-widest rounded-xl transition shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Iniciar Novo Assistente
+            </button>
+          </div>
+        </div>
+
+        {/* CARD 3: IMPORTAÇÃO & EXPORTAÇÃO */}
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden flex flex-col justify-between">
+          <div>
             <div className="p-4 bg-slate-50 border-b border-slate-150 flex items-center gap-2">
               <div className="p-1.5 bg-indigo-50 rounded-lg text-indigo-700">
                 <Database className="w-4 h-4 text-indigo-600" />
@@ -889,7 +873,7 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
                       Baixar Modelo Oficial
                     </button>
 
-                    <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center hover:bg-slate-50 transition relative">
+                    <div className="border-2 border-dashed border-slate-200 rounded-xl p-3 text-center hover:bg-slate-50 transition relative">
                       <input
                         type="file"
                         ref={fileInputRef}
@@ -897,14 +881,13 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
                         onChange={handleFileChange}
                         className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                       />
-                      <Upload className="w-5 h-5 mx-auto text-indigo-500 mb-1.5" />
+                      <Upload className="w-4 h-4 mx-auto text-indigo-500 mb-1" />
                       <p className="text-[10px] font-bold text-slate-700">Selecionar arquivo .xlsx</p>
                       <p className="text-[8px] text-slate-400 mt-0.5">Clique para buscar o Excel oficial</p>
                     </div>
                   </div>
                 ) : (
-                  // INTERACTIVE VALIDATION RELATÓRIO PREVIEW (Parts 7, 8, 9, 10)
-                  <div className="space-y-3.5 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+                  <div className="space-y-3 bg-slate-50 border border-slate-200 rounded-xl p-3">
                     <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
                       <span className="font-extrabold text-[10px] text-slate-700 truncate max-w-[150px]">{importFile?.name}</span>
                       <button onClick={handleCancelImport} className="text-rose-500 hover:text-rose-700 text-[9px] font-black uppercase tracking-wider cursor-pointer">
@@ -934,61 +917,21 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
                       </div>
                     </div>
 
-                    {/* DUPLICATE STRATEGY (Part 8) */}
                     {previewResult.duplicateCount > 0 && (
-                      <div className="space-y-1.5 bg-white border border-slate-200 rounded-lg p-2.5">
+                      <div className="space-y-1 bg-white border border-slate-200 rounded-lg p-2">
                         <label className="text-[9px] font-black text-amber-700 uppercase tracking-wider block">Ação para Duplicados:</label>
                         <select
                           value={duplicateDecision}
                           onChange={e => setDuplicateDecision(e.target.value as any)}
                           className="w-full bg-slate-50 border border-slate-250 rounded-lg py-1 px-1.5 text-[10px] font-bold focus:outline-none"
                         >
-                          <option value="update">Atualizar Serviços Existentes</option>
-                          <option value="ignore">Ignorar Novos Dados (Manter Atuais)</option>
-                          <option value="create_new">Criar Novos como Cópias</option>
+                          <option value="update">Atualizar Existentes</option>
+                          <option value="ignore">Ignorar Novos</option>
+                          <option value="create_new">Criar Cópias</option>
                         </select>
-                        <div className="flex items-center gap-1.5 mt-1.5">
-                          <input
-                            type="checkbox"
-                            id="apply_all_chk"
-                            checked={applyToAll}
-                            onChange={e => setApplyToAll(e.target.checked)}
-                            className="w-3 h-3 text-[#FF6600]"
-                          />
-                          <label htmlFor="apply_all_chk" className="text-[8px] font-bold text-slate-500 uppercase cursor-pointer">
-                            Aplicar decisão para todos
-                          </label>
-                        </div>
                       </div>
                     )}
 
-                    {/* ERROS SHEET DOWNLOADING (Part 10) */}
-                    {previewResult.invalidCount > 0 && previewResult.invalidRowsWithReason && (
-                      <div className="bg-rose-50 border border-rose-150 rounded-lg p-2.5 space-y-1.5">
-                        <div className="flex items-center gap-1 text-rose-800">
-                          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                          <span className="text-[9px] font-black uppercase">Erros de Validação Encontrados</span>
-                        </div>
-                        <p className="text-[8px] text-slate-500">
-                          {previewResult.invalidCount} linha(s) continham dados incorretos ou faltantes no Excel.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (previewResult.invalidRowsWithReason) {
-                              ImportExportService.baixarPlanilhaDeErros(previewResult.invalidRowsWithReason);
-                              showNotification('Baixando planilha de erros para correção!', 'success');
-                            }
-                          }}
-                          className="w-full py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-md text-[8px] font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-1"
-                        >
-                          <Download className="w-3 h-3" />
-                          Baixar Planilha de Erros
-                        </button>
-                      </div>
-                    )}
-
-                    {/* CONFIRM BUTTON (Part 9) */}
                     <button
                       onClick={handleConfirmImport}
                       disabled={isImporting || (previewResult.newCount === 0 && previewResult.duplicateCount === 0)}
@@ -1010,11 +953,11 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
                 )}
               </div>
 
-              {/* EXPORTAÇÃO BOX (Part 5) */}
-              <div className="space-y-2.5">
+              {/* EXPORTAÇÃO BOX */}
+              <div className="space-y-2">
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">2. Exportação Inteligente</label>
                 
-                <div className="space-y-1.5">
+                <div className="flex gap-2">
                   <button
                     onClick={() => {
                       if (servicos.length === 0) {
@@ -1024,148 +967,107 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
                       ImportExportService.exportarServicos(servicos, 'all');
                       showNotification('Todos os serviços foram exportados!', 'success');
                     }}
-                    className="w-full py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-black uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-1 cursor-pointer"
+                    className="flex-1 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-black uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-1 cursor-pointer"
                   >
                     <FileSpreadsheet className="w-3.5 h-3.5 text-[#003366]" />
                     Exportar Todos ({servicos.length})
                   </button>
-
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      onClick={() => {
-                        const count = servicos.filter(s => s.tipoCadastro === 'Cadastro Rápido').length;
-                        if (count === 0) {
-                          showNotification('Não há serviços de Cadastro Rápido para exportar.', 'info');
-                          return;
-                        }
-                        ImportExportService.exportarServicos(servicos, 'rapido');
-                        showNotification('Exportando Cadastros Rápidos!', 'success');
-                      }}
-                      className="py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 text-[9px] font-black uppercase tracking-wider rounded-lg transition text-center cursor-pointer"
-                    >
-                      Apenas Rápido
-                    </button>
-                    <button
-                      onClick={() => {
-                        const count = servicos.filter(s => s.tipoCadastro !== 'Cadastro Rápido').length;
-                        if (count === 0) {
-                          showNotification('Não há serviços de Assistente para exportar.', 'info');
-                          return;
-                        }
-                        ImportExportService.exportarServicos(servicos, 'assistente');
-                        showNotification('Exportando Serviços do Assistente!', 'success');
-                      }}
-                      className="py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 text-[9px] font-black uppercase tracking-wider rounded-lg transition text-center cursor-pointer"
-                    >
-                      Apenas Assistente
-                    </button>
-                  </div>
-                </div>
-
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex flex-col gap-1.5">
-                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Filtrar Categoria para Exportar:</span>
-                  <div className="flex gap-1">
-                    <select
-                      value={exportCategory}
-                      onChange={e => setExportCategory(e.target.value)}
-                      className="flex-1 bg-white border border-slate-200 rounded-lg text-[9px] font-bold py-1 px-1.5 focus:outline-none"
-                    >
-                      {categories.map(c => (
-                        <option key={c} value={c}>{c === 'Todas' ? 'Selecionar Categoria' : c}</option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => {
-                        if (exportCategory === 'Todas') {
-                          showNotification('Por favor, selecione uma categoria válida para exportar.', 'info');
-                          return;
-                        }
-                        const count = servicos.filter(s => s.categoria === exportCategory).length;
-                        if (count === 0) {
-                          showNotification(`Não há serviços cadastrados na categoria "${exportCategory}".`, 'info');
-                          return;
-                        }
-                        ImportExportService.exportarServicos(servicos, 'all', exportCategory);
-                        showNotification(`Exportado ${count} serviços de "${exportCategory}"!`, 'success');
-                      }}
-                      className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-black uppercase rounded-lg transition cursor-pointer"
-                    >
-                      Exportar
-                    </button>
-                  </div>
                 </div>
               </div>
 
             </div>
           </div>
-
         </div>
 
-        {/* COLUNA BANCO DE SERVIÇOS (Desktop takes remaining 8 grid columns, on Mobile rendered only on 'banco' tab) */}
-        <div className={`${activeMobileTab === 'banco' ? 'block' : 'hidden lg:block'} lg:col-span-8 space-y-4`}>
-          
-          {/* BARRA DE PESQUISA, CATEGORIA E FILTRO DE ORIGEM (Part 4) */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3.5">
-            <div className="flex flex-col sm:flex-row gap-3">
-              {/* Search */}
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  placeholder="Pesquisar por nome, escopo ou categoria..."
-                  value={searchTerm}
-                  onChange={e => setSearchTerm(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-9 py-2 text-xs font-semibold focus:outline-none focus:border-[#003366] transition"
-                />
-                {searchTerm && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchTerm('')}
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 cursor-pointer"
-                    title="Limpar pesquisa"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
+      </div>
 
-              {/* Origin filter (Part 4 requirement) */}
-              <div className="flex items-center gap-1.5 shrink-0 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1">
+      {/* SEARCH BAR & TOGGLEABLE BANCO DE ITENS TABLE */}
+      <div className="space-y-4 pt-2">
+        
+        {/* BARRA DE PESQUISA, FILTROS E BOTÃO DE TOGGLE */}
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3.5">
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            
+            {/* Search Input */}
+            <div className="relative flex-1 w-full">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Pesquisar por nome, escopo ou categoria..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-9 py-2.5 text-xs font-semibold focus:outline-none focus:border-[#003366] transition"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  title="Limpar pesquisa"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Origin Filter */}
+            <div className="flex items-center gap-1.5 shrink-0 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 w-full sm:w-auto justify-between sm:justify-start">
+              <div className="flex items-center gap-1.5">
                 <Filter className="w-3.5 h-3.5 text-slate-400" />
                 <span className="text-[8px] font-black text-slate-400 uppercase">Origem:</span>
-                <select
-                  value={selectedOrigin}
-                  onChange={e => setSelectedOrigin(e.target.value as any)}
-                  className="bg-transparent border-none text-xs font-bold text-slate-700 focus:outline-none cursor-pointer"
-                >
-                  <option value="Todas">Todas</option>
-                  <option value="Cadastro Rápido">⚡ Cadastro Rápido</option>
-                  <option value="Assistente de Precificação">🤖 Assistente</option>
-                </select>
               </div>
+              <select
+                value={selectedOrigin}
+                onChange={e => setSelectedOrigin(e.target.value as any)}
+                className="bg-transparent border-none text-xs font-bold text-slate-700 focus:outline-none cursor-pointer"
+              >
+                <option value="Todas">Todas</option>
+                <option value="Cadastro Rápido">⚡ Cadastro Rápido</option>
+                <option value="Assistente de Precificação">🤖 Assistente</option>
+              </select>
             </div>
 
-            {/* Category horizontal filters */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`px-3 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg border transition shrink-0 cursor-pointer ${
-                    selectedCategory === cat
-                      ? 'bg-[#003366] border-[#003366] text-white'
-                      : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
+            {/* TOGGLE BUTTON: Ver Banco de Itens */}
+            <button
+              type="button"
+              onClick={() => setShowTable(prev => !prev)}
+              className={`w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition flex items-center justify-center gap-2 border shadow-xs cursor-pointer shrink-0 ${
+                showTable
+                  ? 'bg-[#003366] text-white border-[#003366] hover:bg-[#002244]'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600'
+              }`}
+            >
+              <Database className="w-4 h-4 text-emerald-200 shrink-0" />
+              <span>{showTable ? 'Ocultar Banco de Itens' : 'Ver Banco de Itens'}</span>
+              <span className="px-2 py-0.5 bg-white/20 text-white rounded-full text-[10px] font-black">
+                {filteredServicos.length}
+              </span>
+              {showTable ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
           </div>
 
-          {/* BANCO DE SERVIÇOS LIST (Part 4) */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          {/* Category horizontal filters */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-3 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg border transition shrink-0 cursor-pointer ${
+                  selectedCategory === cat
+                    ? 'bg-[#003366] border-[#003366] text-white'
+                    : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* BANCO DE SERVIÇOS LIST TABLE (TOGGLEABLE) */}
+        {showTable && (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden animate-in fade-in duration-200">
             <div className="px-5 py-4 bg-[#003366]/5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Database className="w-4 h-4 text-[#003366]" />
@@ -1348,8 +1250,7 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
               </div>
             )}
           </div>
-
-        </div>
+        )}
 
       </div>
 
