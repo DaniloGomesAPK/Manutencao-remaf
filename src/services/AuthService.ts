@@ -18,6 +18,8 @@ import { auth, db } from '../config/firebase';
 import { Usuario } from '../models/Usuario';
 import { EmpresaService } from './EmpresaService';
 import { LogService } from './LogService';
+import { safeStorage } from '../utils/safeStorage';
+import { getFriendlyErrorMessage } from '../utils/errorUtils';
 
 const SESSION_USER_KEY = 'remaf_saas_user';
 
@@ -27,7 +29,7 @@ export const AuthService = {
    */
   async getCurrentUser(): Promise<Usuario | null> {
     try {
-      const stored = localStorage.getItem(SESSION_USER_KEY);
+      const stored = safeStorage.getItem(SESSION_USER_KEY);
       if (stored) {
         return JSON.parse(stored) as Usuario;
       }
@@ -64,7 +66,40 @@ export const AuthService = {
         if (emailSnap.exists()) {
           const emailData = emailSnap.data();
           empresaId = emailData.empresaId || '';
-          statusConta = (emailData.status as Usuario['statusConta']) || 'active';
+          const rawStatus = emailData.status || 'active';
+          const rawAtivo = emailData.ativo ?? true;
+          const rawCriadoEm = emailData.criadoEm || emailData.createdAt || emailData.trialInicio;
+
+          const isPago = rawStatus === 'pago';
+
+          let isTrialExpired = false;
+          if (!isPago && rawStatus === 'trial' && rawCriadoEm) {
+            let d: Date | null = null;
+            if (typeof rawCriadoEm.toDate === 'function') d = rawCriadoEm.toDate();
+            else if (typeof rawCriadoEm === 'object' && typeof rawCriadoEm.seconds === 'number') d = new Date(rawCriadoEm.seconds * 1000);
+            else if (typeof rawCriadoEm === 'string' || typeof rawCriadoEm === 'number') d = new Date(rawCriadoEm);
+
+            if (d && !isNaN(d.getTime())) {
+              const diffMs = Date.now() - d.getTime();
+              const diffDays = diffMs / (1000 * 60 * 60 * 24);
+              if (diffDays > 7) {
+                isTrialExpired = true;
+              }
+            }
+          }
+
+          if (!isPago && emailData.trialFim) {
+            const trialFimMs = new Date(emailData.trialFim).getTime();
+            if (!isNaN(trialFimMs) && Date.now() > trialFimMs) {
+              isTrialExpired = true;
+            }
+          }
+
+          if (!isPago && (rawStatus === 'expired' || isTrialExpired || rawAtivo === false || emailData.bloqueado === true)) {
+            statusConta = 'expired';
+          } else {
+            statusConta = (rawStatus as Usuario['statusConta']) || 'active';
+          }
         }
       } catch (e: any) {
         console.warn('[AuthService] Erro ao consultar emailsAutorizados no Firestore:', e);
@@ -157,8 +192,8 @@ export const AuthService = {
       console.warn('[AuthService] Não foi possível salvar dados em users/{uid}:', e);
     }
 
-    // Salva a sessão no localStorage para persistência rápida
-    localStorage.setItem(SESSION_USER_KEY, JSON.stringify(usuario));
+    // Salva a sessão no safeStorage para persistência rápida e segura contra QuotaExceeded
+    safeStorage.setItem(SESSION_USER_KEY, JSON.stringify(usuario));
 
     // Garante que a empresa exista
     await EmpresaService.ensureEmpresaExists(usuario.empresaId, usuario);
@@ -175,24 +210,24 @@ export const AuthService = {
     try {
       await signOut(auth);
     } catch (_) {}
-    localStorage.removeItem(SESSION_USER_KEY);
+    safeStorage.removeItem(SESSION_USER_KEY);
 
     const emailNormalizado = email.trim().toLowerCase();
     if (!emailNormalizado || !password) {
-      throw new Error('E-mail e senha são obrigatórios.');
+      throw new Error('Por favor, informe seu e-mail e senha para entrar.');
     }
 
     let fbUser: User;
 
     try {
-      // 2. Autenticação estrita via Firebase Auth (NUNCA recria conta nem aceita senhas de terceiros)
+      // 2. Autenticação estrita via Firebase Auth
       const userCredential = await signInWithEmailAndPassword(auth, emailNormalizado, password);
       fbUser = userCredential.user;
     } catch (error: any) {
       // Em qualquer caso de erro de credenciais ou usuário não encontrado
       await signOut(auth);
-      localStorage.removeItem(SESSION_USER_KEY);
-      throw new Error('E-mail ou senha inválidos.');
+      safeStorage.removeItem(SESSION_USER_KEY);
+      throw new Error(getFriendlyErrorMessage(error, 'E-mail ou senha incorretos. Verifique os dados digitados.'));
     }
 
     // 3. Processa e valida a sessão associada ao uid do Firebase
@@ -200,8 +235,8 @@ export const AuthService = {
       return await this.processUserSession(fbUser);
     } catch (err: any) {
       await signOut(auth);
-      localStorage.removeItem(SESSION_USER_KEY);
-      throw err;
+      safeStorage.removeItem(SESSION_USER_KEY);
+      throw new Error(getFriendlyErrorMessage(err, 'Não foi possível carregar as informações do seu perfil.'));
     }
   },
 
@@ -310,7 +345,7 @@ export const AuthService = {
       updatedAt: now
     }, emailNormalizado);
 
-    localStorage.setItem(SESSION_USER_KEY, JSON.stringify(usuario));
+    safeStorage.setItem(SESSION_USER_KEY, JSON.stringify(usuario));
     return usuario;
   },
 
@@ -321,7 +356,7 @@ export const AuthService = {
     try {
       await signOut(auth);
     } catch (_) {}
-    localStorage.removeItem(SESSION_USER_KEY);
+    safeStorage.removeItem(SESSION_USER_KEY);
 
     const provider = new GoogleAuthProvider();
     let fbUser: User;
@@ -330,15 +365,15 @@ export const AuthService = {
       const userCredential = await signInWithPopup(auth, provider);
       fbUser = userCredential.user;
     } catch (error: any) {
-      throw new Error(error.message || 'Falha ao autenticar com o Google.');
+      throw new Error(getFriendlyErrorMessage(error, 'Falha ao autenticar com o Google. Tente novamente.'));
     }
 
     try {
       return await this.processUserSession(fbUser);
     } catch (err: any) {
       await signOut(auth);
-      localStorage.removeItem(SESSION_USER_KEY);
-      throw err;
+      safeStorage.removeItem(SESSION_USER_KEY);
+      throw new Error(getFriendlyErrorMessage(err, 'Falha ao processar login com o Google.'));
     }
   },
 
@@ -356,16 +391,116 @@ export const AuthService = {
       console.log(`[AuthService] Link de recuperação de senha enviado para: ${emailNormalizado}`);
     } catch (error: any) {
       console.error('[AuthService] Erro ao enviar e-mail de recuperação:', error);
-      if (error.code === 'auth/user-not-found') {
-        throw new Error('Nenhuma conta foi encontrada com este e-mail.');
-      } else if (error.code === 'auth/invalid-email') {
-        throw new Error('O formato do e-mail digitado é inválido.');
-      } else if (error.code === 'auth/too-many-requests') {
-        throw new Error('Muitas tentativas. Aguarde alguns instantes e tente novamente.');
-      } else {
-        throw new Error(error.message || 'Erro ao enviar e-mail de redefinição de senha.');
-      }
+      throw new Error(getFriendlyErrorMessage(error, 'Erro ao enviar e-mail de redefinição de senha.'));
     }
+  },
+
+  /**
+   * Consulta o perfil de autorização e verifica a expiração do trial de 7 dias e status ativo
+   */
+  async checkEmailAuthorized(email: string): Promise<{
+    exists: boolean;
+    data: any | null;
+    status: string;
+    ativo: boolean;
+    criadoEm: any;
+    isTrialExpired: boolean;
+    isAccessBlocked: boolean;
+    diasRestantes: number;
+  }> {
+    const emailClean = email?.trim().toLowerCase();
+    if (!emailClean) {
+      return {
+        exists: false,
+        data: null,
+        status: 'pending',
+        ativo: false,
+        criadoEm: null,
+        isTrialExpired: false,
+        isAccessBlocked: true,
+        diasRestantes: 0
+      };
+    }
+
+    try {
+      const emailDocRef = doc(db, 'emailsAutorizados', emailClean);
+      const emailSnap = await getDoc(emailDocRef);
+
+      if (emailSnap.exists()) {
+        const data = emailSnap.data();
+        const status = data.status || 'trial';
+        const ativo = data.ativo ?? true;
+        const criadoEm = data.criadoEm || data.createdAt || data.trialInicio;
+
+        // Converter criadoEm para Date
+        let criadoEmDate: Date | null = null;
+        if (criadoEm) {
+          if (typeof criadoEm.toDate === 'function') {
+            criadoEmDate = criadoEm.toDate();
+          } else if (typeof criadoEm === 'object' && typeof criadoEm.seconds === 'number') {
+            criadoEmDate = new Date(criadoEm.seconds * 1000);
+          } else if (typeof criadoEm === 'string' || typeof criadoEm === 'number') {
+            const d = new Date(criadoEm);
+            if (!isNaN(d.getTime())) criadoEmDate = d;
+          }
+        }
+
+        const isPago = status === 'pago';
+        const now = Date.now();
+        let isTrialExpired = false;
+        let diasRestantes = isPago ? 9999 : 7;
+
+        if (!isPago && status === 'trial') {
+          if (criadoEmDate) {
+            const diffMs = now - criadoEmDate.getTime();
+            const diffDays = diffMs / (1000 * 60 * 60 * 24);
+            if (diffDays > 7) {
+              isTrialExpired = true;
+              diasRestantes = 0;
+            } else {
+              diasRestantes = Math.max(0, Math.ceil(7 - diffDays));
+            }
+          }
+
+          if (data.trialFim) {
+            const trialFimMs = new Date(data.trialFim).getTime();
+            if (!isNaN(trialFimMs) && now > trialFimMs) {
+              isTrialExpired = true;
+              diasRestantes = 0;
+            }
+          }
+        } else if (!isPago && status === 'expired') {
+          isTrialExpired = true;
+          diasRestantes = 0;
+        }
+
+        const isAccessBlocked = isPago ? (ativo === false || data.bloqueado === true) : (ativo === false || data.bloqueado === true || isTrialExpired);
+
+        return {
+          exists: true,
+          data,
+          status,
+          ativo,
+          criadoEm,
+          isTrialExpired,
+          isAccessBlocked,
+          diasRestantes
+        };
+      }
+    } catch (e) {
+      console.warn('[AuthService] Erro ao verificar emailsAutorizados:', e);
+    }
+
+    return {
+      exists: false,
+      data: null,
+      status: 'pending',
+      ativo: false,
+      criadoEm: null,
+      isTrialExpired: false,
+      isAccessBlocked: false,
+      diasRestantes: 7
+    };
   },
 
   /**
@@ -373,14 +508,14 @@ export const AuthService = {
    */
   async logout(): Promise<void> {
     await signOut(auth);
-    localStorage.removeItem(SESSION_USER_KEY);
+    safeStorage.removeItem(SESSION_USER_KEY);
   },
 
   /**
    * Atualiza os dados de perfil do usuário logado na sessão ativa.
    */
   async updateSessionUser(usuario: Usuario): Promise<void> {
-    localStorage.setItem(SESSION_USER_KEY, JSON.stringify(usuario));
+    safeStorage.setItem(SESSION_USER_KEY, JSON.stringify(usuario));
   },
 
   /**
@@ -395,11 +530,11 @@ export const AuthService = {
         } catch (error) {
           console.error('[AuthService] Acesso negado ou erro ao sincronizar estado de autenticação:', error);
           await signOut(auth);
-          localStorage.removeItem(SESSION_USER_KEY);
+          safeStorage.removeItem(SESSION_USER_KEY);
           onUserChanged(null);
         }
       } else {
-        localStorage.removeItem(SESSION_USER_KEY);
+        safeStorage.removeItem(SESSION_USER_KEY);
         onUserChanged(null);
       }
     });

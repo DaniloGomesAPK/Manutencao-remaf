@@ -19,6 +19,7 @@ import {
 import { db } from '../config/firebase';
 import { openDB } from '../db';
 import { LogService } from './LogService';
+import { safeStorage } from '../utils/safeStorage';
 
 export const ALL_STORES = [
   'clientes',
@@ -361,7 +362,11 @@ export const FirestoreRepository = {
         });
 
         const mergedList = Array.from(mergedMap.values()).filter(doc => !deletedIds.includes(doc.id));
-        await saveLocalStoreBatch(colecao, mergedList, validTenantId);
+        try {
+          await saveLocalStoreBatch(colecao, mergedList, validTenantId);
+        } catch (cacheErr) {
+          console.warn(`[FirestoreRepository] Não foi possível salvar o cache de ${colecao} (limite de cota/storage), mantendo os dados em memória RAM:`, cacheErr);
+        }
 
         LogService.logOperation(userEmail || 'usuario', colecao, 'all', 'getAll', performance.now() - startTime);
         return mergedList;
@@ -542,11 +547,11 @@ export const FirestoreRepository = {
 export function markAsDeletedLocally(colecao: string, id: string, empresaId: string): void {
   try {
     const key = `remaf_deleted_${colecao}_${empresaId}`;
-    const stored = localStorage.getItem(key);
+    const stored = safeStorage.getItem(key);
     const list: string[] = stored ? JSON.parse(stored) : [];
     if (!list.includes(id)) {
       list.push(id);
-      localStorage.setItem(key, JSON.stringify(list));
+      safeStorage.setItem(key, JSON.stringify(list));
     }
   } catch (_) {}
 }
@@ -554,11 +559,11 @@ export function markAsDeletedLocally(colecao: string, id: string, empresaId: str
 export function unmarkAsDeletedLocally(colecao: string, id: string, empresaId: string): void {
   try {
     const key = `remaf_deleted_${colecao}_${empresaId}`;
-    const stored = localStorage.getItem(key);
+    const stored = safeStorage.getItem(key);
     if (stored) {
       const list: string[] = JSON.parse(stored);
       const filtered = list.filter(x => x !== id);
-      localStorage.setItem(key, JSON.stringify(filtered));
+      safeStorage.setItem(key, JSON.stringify(filtered));
     }
   } catch (_) {}
 }
@@ -566,7 +571,7 @@ export function unmarkAsDeletedLocally(colecao: string, id: string, empresaId: s
 export function getDeletedLocallyIds(colecao: string, empresaId: string): string[] {
   try {
     const key = `remaf_deleted_${colecao}_${empresaId}`;
-    const stored = localStorage.getItem(key);
+    const stored = safeStorage.getItem(key);
     return stored ? JSON.parse(stored) : [];
   } catch (_) {
     return [];
@@ -598,7 +603,7 @@ async function getLocalStoreItems<T>(colecao: string, empresaId: string): Promis
 
   try {
     const key = `remaf_cache_${colecao}_${validTenantId}`;
-    const data = localStorage.getItem(key);
+    const data = safeStorage.getItem(key);
     if (data) {
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed)) return parsed.filter((i: any) => !deletedIds.includes(i.id));
@@ -608,10 +613,16 @@ async function getLocalStoreItems<T>(colecao: string, empresaId: string): Promis
   return [];
 }
 
+/**
+ * Salva um documento no armazenamento local (IndexedDB e cache do navegador).
+ * Nota: O localStorage possui limitação de cota (~5MB). Se a cota for atingida,
+ * o erro é capturado e os dados são preservados em memória/IndexedDB.
+ */
 async function saveLocalStoreItem(colecao: string, item: any): Promise<void> {
   const empId = validateEmpresaId(item.empresaId, 'saveLocalStoreItem', colecao);
   unmarkAsDeletedLocally(colecao, item.id, empId);
 
+  // 1. Grava no IndexedDB (armazenamento de alta capacidade sem limite de 5MB)
   try {
     const idbName = mapCollectionToStoreName(colecao);
     if (idbName) {
@@ -624,9 +635,14 @@ async function saveLocalStoreItem(colecao: string, item: any): Promise<void> {
         request.onerror = () => reject(request.error);
       });
     }
+  } catch (idbErr) {
+    console.warn(`[FirestoreRepository] Falha ao persistir item no IndexedDB para ${colecao}:`, idbErr);
+  }
 
+  // 2. Atualiza cache do localStorage com proteção contra QuotaExceededError
+  try {
     const key = `remaf_cache_${colecao}_${empId}`;
-    const cached = localStorage.getItem(key);
+    const cached = safeStorage.getItem(key);
     let list: any[] = cached ? JSON.parse(cached) : [];
     if (!Array.isArray(list)) list = [];
     const idx = list.findIndex((x) => x.id === item.id);
@@ -635,15 +651,30 @@ async function saveLocalStoreItem(colecao: string, item: any): Promise<void> {
     } else {
       list.push(item);
     }
-    localStorage.setItem(key, JSON.stringify(list));
+
+    try {
+      // Limitação do localStorage: ~5MB por domínio
+      safeStorage.setItem(key, JSON.stringify(list));
+    } catch (quotaError: any) {
+      console.warn(
+        `[FirestoreRepository] Limite de quota do localStorage atingido ao salvar item em "${key}". O item permanece salvo no IndexedDB e memória RAM.`,
+        quotaError
+      );
+    }
   } catch (e) {
-    console.warn(`[FirestoreRepository] Erro no salvamento local de ${colecao}:`, e);
+    console.warn(`[FirestoreRepository] Erro no salvamento de cache local para ${colecao}:`, e);
   }
 }
 
+/**
+ * Salva múltiplos documentos no armazenamento local (IndexedDB e cache do navegador).
+ * Nota: O localStorage possui limitação de ~5MB. Grandes coleções (como ordensServico)
+ * podem exceder esse limite. O erro é interceptado para manter a aplicação fluida.
+ */
 async function saveLocalStoreBatch(colecao: string, items: any[], empresaId: string): Promise<void> {
   const validTenantId = validateEmpresaId(empresaId, 'saveLocalStoreBatch', colecao);
 
+  // 1. Grava no IndexedDB (armazenamento assíncrono de alta capacidade)
   try {
     const idbName = mapCollectionToStoreName(colecao);
     if (idbName) {
@@ -655,9 +686,23 @@ async function saveLocalStoreBatch(colecao: string, items: any[], empresaId: str
         store.put(item);
       }
     }
+  } catch (idbErr) {
+    console.warn(`[FirestoreRepository] Falha ao gravar lote em IndexedDB para ${colecao}:`, idbErr);
+  }
 
+  // 2. Grava no cache de acesso rápido com proteção de cota
+  try {
     const key = `remaf_cache_${colecao}_${validTenantId}`;
-    localStorage.setItem(key, JSON.stringify(items));
+    try {
+      // Limitação do localStorage: ~5MB por domínio
+      safeStorage.setItem(key, JSON.stringify(items));
+    } catch (quotaError: any) {
+      // Intercepta QuotaExceededError / DOMException sem quebrar a execução
+      console.warn(
+        `[FirestoreRepository] Limite de armazenamento local (localStorage ~5MB) atingido para a coleção "${colecao}" (${key}). Os dados continuam disponíveis na memória RAM e IndexedDB.`,
+        quotaError
+      );
+    }
   } catch (e) {
     console.warn(`[FirestoreRepository] Erro no salvamento local em lote de ${colecao}:`, e);
   }
@@ -689,12 +734,12 @@ async function deleteLocalStoreItem(colecao: string, id: string, empresaId: stri
     ];
 
     for (const key of keys) {
-      const cached = localStorage.getItem(key);
+      const cached = safeStorage.getItem(key);
       if (cached) {
         let list: any[] = JSON.parse(cached);
         if (Array.isArray(list)) {
           list = list.filter((x) => x.id !== id);
-          localStorage.setItem(key, JSON.stringify(list));
+          safeStorage.setItem(key, JSON.stringify(list));
         }
       }
     }

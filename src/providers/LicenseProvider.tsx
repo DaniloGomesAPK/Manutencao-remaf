@@ -76,24 +76,16 @@ export const LicenseProvider: React.FC<LicenseProviderProps> = ({ children }) =>
             }
           }
 
-          // Se a licença for inválida (bloqueada, expirada, cancelada, overdue) ou se validade < now
+          // Se a licença for inválida (bloqueada, expirada, cancelada, overdue, ou trial > 7 dias)
           if (!val.isValid) {
             console.warn(`[LicenseProvider] Licença inválida detectada em tempo real para ${userEmail}:`, val);
-            NotificationService.notify(
-              'error',
-              'Acesso Interrompido',
-              val.reason || 'Sua licença não permite o acesso.'
+            
+            // Log de auditoria
+            LogService.logError(
+              'License',
+              'LicenseProvider',
+              `Acesso bloqueado por validação de licença: ${val.status} (${val.reason})`
             );
-
-            // Desconexão automática do usuário e limpeza da sessão
-            if (val.status === 'blocked' || val.status === 'expired' || val.status === 'cancelled' || val.status === 'overdue') {
-              LogService.logError(
-                'License',
-                'LicenseProvider',
-                `Desconexão automática por licença inválida: ${val.status} (${val.reason})`
-              );
-              await auth?.logout();
-            }
           }
         } else {
           // Documento não existe em emailsAutorizados: Verificar se é uma Empresa Trial em empresas/{empresaId}
@@ -106,22 +98,41 @@ export const LicenseProvider: React.FC<LicenseProviderProps> = ({ children }) =>
 
               if (empSnap.exists()) {
                 const empData = empSnap.data();
+                const empCriadoEm = empData.criadoEm;
+                let empCriadoEmDate: Date | null = null;
+                if (empCriadoEm) {
+                  if (typeof empCriadoEm.toDate === 'function') empCriadoEmDate = empCriadoEm.toDate();
+                  else if (typeof empCriadoEm === 'object' && typeof empCriadoEm.seconds === 'number') empCriadoEmDate = new Date(empCriadoEm.seconds * 1000);
+                  else if (typeof empCriadoEm === 'string' || typeof empCriadoEm === 'number') empCriadoEmDate = new Date(empCriadoEm);
+                }
+
+                const isEmpPago = empData.status === 'pago';
+                let isEmpTrialExpired = false;
+                if (!isEmpPago && empCriadoEmDate && !isNaN(empCriadoEmDate.getTime())) {
+                  const diffDays = (Date.now() - empCriadoEmDate.getTime()) / (1000 * 60 * 60 * 24);
+                  if (diffDays > 7) isEmpTrialExpired = true;
+                }
+
+                const resolvedStatus: StatusLicenca = isEmpPago ? 'pago' : (isEmpTrialExpired ? 'expired' : ((empData.status as StatusLicenca) || 'trial'));
+
                 const licTrial: LicencaAtual = {
                   email: userEmail,
                   empresaId: empresaId,
-                  status: (empData.status as StatusLicenca) || 'trial',
-                  plano: 'Trial 7 Dias',
-                  validade: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-                  ativo: true,
-                  bloqueado: false,
-                  trialInicio: empData.criadoEm?.toDate?.()?.toISOString() || new Date().toISOString(),
-                  trialFim: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                  status: resolvedStatus,
+                  plano: isEmpPago ? (empData.plano || 'Plano Pago') : (isEmpTrialExpired ? null : 'Trial 7 Dias'),
+                  validade: isEmpPago ? (empData.validade || null) : (isEmpTrialExpired ? new Date().toISOString() : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()),
+                  ativo: isEmpPago ? (empData.ativo ?? true) : !isEmpTrialExpired,
+                  bloqueado: isEmpPago ? (empData.bloqueado ?? false) : isEmpTrialExpired,
+                  criadoEm: empData.criadoEm,
+                  trialInicio: empCriadoEmDate ? empCriadoEmDate.toISOString() : new Date().toISOString(),
+                  trialFim: isEmpPago ? null : (empCriadoEmDate ? new Date(empCriadoEmDate.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString() : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()),
                 };
                 const mappedTrial = LicenseService.mapToLicenseObject(licTrial);
+                const valTrial = LicenseService.validarLicenca(licTrial);
 
                 setLicencaAtual(licTrial);
                 setLicense(mappedTrial);
-                setIsValid(true);
+                setIsValid(valTrial.isValid);
                 setIsLoadingLicense(false);
                 return;
               }
@@ -155,22 +166,21 @@ export const LicenseProvider: React.FC<LicenseProviderProps> = ({ children }) =>
           }
 
           console.warn(`[LicenseProvider] Documento emailsAutorizados/${userEmail} não existe.`);
-          setLicense(null);
-          setLicencaAtual(null);
+          const licPendente: LicencaAtual = {
+            email: userEmail,
+            empresaId: empresaId || 'emp_default',
+            status: 'pending',
+            plano: null,
+            validade: null,
+            ativo: false,
+            bloqueado: false,
+            trialInicio: null,
+            trialFim: null
+          };
+          setLicencaAtual(licPendente);
+          setLicense(LicenseService.mapToLicenseObject(licPendente));
           setIsValid(false);
           setIsLoadingLicense(false);
-
-          LogService.logError(
-            'License',
-            'LicenseProvider',
-            `Acesso negado: Documento não encontrado em emailsAutorizados/${userEmail}`
-          );
-          NotificationService.notify(
-            'error',
-            'Acesso Não Autorizado',
-            'Seu e-mail não foi encontrado na lista de e-mails autorizados.'
-          );
-          await auth?.logout();
         }
       },
       async (error) => {
@@ -217,12 +227,8 @@ export const LicenseProvider: React.FC<LicenseProviderProps> = ({ children }) =>
         LogService.logError(
           'License',
           'LicenseProvider',
-          `Cronômetro: Desconexão por expiração temporal (${val.status}): ${val.reason}`
+          `Cronômetro: Bloqueio por expiração temporal (${val.status}): ${val.reason}`
         );
-
-        if (val.status === 'blocked' || val.status === 'expired' || val.status === 'cancelled' || val.status === 'overdue') {
-          await auth?.logout();
-        }
       }
     };
 

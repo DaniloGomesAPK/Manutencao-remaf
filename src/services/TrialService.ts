@@ -9,6 +9,8 @@ import { auth, db } from '../config/firebase';
 import { Usuario } from '../models/Usuario';
 import { Empresa } from '../models/Empresa';
 import { FirestoreRepository } from './FirestoreRepository';
+import { safeStorage } from '../utils/safeStorage';
+import { getFriendlyErrorMessage } from '../utils/errorUtils';
 
 export interface DadosCadastroTrial {
   nomeResponsavel: string;
@@ -119,10 +121,10 @@ export async function cadastrarEmpresaTrial(dados: DadosCadastroTrial): Promise<
       console.warn('[TrialService] Aviso ao inicializar company_profile:', profileErr);
     }
 
-    // Salva no localStorage para controle do PWA
-    localStorage.setItem('empresaId', empresaId);
-    localStorage.setItem('remaf_empresa_id', empresaId);
-    localStorage.setItem('empresaNome', dados.nomeEmpresa.trim());
+    // Salva no safeStorage para controle do PWA sem risco de QuotaExceeded
+    safeStorage.setItem('empresaId', empresaId);
+    safeStorage.setItem('remaf_empresa_id', empresaId);
+    safeStorage.setItem('empresaNome', dados.nomeEmpresa.trim());
 
     // Perfil da sessão ativa
     const usuario: Usuario = {
@@ -135,7 +137,7 @@ export async function cadastrarEmpresaTrial(dados: DadosCadastroTrial): Promise<
       ultimoAcesso: new Date().toISOString(),
     };
 
-    localStorage.setItem('remaf_saas_user', JSON.stringify(usuario));
+    safeStorage.setItem('remaf_saas_user', JSON.stringify(usuario));
 
     return { empresaId, usuario };
   } catch (error: any) {
@@ -149,7 +151,7 @@ export async function cadastrarEmpresaTrial(dados: DadosCadastroTrial): Promise<
       throw new Error('TRIAL_EXPIRADO');
     }
 
-    throw new Error(error.message || 'Falha ao realizar o cadastro do teste gratuito no sistema.');
+    throw new Error(getFriendlyErrorMessage(error, 'Falha ao realizar o cadastro do teste gratuito no sistema. Verifique os dados e tente novamente.'));
   }
 }
 

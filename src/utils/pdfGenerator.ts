@@ -6,7 +6,7 @@
 import { OrdemDeServico } from '../types';
 import { formatToBrazilianDate } from './dateFormatter';
 import { EmpresaService } from '../services/EmpresaService';
-import { getPerfilConfig, isCampoVisivel, getCampoLabel } from '../config/perfis';
+import { getPerfilConfig, isCampoVisivel, getCampoLabel, getProtocoloLabel } from '../config/perfis';
 
 /**
  * Loads a base64 image (or URL) into an HTMLImageElement asynchronously
@@ -305,7 +305,7 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10.5);
   doc.setTextColor(primaryColor.r, primaryColor.g, primaryColor.b); // Deep Blue
-  const labelProtocolo = 'Protocolo: ';
+  const labelProtocolo = `${getProtocoloLabel(perfilConfig, 'Protocolo')}: `;
   doc.text(labelProtocolo, 145, protocolY);
   
   const widthProtocolo = doc.getTextWidth(labelProtocolo);
@@ -989,18 +989,20 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
   doc.setDrawColor(borderColor.r, borderColor.g, borderColor.b);
   doc.rect(marginX, y, contentWidth, 32, 'S');
 
-  // Date and Time of Completion details on left column of card
+  // Date of Completion / Emission details on left column of card
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(110, 110, 110);
-  doc.text('DATA E HORA DE CONCLUSÃO', marginX + 8, y + 8);
   
-  const closingDate = os.dataConclusao || os.dataAbertura;
-  const closingTime = os.horaConclusao || os.horaAbertura;
+  const isConcluido = os.status === 'Concluído';
+  const labelDataConclusao = isConcluido ? 'DATA DE CONCLUSÃO' : 'DATA DE EMISSÃO';
+  doc.text(labelDataConclusao, marginX + 8, y + 8);
+  
+  const closingDate = (isConcluido && os.dataConclusao) ? os.dataConclusao : os.dataAbertura;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(textColor.r, textColor.g, textColor.b);
-  doc.text(`${formatToBrazilianDate(closingDate)} às ${closingTime}`, marginX + 8, y + 14);
+  doc.text(formatToBrazilianDate(closingDate), marginX + 8, y + 14);
   
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);

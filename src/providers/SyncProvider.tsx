@@ -8,6 +8,7 @@ import { SyncContext } from '../contexts/SyncContext';
 import { AuthContext } from '../contexts/AuthContext';
 import { FirestoreSyncEngine } from '../services/FirestoreSyncEngine';
 import { NotificationService } from '../services/NotificationService';
+import { safeStorage } from '../utils/safeStorage';
 
 interface SyncProviderProps {
   children: ReactNode;
@@ -52,7 +53,7 @@ export const SyncProvider: React.FC<SyncProviderProps> = ({ children }) => {
       const timestamp = new Date().toISOString();
       setLastSyncedAt(timestamp);
       setPendingCount(res.remainingCount);
-      localStorage.setItem('remaf_saas_last_sync', timestamp);
+      safeStorage.setItem('remaf_saas_last_sync', timestamp);
 
       if (res.syncedCount > 0) {
         NotificationService.notify(

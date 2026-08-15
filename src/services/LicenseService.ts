@@ -75,6 +75,28 @@ export const LicenseService = {
   },
 
   /**
+   * Converte qualquer formato de data do Firestore (Timestamp, string, number, object) para Date
+   */
+  parseCriadoEmDate(criadoEm: any): Date | null {
+    if (!criadoEm) return null;
+    if (criadoEm instanceof Date) return isNaN(criadoEm.getTime()) ? null : criadoEm;
+    if (typeof criadoEm.toDate === 'function') {
+      try {
+        const d = criadoEm.toDate();
+        return isNaN(d.getTime()) ? null : d;
+      } catch (_) {}
+    }
+    if (typeof criadoEm === 'object' && typeof criadoEm.seconds === 'number') {
+      return new Date(criadoEm.seconds * 1000);
+    }
+    if (typeof criadoEm === 'string' || typeof criadoEm === 'number') {
+      const d = new Date(criadoEm);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    return null;
+  },
+
+  /**
    * Mapeia o documento de emailsAutorizados para o objeto de LicencaAtual
    */
   mapDocToLicencaAtual(docData: Partial<EmailAutorizado>, email: string): LicencaAtual {
@@ -82,8 +104,10 @@ export const LicenseService = {
     const empresaId = docData.empresaId || `emp_${emailNorm.replace(/[^a-zA-Z0-9]/g, '')}`;
     const status: StatusLicenca = docData.status || 'pending';
     const plano = docData.plano || null;
-    const trialInicio = docData.trialInicio || null;
-    const trialFim = docData.trialFim || null;
+    
+    const criadoEmDate = this.parseCriadoEmDate(docData.criadoEm || docData.createdAt);
+    const trialInicio = docData.trialInicio || (criadoEmDate ? criadoEmDate.toISOString() : null);
+    const trialFim = docData.trialFim || (criadoEmDate ? new Date(criadoEmDate.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString() : null);
     const validade = docData.validade || null;
     const ativo = docData.ativo ?? true;
     const bloqueado = docData.bloqueado ?? false;
@@ -98,9 +122,11 @@ export const LicenseService = {
       validade,
       ativo,
       bloqueado,
-      inicio: trialInicio || validade || new Date().toISOString(),
+      criadoEm: docData.criadoEm || docData.createdAt,
+      createdAt: docData.createdAt || docData.criadoEm,
+      inicio: trialInicio || validade || (criadoEmDate ? criadoEmDate.toISOString() : new Date().toISOString()),
       fim: validade || trialFim || new Date().toISOString(),
-      trialUtilizado: !!trialInicio,
+      trialUtilizado: !!trialInicio || !!criadoEmDate,
       ultimaAtualizacao: docData.ultimaAtualizacao || new Date().toISOString()
     };
   },
@@ -207,12 +233,17 @@ export const LicenseService = {
     }
 
     if (licenca.bloqueado === true || licenca.ativo === false) {
-      return { isValid: false, status: 'blocked', reason: 'Acesso bloqueado ou inativo.' };
+      return { isValid: false, status: 'expired', reason: 'Acesso bloqueado ou inativo.' };
     }
 
-    const validStatuses: StatusLicenca[] = ['pending', 'trial', 'active', 'expired', 'blocked', 'cancelled', 'overdue'];
+    const validStatuses: StatusLicenca[] = ['pending', 'trial', 'active', 'pago', 'expired', 'blocked', 'cancelled', 'overdue'];
     if (!validStatuses.includes(licenca.status)) {
       return { isValid: false, status: 'blocked', reason: 'Status de licença desconhecido.' };
+    }
+
+    // Status "pago": Assinatura ou compra confirmada (acesso pleno e sem expiração de teste)
+    if (licenca.status === 'pago') {
+      return { isValid: true, status: 'pago' };
     }
 
     if (licenca.status === 'blocked') {
@@ -232,19 +263,31 @@ export const LicenseService = {
     }
 
     if (licenca.status === 'pending') {
-      return { isValid: false, status: 'pending', reason: 'Aguardando ativação ou escolha de plano.' };
+      return { isValid: false, status: 'pending', reason: 'Aguardando ativação ou escolha de plano.' };
     }
 
     const now = Date.now();
 
     // Valida data do Trial
     if (licenca.status === 'trial') {
+      // 1. Verifica trialFim se presente
       if (licenca.trialFim) {
         const trialFimMs = new Date(licenca.trialFim).getTime();
         if (!isNaN(trialFimMs) && now > trialFimMs) {
-          return { isValid: false, status: 'expired', reason: 'Período de teste gratuito expirou.' };
+          return { isValid: false, status: 'expired', reason: 'O período de teste gratuito de 7 dias expirou.' };
         }
       }
+
+      // 2. Verifica criadoEm diretamente (calcula se passaram mais de 7 dias)
+      const criadoEmDate = this.parseCriadoEmDate((licenca as any).criadoEm || (licenca as any).createdAt || (licenca as any).trialInicio);
+      if (criadoEmDate) {
+        const diffMs = now - criadoEmDate.getTime();
+        const diffDays = diffMs / (1000 * 60 * 60 * 24);
+        if (diffDays > 7) {
+          return { isValid: false, status: 'expired', reason: 'O período de teste gratuito de 7 dias expirou.' };
+        }
+      }
+
       return { isValid: true, status: 'trial' };
     }
 

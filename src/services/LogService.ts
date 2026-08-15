@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { safeStorage } from '../utils/safeStorage';
+
 export interface ErrorLog {
   id: string;
   data: string;
@@ -29,7 +31,7 @@ export interface OperationLog {
 
 const ERROR_LOG_STORAGE_KEY = 'remaf_error_logs_v1';
 const OP_LOG_STORAGE_KEY = 'remaf_operation_logs_v1';
-const MAX_LOG_ENTRIES = 200;
+const MAX_LOG_ENTRIES = 30;
 
 export const LogService = {
   /**
@@ -59,6 +61,7 @@ export const LogService = {
     erro: any = null
   ): OperationLog {
     const now = new Date();
+    const erroSanitizado = erro ? (typeof erro === 'string' ? erro : erro.message || JSON.stringify(erro)) : null;
     const entry: OperationLog = {
       id: 'op_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now(),
       timestamp: now.toISOString(),
@@ -66,20 +69,20 @@ export const LogService = {
       colecao,
       documentoId: documentoId || 'n/a',
       operacao,
-      erro: erro ? (typeof erro === 'string' ? erro : erro.message || JSON.stringify(erro)) : null,
+      erro: erroSanitizado ? erroSanitizado.substring(0, 300) : null,
       tempoMs: Math.round(tempoMs),
       sincronizado: false,
     };
 
     try {
-      const stored = localStorage.getItem(OP_LOG_STORAGE_KEY);
+      const stored = safeStorage.getItem(OP_LOG_STORAGE_KEY);
       let logs: OperationLog[] = stored ? JSON.parse(stored) : [];
       if (!Array.isArray(logs)) logs = [];
       logs.unshift(entry);
       if (logs.length > MAX_LOG_ENTRIES) {
         logs = logs.slice(0, MAX_LOG_ENTRIES);
       }
-      localStorage.setItem(OP_LOG_STORAGE_KEY, JSON.stringify(logs));
+      safeStorage.setItem(OP_LOG_STORAGE_KEY, JSON.stringify(logs));
     } catch (e) {
       console.warn('[LogService] Falha ao salvar log de operação localmente:', e);
     }
@@ -113,21 +116,21 @@ export const LogService = {
       hora,
       modulo,
       componente,
-      mensagem,
-      stackTrace: stack || 'No stack trace provided',
-      acaoUsuario: acaoUsuario || 'Sem ação específica registrada',
+      mensagem: (mensagem || 'Erro desconhecido').substring(0, 500),
+      stackTrace: stack ? stack.substring(0, 800) : undefined,
+      acaoUsuario: acaoUsuario ? acaoUsuario.substring(0, 200) : 'Sem ação específica registrada',
       sincronizado: false
     };
 
     try {
-      const stored = localStorage.getItem(ERROR_LOG_STORAGE_KEY);
+      const stored = safeStorage.getItem(ERROR_LOG_STORAGE_KEY);
       let logs: ErrorLog[] = stored ? JSON.parse(stored) : [];
       if (!Array.isArray(logs)) logs = [];
       logs.unshift(entry);
       if (logs.length > MAX_LOG_ENTRIES) {
         logs = logs.slice(0, MAX_LOG_ENTRIES);
       }
-      localStorage.setItem(ERROR_LOG_STORAGE_KEY, JSON.stringify(logs));
+      safeStorage.setItem(ERROR_LOG_STORAGE_KEY, JSON.stringify(logs));
     } catch (err) {
       console.warn('[LogService] Falha ao gravar log de erro no localStorage:', err);
     }
@@ -140,7 +143,7 @@ export const LogService = {
    */
   getOperationLogs(): OperationLog[] {
     try {
-      const stored = localStorage.getItem(OP_LOG_STORAGE_KEY);
+      const stored = safeStorage.getItem(OP_LOG_STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) return parsed;
@@ -154,7 +157,7 @@ export const LogService = {
    */
   getLogs(): ErrorLog[] {
     try {
-      const stored = localStorage.getItem(ERROR_LOG_STORAGE_KEY);
+      const stored = safeStorage.getItem(ERROR_LOG_STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) return parsed;
@@ -206,8 +209,8 @@ export const LogService = {
    */
   clearLogs(): void {
     try {
-      localStorage.removeItem(ERROR_LOG_STORAGE_KEY);
-      localStorage.removeItem(OP_LOG_STORAGE_KEY);
+      safeStorage.removeItem(ERROR_LOG_STORAGE_KEY);
+      safeStorage.removeItem(OP_LOG_STORAGE_KEY);
     } catch (err) {
       console.error('[LogService] Falha ao limpar logs:', err);
     }
