@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type StatusLicenca = 'pending' | 'trial' | 'active' | 'expired' | 'cancelled' | 'overdue' | 'blocked';
+export type StatusLicenca = 'pending' | 'trial' | 'active' | 'pago' | 'expired' | 'cancelled' | 'overdue' | 'blocked';
 
 export interface EmailAutorizado {
   email: string;
@@ -15,6 +15,8 @@ export interface EmailAutorizado {
   validade: string | null;
   ativo: boolean;
   bloqueado: boolean;
+  criadoEm?: any;
+  createdAt?: any;
   ultimaAtualizacao?: string;
 }
 

@@ -4,10 +4,10 @@
  */
 
 import React, { useState } from 'react';
-import { ArrowLeft, Save, FileText, Clipboard, CheckCircle2, AlertCircle, Info, Calendar, Clock } from 'lucide-react';
+import { ArrowLeft, Save, FileText, Clipboard, CheckCircle2, Info, Calendar, Clock } from 'lucide-react';
 import { OrdemDeServico, ItemOrcamento } from '../types';
-import { formatToBrazilianDate } from '../utils/dateFormatter';
-import { UIButton } from './ui/UIComponents';
+import { useEmpresa } from '../contexts/EmpresaContext';
+import { isCampoVisivel, getCampoLabel, getProtocoloLabel } from '../config/perfis';
 
 interface OSFormStep5Props {
   initialData: Partial<OrdemDeServico>;
@@ -19,11 +19,21 @@ interface OSFormStep5Props {
   onSaveProgress?: (data: Partial<OrdemDeServico>) => void;
 }
 
+const getTodayDateString = (): string => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export default function OSFormStep5({ initialData, onSave, onBack, onCancel, onSaveDraftAndPDF, isSaving = false, onSaveProgress }: OSFormStep5Props) {
+  const { perfilConfig } = useEmpresa();
   const [status, setStatus] = useState<'Pendente' | 'Concluído'>(initialData.status === 'Concluído' ? 'Concluído' : 'Pendente');
   const [descricaoAvaria, setDescricaoAvaria] = useState(initialData.descricaoAvaria || '');
   const [servicoExecutado, setServicoExecutado] = useState(initialData.servicoExecutado || '');
   const [observacoesFinais, setObservacoesFinais] = useState(initialData.observacoesFinais || '');
+  const [dataConclusao, setDataConclusao] = useState<string>(initialData.dataConclusao || getTodayDateString());
 
   const getCurrentStep5Data = (): Partial<OrdemDeServico> => {
     return {
@@ -31,6 +41,8 @@ export default function OSFormStep5({ initialData, onSave, onBack, onCancel, onS
       servicoExecutado: servicoExecutado.trim(),
       observacoesFinais: observacoesFinais.trim(),
       status,
+      dataConclusao: status === 'Concluído' ? (dataConclusao || getTodayDateString()) : undefined,
+      horaConclusao: undefined,
       faseAtual: 5,
     };
   };
@@ -49,6 +61,10 @@ export default function OSFormStep5({ initialData, onSave, onBack, onCancel, onS
 
   const handleStatusChange = (newStatus: 'Pendente' | 'Concluído') => {
     setStatus(newStatus);
+
+    if (newStatus === 'Concluído' && !dataConclusao) {
+      setDataConclusao(getTodayDateString());
+    }
 
     const budgetItems = initialData.orcamento || [];
     if (budgetItems.length === 0) return;
@@ -77,46 +93,25 @@ export default function OSFormStep5({ initialData, onSave, onBack, onCancel, onS
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Automatically set completion dates & clocks on click
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const docDate = `${year}-${month}-${day}`;
-    
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const docTime = `${hours}:${minutes}`;
-
     onSave({
       descricaoAvaria: descricaoAvaria.trim(),
       servicoExecutado: servicoExecutado.trim(),
       observacoesFinais: observacoesFinais.trim(),
       status,
-      dataConclusao: initialData.dataConclusao || docDate,
-      horaConclusao: initialData.horaConclusao || docTime,
+      dataConclusao: status === 'Concluído' ? (dataConclusao || getTodayDateString()) : undefined,
+      horaConclusao: undefined,
     });
   };
 
   const handleGeneratePDFDraft = () => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const docDate = `${year}-${month}-${day}`;
-    
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const docTime = `${hours}:${minutes}`;
-
     if (onSaveDraftAndPDF) {
       onSaveDraftAndPDF({
         descricaoAvaria: descricaoAvaria.trim(),
         servicoExecutado: servicoExecutado.trim(),
         observacoesFinais: observacoesFinais.trim(),
         status,
-        dataConclusao: initialData.dataConclusao || docDate,
-        horaConclusao: initialData.horaConclusao || docTime,
+        dataConclusao: status === 'Concluído' ? (dataConclusao || getTodayDateString()) : undefined,
+        horaConclusao: undefined,
       });
     }
   };
@@ -127,20 +122,24 @@ export default function OSFormStep5({ initialData, onSave, onBack, onCancel, onS
     <form id="step-5-form" onSubmit={handleSubmit} className="space-y-6">
       {/* Short Context Grid */}
       <div className="bg-slate-50/50 rounded-xl p-4 border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs text-slate-600">
-        <div>
-          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Equipamento:</span>
-          <span className="font-bold text-slate-800 text-sm truncate block">{initialData.equipamento}</span>
-        </div>
-        <div>
-          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Placa:</span>
-          <span className="font-bold text-slate-800 font-mono text-sm uppercase">{initialData.placa || 'Sem placa'}</span>
-        </div>
-        <div>
-          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Protocolo:</span>
+        {isCampoVisivel(perfilConfig, 'equipamento') && (
+          <div>
+            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">{getCampoLabel(perfilConfig, 'equipamento')}:</span>
+            <span className="font-bold text-slate-800 text-sm truncate block">{initialData.equipamento || 'Não informado'}</span>
+          </div>
+        )}
+        {isCampoVisivel(perfilConfig, 'placa') && (
+          <div>
+            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">{getCampoLabel(perfilConfig, 'placa', 'Placa')}:</span>
+            <span className="font-bold text-slate-800 font-mono text-sm uppercase">{initialData.placa || 'Sem placa'}</span>
+          </div>
+        )}
+        <div className="col-span-2 sm:col-span-1">
+          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">{getProtocoloLabel(perfilConfig, 'Protocolo')}:</span>
           <span className="font-bold text-[#003366] font-mono text-sm">{initialData.numeroOS}</span>
         </div>
         <div>
-          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Cliente:</span>
+          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">{getCampoLabel(perfilConfig, 'cliente', 'Cliente')}:</span>
           <span className="font-bold text-slate-800 text-sm truncate block">{initialData.clienteNome || 'Não informado'}</span>
         </div>
       </div>
@@ -150,8 +149,8 @@ export default function OSFormStep5({ initialData, onSave, onBack, onCancel, onS
         <div className="flex items-center gap-2">
           <Info className="w-5 h-5 text-[#003366]" />
           <div>
-            <h3 className="text-xs font-black text-[#003366] uppercase tracking-wider">Status do Protocolo</h3>
-            <p className="text-[10px] text-slate-500 mt-0.5">Escolha o status atual e preencha automaticamente os relatórios com base no orçamento</p>
+            <h3 className="text-xs font-black text-[#003366] uppercase tracking-wider">Status do {getProtocoloLabel(perfilConfig, 'Protocolo')}</h3>
+            <p className="text-[10px] text-slate-500 mt-0.5">Escolha o status atual e defina a data de conclusão quando finalizado</p>
           </div>
         </div>
 
@@ -173,7 +172,7 @@ export default function OSFormStep5({ initialData, onSave, onBack, onCancel, onS
             <div>
               <span className="font-bold text-sm block text-slate-800">Pendente</span>
               <span className="text-[10px] text-slate-500 mt-1 block leading-relaxed">
-                Manutenção não concluída. Ao mudar para Pendente, você pode preencher automaticamente o campo <strong>Serviços Necessários</strong> com os itens do orçamento.
+                Manutenção em andamento ou aguardando peças. A OS continuará aberta.
               </span>
             </div>
           </button>
@@ -195,11 +194,43 @@ export default function OSFormStep5({ initialData, onSave, onBack, onCancel, onS
             <div>
               <span className="font-bold text-sm block text-slate-800">Concluído</span>
               <span className="text-[10px] text-slate-500 mt-1 block leading-relaxed">
-                Manutenção finalizada com sucesso. Ao mudar para Concluído, você pode preencher automaticamente o campo <strong>Serviço Executado</strong> com os itens do orçamento.
+                Manutenção finalizada. Permite informar a data exata em que o serviço foi concluído.
               </span>
             </div>
           </button>
         </div>
+
+        {/* Date Selection for Concluído status ONLY */}
+        {status === 'Concluído' && (
+          <div className="bg-white rounded-xl p-4 border border-emerald-200 shadow-xs space-y-2 animate-in fade-in duration-200">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <label htmlFor="input-data-conclusao" className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-emerald-600" />
+                <span>Data de Conclusão do Serviço</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setDataConclusao(getTodayDateString())}
+                className="text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-200 transition cursor-pointer active:scale-95"
+              >
+                Definir Data de Hoje
+              </button>
+            </div>
+            <div className="relative">
+              <input
+                type="date"
+                id="input-data-conclusao"
+                required={status === 'Concluído'}
+                value={dataConclusao}
+                onChange={(e) => setDataConclusao(e.target.value)}
+                className="w-full sm:w-64 bg-slate-50 text-slate-800 border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition"
+              />
+            </div>
+            <p className="text-[11px] text-slate-500">
+              * Escolha o dia em que o serviço foi finalizado (caso a manutenção tenha iniciado em uma data e terminado dias depois).
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Textareas row */}
@@ -290,18 +321,14 @@ export default function OSFormStep5({ initialData, onSave, onBack, onCancel, onS
         <div className="flex-1 hidden sm:block"></div>
 
         {onSaveProgress && (
-          <UIButton
+          <button
             type="button"
-            variant="secondary"
-            size="md"
-            icon={Save}
-            loading={isSaving}
-            onClick={handleSaveClick}
             id="btn-save-progress-step5"
-            className="w-full sm:w-auto font-bold uppercase tracking-wider text-xs border-slate-300 text-slate-700 hover:bg-slate-50"
-          >
-            {isSaving ? 'Salvando...' : 'Salvar'}
-          </UIButton>
+            onClick={handleSaveClick}
+            className="hidden"
+            aria-hidden="true"
+            tabIndex={-1}
+          />
         )}
 
         <button
@@ -333,7 +360,7 @@ export default function OSFormStep5({ initialData, onSave, onBack, onCancel, onS
           ) : (
             <>
               <CheckCircle2 className="w-4 h-4 text-white" />
-              <span>Concluir OS</span>
+              <span>{status === 'Concluído' ? 'Concluir OS' : 'Salvar OS (Pendente)'}</span>
             </>
           )}
         </button>

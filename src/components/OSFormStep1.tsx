@@ -35,7 +35,8 @@ import {
   getCampoLabel,
   getCampoPlaceholder,
   getCampoTooltip,
-  getCampoValidationMessage
+  getCampoValidationMessage,
+  getProtocoloLabel
 } from '../config/perfis';
 import { applySmartFocus } from '../utils/navigationState';
 import { UIButton } from './ui/UIComponents';
@@ -343,7 +344,11 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
             <span className="font-bold text-[#003366] block uppercase tracking-wider text-[11px] mb-0.5">
               Abertura de {perfilConfig.labels.ordemServico}
             </span>
-            Preencha as informações de atendimento referentes a {perfilConfig.labels.equipamento.toLowerCase()} e ao responsável técnico do serviço.
+            {isCampoVisivel(perfilConfig, 'equipamento') ? (
+              `Preencha as informações de atendimento referentes a ${perfilConfig.labels.equipamento.toLowerCase()} e ao ${perfilConfig.labels.tecnico.toLowerCase()} do serviço.`
+            ) : (
+              `Preencha as informações de atendimento referentes ao cliente e ao ${perfilConfig.labels.tecnico.toLowerCase()} do serviço.`
+            )}
           </div>
         </div>
 
@@ -353,13 +358,13 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
           <div className="space-y-1.5">
             <label className="text-[10px] font-black text-slate-500 tracking-wider flex items-center gap-1.5 uppercase">
               <Clipboard className="w-3.5 h-3.5 text-[#003366]" />
-              Nº de Protocolo <span className="text-[#FF6600] font-bold">*</span>
+              {getProtocoloLabel(perfilConfig, 'Nº de Protocolo')} <span className="text-[#FF6600] font-bold">*</span>
             </label>
             <input
               id="input-numero-os"
               type="text"
               required
-              placeholder="Ex: 1024, PR-550..."
+              placeholder="Ex: 0001, 1024, PR-550..."
               value={numeroOS}
               onChange={(e) => setNumeroOS(e.target.value)}
               className="w-full bg-white text-slate-800 border border-slate-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] font-mono transition duration-200"
@@ -825,18 +830,14 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
           </button>
           <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
             {onSaveProgress && (
-              <UIButton
+              <button
                 type="button"
-                variant="secondary"
-                size="md"
-                icon={Save}
-                loading={isSaving}
-                onClick={handleSaveClick}
                 id="btn-save-progress-step1"
-                className="w-full sm:w-auto font-bold uppercase tracking-wider text-xs border-slate-300 text-slate-700 hover:bg-slate-50"
-              >
-                {isSaving ? 'Salvando...' : 'Salvar'}
-              </UIButton>
+                onClick={handleSaveClick}
+                className="hidden"
+                aria-hidden="true"
+                tabIndex={-1}
+              />
             )}
             <button
               id="btn-next-step1"

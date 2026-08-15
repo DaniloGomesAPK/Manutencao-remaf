@@ -6,6 +6,7 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { LogService } from '../services/LogService';
 import { AlertTriangle, RefreshCw, RefreshCw as ReloadIcon } from 'lucide-react';
+import { getFriendlyErrorMessage } from '../utils/errorUtils';
 
 interface Props {
   children: ReactNode;
@@ -64,8 +65,8 @@ export class ErrorBoundary extends React.Component<Props, State> {
             </p>
           </div>
           {this.state.error && (
-            <div className="w-full bg-rose-100/30 p-2.5 rounded-xl text-left border border-rose-200 font-mono text-[9px] text-rose-800 overflow-x-auto max-h-32">
-              {this.state.error.message}
+            <div className="w-full bg-rose-100/30 p-2.5 rounded-xl text-left border border-rose-200 text-[11px] text-rose-800">
+              {getFriendlyErrorMessage(this.state.error)}
             </div>
           )}
           <div className="flex items-center gap-3">

@@ -7,7 +7,8 @@ import React, { useState } from 'react';
 import { ArrowLeft, ArrowRight, FileText, Camera, Save } from 'lucide-react';
 import { OrdemDeServico } from '../types';
 import ImageCaptureGallery from './ImageCaptureGallery';
-import { UIButton } from './ui/UIComponents';
+import { useEmpresa } from '../contexts/EmpresaContext';
+import { isCampoVisivel, getCampoLabel, getProtocoloLabel } from '../config/perfis';
 
 interface OSFormStep2Props {
   initialData: Partial<OrdemDeServico>;
@@ -20,6 +21,7 @@ interface OSFormStep2Props {
 }
 
 export default function OSFormStep2({ initialData, onNext, onBack, onCancel, onSaveDraftAndPDF, isSavingDraft = false, onSaveProgress }: OSFormStep2Props) {
+  const { perfilConfig } = useEmpresa();
   const [fotosAntes, setFotosAntes] = useState<string[]>(initialData.fotosAntes || []);
   const [fotosAntesDescricoes, setFotosAntesDescricoes] = useState<string[]>(initialData.fotosAntesDescricoes || []);
 
@@ -63,18 +65,26 @@ export default function OSFormStep2({ initialData, onNext, onBack, onCancel, onS
   return (
     <form id="step-2-form" onSubmit={handleSubmit} className="space-y-6">
       {/* Dynamic Summary Panel */}
-      <div className="bg-slate-50/50 rounded-xl p-4 border border-slate-200 grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs text-slate-600">
-        <div>
-          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Equipamento:</span>
-          <span className="font-bold text-slate-800 text-sm">{initialData.equipamento}</span>
-        </div>
-        <div>
-          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Placa:</span>
-          <span className="font-bold text-slate-800 font-mono text-sm uppercase">{initialData.placa || 'Sem placa'}</span>
-        </div>
+      <div className="bg-slate-50/50 rounded-xl p-4 border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs text-slate-600">
+        {isCampoVisivel(perfilConfig, 'equipamento') && (
+          <div>
+            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">{getCampoLabel(perfilConfig, 'equipamento')}:</span>
+            <span className="font-bold text-slate-800 text-sm truncate block">{initialData.equipamento || 'Não informado'}</span>
+          </div>
+        )}
+        {isCampoVisivel(perfilConfig, 'placa') && (
+          <div>
+            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">{getCampoLabel(perfilConfig, 'placa', 'Placa')}:</span>
+            <span className="font-bold text-slate-800 font-mono text-sm uppercase">{initialData.placa || 'Sem placa'}</span>
+          </div>
+        )}
         <div className="col-span-2 sm:col-span-1">
-          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Protocolo:</span>
+          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">{getProtocoloLabel(perfilConfig, 'Protocolo')}:</span>
           <span className="font-bold text-[#003366] font-mono text-sm">{initialData.numeroOS}</span>
+        </div>
+        <div>
+          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">{getCampoLabel(perfilConfig, 'cliente', 'Cliente')}:</span>
+          <span className="font-bold text-slate-800 text-sm truncate block">{initialData.clienteNome || 'Não informado'}</span>
         </div>
       </div>
 
@@ -83,7 +93,7 @@ export default function OSFormStep2({ initialData, onNext, onBack, onCancel, onS
         <Camera className="w-5 h-5 text-amber-600 shrink-0 self-center" />
         <div className="text-xs text-slate-600 leading-relaxed">
           <span className="font-bold text-amber-800 block uppercase tracking-wider text-[11px] mb-0.5">Registro Fotográfico Inicial</span>
-          Registre fotos detalhadas do estado do equipamento antes da realização dos serviços. Você pode usar a câmera do dispositivo ou fazer o upload de arquivos da galeria.
+          Registre fotos detalhadas antes da realização dos serviços. Você pode usar a câmera do dispositivo ou fazer o upload de arquivos da galeria.
         </div>
       </div>
 
@@ -126,18 +136,14 @@ export default function OSFormStep2({ initialData, onNext, onBack, onCancel, onS
         <div className="flex-1 hidden sm:block"></div>
 
         {onSaveProgress && (
-          <UIButton
+          <button
             type="button"
-            variant="secondary"
-            size="md"
-            icon={Save}
-            loading={isSavingDraft}
-            onClick={handleSaveClick}
             id="btn-save-progress-step2"
-            className="w-full sm:w-auto font-bold uppercase tracking-wider text-xs border-slate-300 text-slate-700 hover:bg-slate-50"
-          >
-            {isSavingDraft ? 'Salvando...' : 'Salvar'}
-          </UIButton>
+            onClick={handleSaveClick}
+            className="hidden"
+            aria-hidden="true"
+            tabIndex={-1}
+          />
         )}
 
         <button

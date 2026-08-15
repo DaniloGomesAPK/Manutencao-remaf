@@ -13,11 +13,15 @@ import energiaSolar from './energiaSolar';
 import construcaoCivil from './construcaoCivil';
 import manutencaoIndustrial from './manutencaoIndustrial';
 import equipamentosMedicos from './equipamentosMedicos';
+import autonomo from './autonomo';
 import outro from './outro';
 
 export * from './types';
 
 const PERFIS_MAP: Record<string, PerfilConfig> = {
+  'autonomo': autonomo,
+  'autônomo': autonomo,
+
   'oficina mecanica': oficinaMecanica,
   'oficina mecânica': oficinaMecanica,
   'oficina_mecanica': oficinaMecanica,
@@ -174,8 +178,17 @@ export function getOrderedCamposVisiveis(config: PerfilConfig | undefined): Camp
   return layout.filter(key => isCampoVisivel(config, key));
 }
 
+/**
+ * Retorna o rótulo de protocolo ou número de documento com base no perfil ativo.
+ */
+export function getProtocoloLabel(config: PerfilConfig | undefined, fallback: string = 'Protocolo'): string {
+  if (!config || !config.labels) return fallback;
+  return config.labels.protocolo || config.labels.numeroOS || fallback;
+}
+
 export {
   oficinaMecanica,
+  autonomo,
   lavaJato,
   refrigeracao,
   informatica,

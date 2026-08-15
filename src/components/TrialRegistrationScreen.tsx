@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { ArrowLeft, MessageSquare, Sparkles, User, Building2, Mail, Phone, CheckCircle2, Loader2, ArrowRight, Briefcase, ChevronDown } from 'lucide-react';
 import { TrialService } from '../services/TrialService';
 import { PERFIL_EMPRESA_OPCOES } from '../constants/perfilEmpresa';
+import { getFriendlyErrorMessage } from '../utils/errorUtils';
 
 interface TrialRegistrationScreenProps {
   onBack: () => void;
@@ -76,7 +77,7 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
         onTrialExpired();
         return;
       }
-      setErro(err.message || 'Erro ao realizar o cadastro. Tente novamente.');
+      setErro(getFriendlyErrorMessage(err, 'Não foi possível concluir seu cadastro no momento. Por favor, tente novamente.'));
     } finally {
       setCarregando(false);
     }

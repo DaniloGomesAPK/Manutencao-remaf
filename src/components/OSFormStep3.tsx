@@ -31,7 +31,7 @@ import { ServicoContext } from '../contexts/ServicoContext';
 import { EmpresaContext } from '../contexts/EmpresaContext';
 import { ServicoInteligenteService } from '../services/ServicoInteligenteService';
 import AssistentePrecificacaoModal from './AssistentePrecificacaoModal';
-import { UIButton } from './ui/UIComponents';
+import { isCampoVisivel, getCampoLabel, getProtocoloLabel } from '../config/perfis';
 
 interface OSFormStep3Props {
   initialData: Partial<OrdemDeServico>;
@@ -48,6 +48,7 @@ export default function OSFormStep3({ initialData, onNext, onBack, onCancel, onS
 
   const empresaCtx = useContext(EmpresaContext);
   const company = empresaCtx?.empresa;
+  const perfilConfig = empresaCtx?.perfilConfig;
 
   const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -445,20 +446,24 @@ export default function OSFormStep3({ initialData, onNext, onBack, onCancel, onS
     <form id="step-3-form" onSubmit={handleSubmit} className="space-y-6">
       {/* Short Context Grid */}
       <div className="bg-slate-50/50 rounded-xl p-4 border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs text-slate-600">
-        <div>
-          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Equipamento:</span>
-          <span className="font-bold text-slate-800 text-sm truncate block">{initialData.equipamento}</span>
-        </div>
-        <div>
-          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Placa:</span>
-          <span className="font-bold text-slate-800 font-mono text-sm uppercase">{initialData.placa || 'Sem placa'}</span>
-        </div>
-        <div>
-          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Protocolo:</span>
+        {isCampoVisivel(perfilConfig, 'equipamento') && (
+          <div>
+            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">{getCampoLabel(perfilConfig, 'equipamento')}:</span>
+            <span className="font-bold text-slate-800 text-sm truncate block">{initialData.equipamento || 'Não informado'}</span>
+          </div>
+        )}
+        {isCampoVisivel(perfilConfig, 'placa') && (
+          <div>
+            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">{getCampoLabel(perfilConfig, 'placa', 'Placa')}:</span>
+            <span className="font-bold text-slate-800 font-mono text-sm uppercase">{initialData.placa || 'Sem placa'}</span>
+          </div>
+        )}
+        <div className="col-span-2 sm:col-span-1">
+          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">{getProtocoloLabel(perfilConfig, 'Protocolo')}:</span>
           <span className="font-bold text-[#003366] font-mono text-sm">{initialData.numeroOS}</span>
         </div>
         <div>
-          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Cliente:</span>
+          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">{getCampoLabel(perfilConfig, 'cliente', 'Cliente')}:</span>
           <span className="font-bold text-slate-800 text-sm truncate block">{initialData.clienteNome || 'Não informado'}</span>
         </div>
       </div>
@@ -963,18 +968,14 @@ export default function OSFormStep3({ initialData, onNext, onBack, onCancel, onS
         <div className="flex-1 hidden sm:block"></div>
 
         {onSaveProgress && (
-          <UIButton
+          <button
             type="button"
-            variant="secondary"
-            size="md"
-            icon={Save}
-            loading={isSaving}
-            onClick={handleSaveClick}
             id="btn-save-progress-step3"
-            className="w-full sm:w-auto font-bold uppercase tracking-wider text-xs border-slate-300 text-slate-700 hover:bg-slate-50"
-          >
-            {isSaving ? 'Salvando...' : 'Salvar'}
-          </UIButton>
+            onClick={handleSaveClick}
+            className="hidden"
+            aria-hidden="true"
+            tabIndex={-1}
+          />
         )}
 
         <button

@@ -24,6 +24,7 @@ import { SyncContext } from './contexts/SyncContext';
 
 import { generateOSReportPDF } from './utils/pdfGenerator';
 import { formatToBrazilianDate } from './utils/dateFormatter';
+import { isCampoVisivel, getCampoLabel, getProtocoloLabel } from './config/perfis';
 
 import officialAppBanner from './assets/images/image2.png';
 
@@ -36,13 +37,16 @@ import DashboardHome from './components/DashboardHome';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { PlansPage } from './components/PlansPage';
 import { TrialRegistrationScreen } from './components/TrialRegistrationScreen';
-import { TrialExpiradoScreen } from './components/TrialExpiradoScreen';
+import { TrialExpired } from './pages/TrialExpired';
 import { ActivationScreen } from './components/ActivationScreen';
 import { TrialBanner } from './components/TrialBanner';
 import { ExpiredLicenseScreen } from './components/ExpiredLicenseScreen';
 import { CheckoutModal } from './components/CheckoutModal';
 import { InitialSetupWizard } from './components/InitialSetupWizard';
 import { LogService } from './services/LogService';
+import { LicenseService } from './services/LicenseService';
+import { getFriendlyErrorMessage } from './utils/errorUtils';
+import { safeStorage } from './utils/safeStorage';
 
 const OSDashboard = lazy(() => import('./components/OSDashboard'));
 const OSFormStep1 = lazy(() => import('./components/OSFormStep1'));
@@ -193,12 +197,12 @@ export default function App() {
           currentStep,
           formData,
         };
-        localStorage.setItem('remaf_active_draft_v1', JSON.stringify(draft));
+        safeStorage.setItem('remaf_active_draft_v1', JSON.stringify(draft));
       } else {
-        localStorage.removeItem('remaf_active_draft_v1');
+        safeStorage.removeItem('remaf_active_draft_v1');
       }
     } catch (err) {
-      console.warn("Failed to persist active form draft to localStorage:", err);
+      console.warn("Failed to persist active form draft to safeStorage:", err);
     }
   }, [viewingForm, currentStep, formData]);
 
@@ -266,7 +270,7 @@ export default function App() {
     try {
       await auth?.login(loginEmail.trim().toLowerCase(), loginPassword);
     } catch (err: any) {
-      setLoginError(err.message || 'Falha ao autenticar.');
+      setLoginError(getFriendlyErrorMessage(err, 'E-mail ou senha inválidos. Por favor, tente novamente.'));
     } finally {
       setSubmittingLogin(false);
     }
@@ -278,7 +282,7 @@ export default function App() {
     try {
       await auth?.loginWithGoogle();
     } catch (err: any) {
-      setLoginError(err.message || 'Falha ao autenticar com o Google.');
+      setLoginError(getFriendlyErrorMessage(err, 'Falha ao autenticar com o Google.'));
     } finally {
       setSubmittingLogin(false);
     }
@@ -301,7 +305,7 @@ export default function App() {
     } catch (err: any) {
       setForgotStatus({
         type: 'error',
-        message: err.message || 'Ocorreu um erro ao enviar o e-mail de redefinição.'
+        message: getFriendlyErrorMessage(err, 'Ocorreu um erro ao enviar o e-mail de redefinição.')
       });
     }
   };
@@ -1072,41 +1076,54 @@ export default function App() {
     );
   }
 
-  // Expired, Blocked, Cancelled, Overdue ou Inválido -> TrialExpiradoScreen / ExpiredLicenseScreen
-  if (
-    !licenseCtx?.isValid ||
-    status === 'expired' || 
-    status === 'blocked' || 
-    status === 'cancelled' || 
-    status === 'overdue'
-  ) {
+  const isPago = status === 'pago' || lic.status === 'pago';
+
+  // Verificação rigorosa de expiração de teste de 7 dias via criadoEm e flags de acesso
+  const criadoEmDate = LicenseService.parseCriadoEmDate(lic.criadoEm || lic.createdAt || lic.trialInicio);
+  let isTrial7DaysExpired = false;
+  if (!isPago && status === 'trial' && criadoEmDate) {
+    const diffMs = Date.now() - criadoEmDate.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    if (diffDays > 7) {
+      isTrial7DaysExpired = true;
+    }
+  }
+
+  const isAccessBlocked = isPago 
+    ? (lic.ativo === false || lic.bloqueado === true)
+    : (
+      auth?.isTrialExpired || 
+      auth?.isAccessBlocked || 
+      !licenseCtx?.isValid || 
+      lic.ativo === false || 
+      lic.bloqueado === true || 
+      status === 'expired' || 
+      isTrial7DaysExpired ||
+      status === 'blocked' || 
+      status === 'cancelled' || 
+      status === 'overdue'
+    );
+
+  // Expired, Inactive, Blocked, Cancelled, Overdue ou Inválido -> Route Guard: TrialExpired
+  if (isAccessBlocked) {
     console.log('[AUTH]', uid);
     console.log('[EMPRESA]', empresaId);
-    console.log('[LICENÇA]', `status: ${status}, isValid: ${licenseCtx?.isValid}, trialInicio: ${trialInicio}, trialFim: ${trialFim}`);
-    console.log('[ROTA]', `Tela de Bloqueio (Status: ${status}, isValid: ${licenseCtx?.isValid})`);
-
-    if (status === 'expired' || !licenseCtx?.isValid) {
-      return (
-        <TrialExpiradoScreen
-          onOpenPlans={() => setShowPlansInApp(true)}
-          onLogout={() => auth?.logout()}
-        />
-      );
-    }
+    console.log('[LICENÇA]', `status: ${status}, isValid: ${licenseCtx?.isValid}, isTrial7DaysExpired: ${isTrial7DaysExpired}, trialInicio: ${trialInicio}, trialFim: ${trialFim}`);
+    console.log('[ROTA GUARD]', `Acesso Bloqueado / Teste Expirado -> TrialExpired (Status: ${status})`);
 
     return (
-      <ExpiredLicenseScreen
-        status={status}
+      <TrialExpired
+        userEmail={activeUser?.email}
         onOpenPlans={() => setShowPlansInApp(true)}
         onLogout={() => auth?.logout()}
       />
     );
   }
 
-  // Status == 'trial' ou status == 'active' -> Acesso livre ao Dashboard
+  // Status == 'pago', status == 'trial' ou status == 'active' -> Acesso livre ao Dashboard
   console.log('[AUTH]', uid);
   console.log('[EMPRESA]', empresaId);
-  console.log('[LICENÇA]', `status: ${status}, trialInicio: ${trialInicio}, trialFim: ${trialFim}`);
+  console.log('[LICENÇA]', `status: ${status}, isValid: ${licenseCtx?.isValid}, trialInicio: ${trialInicio}, trialFim: ${trialFim}`);
   console.log('[ROTA]', `Dashboard (Acesso Liberado - Status: ${status})`);
 
   const showInitialWizard = empresaCtx?.empresa && empresaCtx.empresa.configuracaoInicialConcluida === false;
@@ -1373,8 +1390,8 @@ export default function App() {
                 <div className="w-full md:w-72 shrink-0 space-y-4">
                   <div className="bg-[#003366] text-white p-5 rounded-2xl shadow-md space-y-4 border border-[#002244] shrink-0">
                     <div className="border-b border-white/10 pb-3">
-                      <p className="text-[10px] uppercase font-bold opacity-60 tracking-widest mb-1">Protocolo</p>
-                      <h2 className="text-2xl font-black tracking-tighter font-mono">{formData.numeroOS || 'Novo Protocolo'}</h2>
+                      <p className="text-[10px] uppercase font-bold opacity-60 tracking-widest mb-1">{getProtocoloLabel(empresaCtx?.perfilConfig, 'Protocolo')}</p>
+                      <h2 className="text-2xl font-black tracking-tighter font-mono">{formData.numeroOS || `Novo ${getProtocoloLabel(empresaCtx?.perfilConfig, 'Protocolo')}`}</h2>
                     </div>
                     <div className="grid grid-cols-2 gap-4 text-xs">
                       <div>
@@ -1387,27 +1404,31 @@ export default function App() {
                       </div>
                       {formData.clienteNome && (
                         <div className="col-span-2">
-                          <p className="opacity-60 mb-0.5">Cliente Proprietário</p>
+                          <p className="opacity-60 mb-0.5">{getCampoLabel(empresaCtx?.perfilConfig, 'cliente', 'Cliente')}</p>
                           <p className="font-bold truncate text-[#FF6600]">{formData.clienteNome}</p>
                         </div>
                       )}
-                      <div className="col-span-2">
-                        <p className="opacity-60 mb-0.5">Equipamento</p>
-                        <p className="font-bold line-clamp-2">{formData.equipamento || '-'}</p>
-                      </div>
-                      <div className="col-span-2">
-                        <p className="opacity-60 mb-0.5">Placa/Série</p>
-                        <p className="font-bold tracking-widest text-[#FF6600] font-mono">{formData.placa || '-'}</p>
-                      </div>
+                      {isCampoVisivel(empresaCtx?.perfilConfig, 'equipamento') && (
+                        <div className="col-span-2">
+                          <p className="opacity-60 mb-0.5">{getCampoLabel(empresaCtx?.perfilConfig, 'equipamento', 'Equipamento')}</p>
+                          <p className="font-bold line-clamp-2">{formData.equipamento || '-'}</p>
+                        </div>
+                      )}
+                      {isCampoVisivel(empresaCtx?.perfilConfig, 'placa') && (
+                        <div className="col-span-2">
+                          <p className="opacity-60 mb-0.5">{getCampoLabel(empresaCtx?.perfilConfig, 'placa', 'Placa/Série')}</p>
+                          <p className="font-bold tracking-widest text-[#FF6600] font-mono">{formData.placa || '-'}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                    <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-3">Dicas de Campo</p>
+                    <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-3">Dicas de Atendimento</p>
                     <ul className="text-xs space-y-2 text-slate-600 italic">
-                      <li>• Capture as fotos em locais iluminados</li>
-                      <li>• Detalhe vazamentos visíveis</li>
-                      <li>• Verifique o horímetro do painel</li>
+                      <li>• Registre fotos em locais iluminados</li>
+                      <li>• Detalhe itens e serviços prestados</li>
+                      <li>• Valide as informações com o cliente</li>
                     </ul>
                   </div>
                 </div>
@@ -1420,7 +1441,7 @@ export default function App() {
                       <span className="w-2.5 h-2.5 rounded-full bg-[#FF6600]"></span>
                       <span className="text-xs font-bold text-[#003366] uppercase tracking-wider">
                         Fase {currentStep} de 5: {
-                          currentStep === 1 ? 'Identificação e Protocolo' :
+                          currentStep === 1 ? `Identificação e ${getProtocoloLabel(empresaCtx?.perfilConfig, 'Protocolo')}` :
                           currentStep === 2 ? 'Registro Fotográfico (Antes)' :
                           currentStep === 3 ? 'Itens do Orçamento e Mão de Obra' :
                           currentStep === 4 ? 'Registro Fotográfico (Depois)' : 'Conclusão e Relatório Final'

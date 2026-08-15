@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { Download, Share2, X, MessageSquare, Mail, Check, AlertCircle, ExternalLink, Eye, FileText, Lock } from 'lucide-react';
 import { OrdemDeServico } from '../types';
+import { formatToBrazilianDate } from '../utils/dateFormatter';
 import { EmpresaContext } from '../contexts/EmpresaContext';
 import { getPerfilConfig, isCampoVisivel, getCampoLabel } from '../config/perfis';
 
@@ -178,7 +179,11 @@ export default function PDFPreviewModal({ os, pdfDataUri, onClose }: PDFPreviewM
     let body = `Olá,\n\nSegue resumo do Protocolo ${os.numeroOS} de manutenção realizada no equipamento ${os.equipamento}:\n\n`;
     body += `- Placa de Identidade: ${os.placa}\n`;
     body += `- Técnico Responsável: ${os.tecnico}\n`;
-    body += `- Data/Hora de Fechamento: ${os.dataConclusao} às ${os.horaConclusao}\n`;
+    if (os.status === 'Concluído' && os.dataConclusao) {
+      body += `- Data de Conclusão: ${formatToBrazilianDate(os.dataConclusao)}\n`;
+    } else {
+      body += `- Data de Abertura: ${formatToBrazilianDate(os.dataAbertura)}\n`;
+    }
     body += `- Status Final: ${os.status || 'Concluído'}\n`;
     body += `- Orçamento Itens: ${orcamentoStr}\n\n`;
     
@@ -404,9 +409,13 @@ export default function PDFPreviewModal({ os, pdfDataUri, onClose }: PDFPreviewM
                         <strong className="text-slate-800">{os.tecnico}</strong>
                       </div>
                       <div>
-                        <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">Conclusão</span>
+                        <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">
+                          {os.status === 'Concluído' ? 'Conclusão' : 'Status / Abertura'}
+                        </span>
                         <strong className="text-slate-800 font-medium text-slate-700">
-                          {os.dataConclusao ? `${os.dataConclusao} às ${os.horaConclusao}` : `${os.dataAbertura} ${os.horaAbertura}`}
+                          {os.status === 'Concluído' 
+                            ? formatToBrazilianDate(os.dataConclusao || os.dataAbertura)
+                            : `${formatToBrazilianDate(os.dataAbertura)} (Pendente)`}
                         </strong>
                       </div>
                     </div>
