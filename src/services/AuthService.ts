@@ -95,15 +95,15 @@ export const AuthService = {
         if (emailSnap.exists()) {
           const emailData = emailSnap.data();
           empresaId = emailData.empresaId || '';
-          const rawStatus = emailData.status || 'active';
+          const rawStatus = emailData.status || (emailData.trialAtivo ? 'trial' : 'active');
           const rawAtivo = emailData.ativo ?? true;
           const rawBloqueado = emailData.bloqueado ?? false;
-          const rawCriadoEm = emailData.criadoEm || emailData.createdAt || emailData.trialInicio;
+          const rawCriadoEm = emailData.criadoEm || emailData.createdAt || emailData.trialInicio || emailData.dataCriacao;
           const now = Date.now();
 
           // Helper para parsear accessUntil / validade
           let accessUntilMs: number | null = null;
-          const rawAccessField = emailData.accessUntil || emailData.validade;
+          const rawAccessField = emailData.accessUntil || emailData.validade || emailData.trialFim || emailData.dataExpiracaoTrial;
           if (rawAccessField) {
             if (typeof rawAccessField.toMillis === 'function') accessUntilMs = rawAccessField.toMillis();
             else if (typeof rawAccessField.toDate === 'function') accessUntilMs = rawAccessField.toDate().getTime();
@@ -127,7 +127,14 @@ export const AuthService = {
             }
           } else if (rawStatus === 'trial') {
             let isTrialExpired = false;
-            if (rawCriadoEm) {
+            if (accessUntilMs !== null && now >= accessUntilMs) {
+              isTrialExpired = true;
+            } else if (emailData.trialFim) {
+              const trialFimMs = new Date(emailData.trialFim).getTime();
+              if (!isNaN(trialFimMs) && now > trialFimMs) {
+                isTrialExpired = true;
+              }
+            } else if (rawCriadoEm) {
               let d: Date | null = null;
               if (typeof rawCriadoEm.toDate === 'function') d = rawCriadoEm.toDate();
               else if (typeof rawCriadoEm === 'object' && typeof rawCriadoEm.seconds === 'number') d = new Date(rawCriadoEm.seconds * 1000);
@@ -142,17 +149,6 @@ export const AuthService = {
               }
             }
 
-            if (emailData.trialFim) {
-              const trialFimMs = new Date(emailData.trialFim).getTime();
-              if (!isNaN(trialFimMs) && now > trialFimMs) {
-                isTrialExpired = true;
-              }
-            }
-
-            if (accessUntilMs !== null && now >= accessUntilMs) {
-              isTrialExpired = true;
-            }
-
             statusConta = isTrialExpired ? 'expired' : 'active';
           } else if (rawStatus === 'expired' || rawStatus === 'cancelled' || rawStatus === 'blocked' || rawStatus === 'overdue') {
             statusConta = rawStatus as Usuario['statusConta'];
@@ -165,12 +161,28 @@ export const AuthService = {
       }
     }
 
-    // Se não encontrou em emailsAutorizados, verifica a coleção empresas/{empresaId}
+    const userDocRef = doc(db, 'users', uid);
+    let userSnap;
+    let dataCadastro = new Date().toISOString();
+    let nomeExistente = '';
+
+    try {
+      userSnap = await getDoc(userDocRef);
+      if (userSnap && userSnap.exists()) {
+        const uData = userSnap.data();
+        if (!empresaId) empresaId = uData.empresaId || '';
+        dataCadastro = uData.dataCadastro || dataCadastro;
+        nomeExistente = uData.nome || '';
+      }
+    } catch (e) {
+      console.warn('[AuthService] Falha ao consultar users/{uid} no Firestore:', e);
+    }
+
+    // Se ainda não encontrou em emailsAutorizados nem users, verifica a coleção empresas/{empresaId}
     if (!empresaId) {
       const storedEmpresaId = localStorage.getItem('empresaId');
       if (storedEmpresaId) {
         const empresaDocRef = doc(db, 'empresas', storedEmpresaId);
-
         try {
           const empresaSnap = await getDoc(empresaDocRef);
           if (empresaSnap.exists()) {
@@ -180,34 +192,8 @@ export const AuthService = {
           }
         } catch (e: any) {
           console.warn('[AuthService] Leitura de empresas capturada:', e);
-          if (
-            e?.code === 'permission-denied' ||
-            e?.message?.toLowerCase().includes('permission-denied') ||
-            e?.message?.toLowerCase().includes('insufficient permissions') ||
-            e?.message?.toLowerCase().includes('permissão')
-          ) {
-            throw new Error('TRIAL_EXPIRADO');
-          }
         }
       }
-    }
-
-    const userDocRef = doc(db, 'users', uid);
-    let userSnap;
-    try {
-      userSnap = await getDoc(userDocRef);
-    } catch (e) {
-      console.warn('[AuthService] Falha ao consultar users/{uid} no Firestore:', e);
-    }
-
-    let dataCadastro = new Date().toISOString();
-    let nomeExistente = '';
-
-    if (userSnap && userSnap.exists()) {
-      const uData = userSnap.data();
-      if (!empresaId) empresaId = uData.empresaId || '';
-      dataCadastro = uData.dataCadastro || dataCadastro;
-      nomeExistente = uData.nome || '';
     }
 
     const finalNome = nomeCompleto || fbUser.displayName || nomeExistente || fbUser.email?.split('@')[0] || 'Usuário';
@@ -280,7 +266,12 @@ export const AuthService = {
 
     // 3. Processa e valida a sessão associada ao uid nativo do Firebase Auth
     try {
-      // Se o usuário ainda não confirmou o e-mail E não possui empresa configurada (não concluiu onboarding)
+      // Recarrega o usuário para sincronizar emailVerified
+      try {
+        await fbUser.reload();
+      } catch (_) {}
+
+      // Se o usuário ainda não confirmou o e-mail E não possui empresa configurada
       if (!fbUser.emailVerified) {
         const userDocRef = doc(db, 'users', fbUser.uid);
         let userSnap;
@@ -297,10 +288,80 @@ export const AuthService = {
         }
       }
 
+      // Se o e-mail está verificado, verifica se o onboarding no Firestore está ausente/incompleto
+      if (fbUser.emailVerified) {
+        let needsRecovery = false;
+        try {
+          const emailDocRef = doc(db, 'emailsAutorizados', emailNormalizado);
+          const emailSnap = await getDoc(emailDocRef);
+          
+          const userDocRef = doc(db, 'users', fbUser.uid);
+          const userSnap = await getDoc(userDocRef);
+
+          if (!emailSnap.exists() || !userSnap.exists() || !userSnap.data()?.empresaId) {
+            needsRecovery = true;
+          }
+        } catch (checkErr) {
+          console.warn('[AuthService] Verificação de integridade de cadastro no login:', checkErr);
+        }
+
+        if (needsRecovery) {
+          console.log('[AuthService] Onboarding incompleto detectado para usuário com e-mail verificado. Recuperando via backend seguro...');
+          try {
+            const idToken = await fbUser.getIdToken(true);
+            const response = await fetch('/api/onboarding/trial', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${idToken}`
+              },
+              body: JSON.stringify({
+                nomeResponsavel: fbUser.displayName || emailNormalizado.split('@')[0],
+                nomeEmpresa: 'Minha Empresa',
+                perfilEmpresa: 'mecanica_pesada'
+              })
+            });
+
+            if (!response.ok) {
+              const errJson = await response.json().catch(() => ({}));
+              const errMsg = errJson?.error || '';
+              if (errMsg.includes('expirado') || errMsg.includes('TRIAL_EXPIRED')) {
+                throw new Error('TRIAL_EXPIRADO');
+              }
+              if (errMsg.includes('bloqueada') || errMsg.includes('bloqueado')) {
+                throw new Error('CONTA_BLOQUEADA');
+              }
+              if (errMsg.includes('EMAIL_NAO_VERIFICADO')) {
+                const unverifiedError: any = new Error('EMAIL_NOT_VERIFIED');
+                unverifiedError.code = 'EMAIL_NOT_VERIFIED';
+                unverifiedError.user = fbUser;
+                throw unverifiedError;
+              }
+            }
+          } catch (recErr: any) {
+            if (
+              recErr?.code === 'EMAIL_NOT_VERIFIED' ||
+              recErr?.message === 'EMAIL_NOT_VERIFIED' ||
+              recErr?.message === 'TRIAL_EXPIRADO' ||
+              recErr?.message === 'CONTA_BLOQUEADA'
+            ) {
+              throw recErr;
+            }
+            console.warn('[AuthService] Aviso na recuperação de onboarding:', recErr);
+          }
+        }
+      }
+
       return await this.processUserSession(fbUser);
     } catch (err: any) {
       if (err?.code === 'EMAIL_NOT_VERIFIED' || err?.message === 'EMAIL_NOT_VERIFIED') {
         throw err;
+      }
+      if (err?.message === 'TRIAL_EXPIRADO') {
+        throw new Error('O período de avaliação gratuito de 7 dias desta conta já expirou.');
+      }
+      if (err?.message === 'CONTA_BLOQUEADA') {
+        throw new Error('Esta conta foi bloqueada ou revogada administrativamente.');
       }
       await signOut(auth);
       safeStorage.removeItem(SESSION_UI_KEY);
