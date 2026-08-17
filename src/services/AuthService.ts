@@ -6,45 +6,74 @@
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
+  sendEmailVerification,
   signOut, 
   signInWithPopup, 
   GoogleAuthProvider,
   User,
   onAuthStateChanged,
-  sendPasswordResetEmail as fbSendPasswordResetEmail
+  sendPasswordResetEmail as fbSendPasswordResetEmail,
+  updateProfile
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 import { Usuario } from '../models/Usuario';
 import { EmpresaService } from './EmpresaService';
-import { LogService } from './LogService';
 import { safeStorage } from '../utils/safeStorage';
 import { getFriendlyErrorMessage } from '../utils/errorUtils';
 
-const SESSION_USER_KEY = 'remaf_saas_user';
+/**
+ * Interface estrita para cache de UI (apenas dados cosméticos e não sensíveis).
+ * Nenhum token, ID de sessão sensível, senha ou permissão customizada é gravado no storage.
+ */
+export interface UserUICache {
+  nome: string;
+  email: string;
+  photoURL?: string;
+}
+
+const SESSION_UI_KEY = 'remaf_saas_user_ui';
+const LEGACY_SESSION_KEY = 'remaf_saas_user';
 
 export const AuthService = {
   /**
-   * Obtém o usuário atualmente autenticado a partir do cache local.
+   * Obtém o usuário atualmente autenticado a partir do Firebase Auth nativo (fonte primária de autoridade).
+   * Nunca confia no localStorage para concessão de acesso ou validação de segurança.
    */
   async getCurrentUser(): Promise<Usuario | null> {
+    const fbUser = auth.currentUser;
+    if (fbUser) {
+      try {
+        return await this.processUserSession(fbUser);
+      } catch (e) {
+        console.warn('[AuthService] Falha ao processar sessão de auth.currentUser:', e);
+      }
+    }
+    return null;
+  },
+
+  /**
+   * Retorna exclusivamente dados visuais e não sensíveis de UI para evitar flicker durante a inicialização.
+   * Não confere autenticação nem permissões administrativas.
+   */
+  getUserUICache(): UserUICache | null {
     try {
-      const stored = safeStorage.getItem(SESSION_USER_KEY);
+      const stored = safeStorage.getItem(SESSION_UI_KEY);
       if (stored) {
-        return JSON.parse(stored) as Usuario;
+        return JSON.parse(stored) as UserUICache;
       }
     } catch (e) {
-      console.error('Erro ao ler sessão do usuário:', e);
+      console.warn('[AuthService] Erro ao ler cache de UI não sensível:', e);
     }
     return null;
   },
 
   /**
    * Processa e sincroniza a sessão do usuário diretamente com o Firestore (users/{uid}).
-   * Garante que o uid autenticado no Firebase Auth seja a única autoridade.
+   * O estado nativo do Firebase Auth é a autoridade central.
    */
   async processUserSession(fbUser: User, nomeCompleto?: string): Promise<Usuario> {
-    // 1. Forçar atualização do token com getIdToken(true) para garantir dados e Custom Claims atualizados
+    // 1. Forçar atualização do token com getIdToken(true) para garantir claims atualizadas
     if (typeof fbUser.getIdToken === 'function') {
       try {
         await fbUser.getIdToken(true);
@@ -53,7 +82,7 @@ export const AuthService = {
       }
     }
 
-    // 2. Consultar o Firestore em emailsAutorizados/{email} ou empresas/{empresaId} para suporte a Trial
+    // 2. Consultar o Firestore em emailsAutorizados/{email} ou empresas/{empresaId} para validação de licença/status
     const email = fbUser.email?.trim().toLowerCase();
     const uid = fbUser.uid;
     let empresaId = '';
@@ -68,37 +97,67 @@ export const AuthService = {
           empresaId = emailData.empresaId || '';
           const rawStatus = emailData.status || 'active';
           const rawAtivo = emailData.ativo ?? true;
+          const rawBloqueado = emailData.bloqueado ?? false;
           const rawCriadoEm = emailData.criadoEm || emailData.createdAt || emailData.trialInicio;
+          const now = Date.now();
 
-          const isPago = rawStatus === 'pago';
+          // Helper para parsear accessUntil / validade
+          let accessUntilMs: number | null = null;
+          const rawAccessField = emailData.accessUntil || emailData.validade;
+          if (rawAccessField) {
+            if (typeof rawAccessField.toMillis === 'function') accessUntilMs = rawAccessField.toMillis();
+            else if (typeof rawAccessField.toDate === 'function') accessUntilMs = rawAccessField.toDate().getTime();
+            else if (typeof rawAccessField.seconds === 'number') accessUntilMs = rawAccessField.seconds * 1000;
+            else if (typeof rawAccessField === 'string' || typeof rawAccessField === 'number') {
+              const d = new Date(rawAccessField);
+              if (!isNaN(d.getTime())) accessUntilMs = d.getTime();
+            }
+          }
 
-          let isTrialExpired = false;
-          if (!isPago && rawStatus === 'trial' && rawCriadoEm) {
-            let d: Date | null = null;
-            if (typeof rawCriadoEm.toDate === 'function') d = rawCriadoEm.toDate();
-            else if (typeof rawCriadoEm === 'object' && typeof rawCriadoEm.seconds === 'number') d = new Date(rawCriadoEm.seconds * 1000);
-            else if (typeof rawCriadoEm === 'string' || typeof rawCriadoEm === 'number') d = new Date(rawCriadoEm);
+          const isPago = rawStatus === 'pago' || rawStatus === 'active';
 
-            if (d && !isNaN(d.getTime())) {
-              const diffMs = Date.now() - d.getTime();
-              const diffDays = diffMs / (1000 * 60 * 60 * 24);
-              if (diffDays > 7) {
+          if (rawBloqueado === true || rawAtivo === false) {
+            statusConta = 'blocked';
+          } else if (isPago) {
+            // Plano pago só é válido se accessUntil existir e ainda estiver no futuro
+            if (accessUntilMs === null || isNaN(accessUntilMs) || now >= accessUntilMs) {
+              statusConta = 'expired';
+            } else {
+              statusConta = 'active';
+            }
+          } else if (rawStatus === 'trial') {
+            let isTrialExpired = false;
+            if (rawCriadoEm) {
+              let d: Date | null = null;
+              if (typeof rawCriadoEm.toDate === 'function') d = rawCriadoEm.toDate();
+              else if (typeof rawCriadoEm === 'object' && typeof rawCriadoEm.seconds === 'number') d = new Date(rawCriadoEm.seconds * 1000);
+              else if (typeof rawCriadoEm === 'string' || typeof rawCriadoEm === 'number') d = new Date(rawCriadoEm);
+
+              if (d && !isNaN(d.getTime())) {
+                const diffMs = now - d.getTime();
+                const diffDays = diffMs / (1000 * 60 * 60 * 24);
+                if (diffDays > 7) {
+                  isTrialExpired = true;
+                }
+              }
+            }
+
+            if (emailData.trialFim) {
+              const trialFimMs = new Date(emailData.trialFim).getTime();
+              if (!isNaN(trialFimMs) && now > trialFimMs) {
                 isTrialExpired = true;
               }
             }
-          }
 
-          if (!isPago && emailData.trialFim) {
-            const trialFimMs = new Date(emailData.trialFim).getTime();
-            if (!isNaN(trialFimMs) && Date.now() > trialFimMs) {
+            if (accessUntilMs !== null && now >= accessUntilMs) {
               isTrialExpired = true;
             }
-          }
 
-          if (!isPago && (rawStatus === 'expired' || isTrialExpired || rawAtivo === false || emailData.bloqueado === true)) {
-            statusConta = 'expired';
+            statusConta = isTrialExpired ? 'expired' : 'active';
+          } else if (rawStatus === 'expired' || rawStatus === 'cancelled' || rawStatus === 'blocked' || rawStatus === 'overdue') {
+            statusConta = rawStatus as Usuario['statusConta'];
           } else {
-            statusConta = (rawStatus as Usuario['statusConta']) || 'active';
+            statusConta = 'pending';
           }
         }
       } catch (e: any) {
@@ -106,27 +165,29 @@ export const AuthService = {
       }
     }
 
-    // Se não encontrou em emailsAutorizados, verifica a coleção empresas/{empresaId} (Empresa Trial)
+    // Se não encontrou em emailsAutorizados, verifica a coleção empresas/{empresaId}
     if (!empresaId) {
-      const storedEmpresaId = localStorage.getItem('empresaId') || `emp_${uid}`;
-      const empresaDocRef = doc(db, 'empresas', storedEmpresaId);
+      const storedEmpresaId = localStorage.getItem('empresaId');
+      if (storedEmpresaId) {
+        const empresaDocRef = doc(db, 'empresas', storedEmpresaId);
 
-      try {
-        const empresaSnap = await getDoc(empresaDocRef);
-        if (empresaSnap.exists()) {
-          const empData = empresaSnap.data();
-          empresaId = storedEmpresaId;
-          statusConta = empData.status === 'trial' ? 'active' : (empData.status || 'active');
-        }
-      } catch (e: any) {
-        console.warn('[AuthService] Leitura de empresas capturada:', e);
-        if (
-          e?.code === 'permission-denied' ||
-          e?.message?.toLowerCase().includes('permission-denied') ||
-          e?.message?.toLowerCase().includes('insufficient permissions') ||
-          e?.message?.toLowerCase().includes('permissão')
-        ) {
-          throw new Error('TRIAL_EXPIRADO');
+        try {
+          const empresaSnap = await getDoc(empresaDocRef);
+          if (empresaSnap.exists()) {
+            const empData = empresaSnap.data();
+            empresaId = storedEmpresaId;
+            statusConta = empData.status === 'trial' ? 'active' : (empData.status || 'active');
+          }
+        } catch (e: any) {
+          console.warn('[AuthService] Leitura de empresas capturada:', e);
+          if (
+            e?.code === 'permission-denied' ||
+            e?.message?.toLowerCase().includes('permission-denied') ||
+            e?.message?.toLowerCase().includes('insufficient permissions') ||
+            e?.message?.toLowerCase().includes('permissão')
+          ) {
+            throw new Error('TRIAL_EXPIRADO');
+          }
         }
       }
     }
@@ -149,22 +210,6 @@ export const AuthService = {
       nomeExistente = uData.nome || '';
     }
 
-    // Se não encontrou no Firestore (ou falhou a leitura), tenta recuperar do cache de sessão
-    if (!empresaId) {
-      try {
-        const cached = await this.getCurrentUser();
-        if (cached && cached.id === uid) {
-          if (cached.empresaId) empresaId = cached.empresaId;
-        }
-      } catch (_) {}
-    }
-
-    // Se o usuário não possui um empresaId registrado, utiliza um ID determinístico derivado do UID do usuário
-    if (!empresaId) {
-      const cleanUid = uid.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().substring(0, 20);
-      empresaId = `emp_${cleanUid}`;
-    }
-
     const finalNome = nomeCompleto || fbUser.displayName || nomeExistente || fbUser.email?.split('@')[0] || 'Usuário';
 
     const usuario: Usuario = {
@@ -177,23 +222,24 @@ export const AuthService = {
       ultimoAcesso: new Date().toISOString()
     };
 
-    // Atualiza/Cria o documento do usuário em users/{uid}
+    // Atualiza apenas dados permitidos (não-administrativos) em users/{uid} no Firestore
     try {
       await setDoc(userDocRef, {
-        id: usuario.id,
         nome: usuario.nome,
-        email: usuario.email,
-        empresaId: usuario.empresaId,
-        statusConta: usuario.statusConta,
-        dataCadastro: usuario.dataCadastro,
         ultimoAcesso: usuario.ultimoAcesso
       }, { merge: true });
     } catch (e) {
-      console.warn('[AuthService] Não foi possível salvar dados em users/{uid}:', e);
+      console.warn('[AuthService] Não foi possível atualizar último acesso em users/{uid}:', e);
     }
 
-    // Salva a sessão no safeStorage para persistência rápida e segura contra QuotaExceeded
-    safeStorage.setItem(SESSION_USER_KEY, JSON.stringify(usuario));
+    // Salva APENAS dados cosméticos não sensíveis para renderização da UI no safeStorage
+    const uiCache: UserUICache = {
+      nome: usuario.nome,
+      email: usuario.email,
+      photoURL: fbUser.photoURL || undefined,
+    };
+    safeStorage.setItem(SESSION_UI_KEY, JSON.stringify(uiCache));
+    safeStorage.removeItem(LEGACY_SESSION_KEY);
 
     // Garante que a empresa exista
     await EmpresaService.ensureEmpresaExists(usuario.empresaId, usuario);
@@ -202,15 +248,16 @@ export const AuthService = {
   },
 
   /**
-   * Realiza o login utilizando EXCLUSIVAMENTE e-mail e senha cadastrados via Firebase Auth.
-   * Cancela qualquer sessão ativa anterior antes de autenticar.
+   * Realiza o login utilizando EXCLUSIVAMENTE credenciais validadas pelo Firebase Auth.
+   * Limpa qualquer cache prévio antes de autenticar.
    */
   async login(email: string, password?: string): Promise<Usuario> {
     // 1. Limpa rigorosamente qualquer sessão e cache anteriores antes do novo login
     try {
       await signOut(auth);
     } catch (_) {}
-    safeStorage.removeItem(SESSION_USER_KEY);
+    safeStorage.removeItem(SESSION_UI_KEY);
+    safeStorage.removeItem(LEGACY_SESSION_KEY);
 
     const emailNormalizado = email.trim().toLowerCase();
     if (!emailNormalizado || !password) {
@@ -224,18 +271,40 @@ export const AuthService = {
       const userCredential = await signInWithEmailAndPassword(auth, emailNormalizado, password);
       fbUser = userCredential.user;
     } catch (error: any) {
-      // Em qualquer caso de erro de credenciais ou usuário não encontrado
+      // Em qualquer caso de erro de credenciais, limpa todo o cache
       await signOut(auth);
-      safeStorage.removeItem(SESSION_USER_KEY);
+      safeStorage.removeItem(SESSION_UI_KEY);
+      safeStorage.removeItem(LEGACY_SESSION_KEY);
       throw new Error(getFriendlyErrorMessage(error, 'E-mail ou senha incorretos. Verifique os dados digitados.'));
     }
 
-    // 3. Processa e valida a sessão associada ao uid do Firebase
+    // 3. Processa e valida a sessão associada ao uid nativo do Firebase Auth
     try {
+      // Se o usuário ainda não confirmou o e-mail E não possui empresa configurada (não concluiu onboarding)
+      if (!fbUser.emailVerified) {
+        const userDocRef = doc(db, 'users', fbUser.uid);
+        let userSnap;
+        try {
+          userSnap = await getDoc(userDocRef);
+        } catch (_) {}
+        
+        const hasEmpresa = userSnap?.exists() && userSnap.data()?.empresaId;
+        if (!hasEmpresa) {
+          const unverifiedError: any = new Error('EMAIL_NOT_VERIFIED');
+          unverifiedError.code = 'EMAIL_NOT_VERIFIED';
+          unverifiedError.user = fbUser;
+          throw unverifiedError;
+        }
+      }
+
       return await this.processUserSession(fbUser);
     } catch (err: any) {
+      if (err?.code === 'EMAIL_NOT_VERIFIED' || err?.message === 'EMAIL_NOT_VERIFIED') {
+        throw err;
+      }
       await signOut(auth);
-      safeStorage.removeItem(SESSION_USER_KEY);
+      safeStorage.removeItem(SESSION_UI_KEY);
+      safeStorage.removeItem(LEGACY_SESSION_KEY);
       throw new Error(getFriendlyErrorMessage(err, 'Não foi possível carregar as informações do seu perfil.'));
     }
   },
@@ -252,7 +321,8 @@ export const AuthService = {
     try {
       await signOut(auth);
     } catch (_) {}
-    localStorage.removeItem(SESSION_USER_KEY);
+    safeStorage.removeItem(SESSION_UI_KEY);
+    safeStorage.removeItem(LEGACY_SESSION_KEY);
 
     const emailNormalizado = email.trim().toLowerCase();
     if (!emailNormalizado || !password) {
@@ -275,77 +345,104 @@ export const AuthService = {
     }
 
     const uid = fbUser.uid;
-    const cleanUid = uid.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().substring(0, 20);
-    const empresaId = `emp_${cleanUid}`;
     const nomeDigitado = nomeCompleto?.trim() || fbUser.displayName || emailNormalizado.split('@')[0] || 'Usuário';
     const oficinaDigitada = nomeEmpresa?.trim() || 'DG Gestão em Orçamentos';
-    const now = new Date().toISOString();
 
-    // 2. Envia imediatamente o documento com a estrutura estrita de segurança para 'emailsAutorizados/{email}'
-    const emailAuthorizedDocRef = doc(db, 'emailsAutorizados', emailNormalizado);
+    await updateProfile(fbUser, { displayName: nomeDigitado });
+    // 2. Envia e-mail de verificação obrigatoriamente
     try {
-      await setDoc(emailAuthorizedDocRef, {
-        email: emailNormalizado,
-        status: 'pending',        // Garante que nasce pendente
-        ativo: false,             // Garante que nasce desativado administrativamente
-        bloqueado: false,
-        validade: now,            // Nasce com validade zerada/passada
-        nomeCompleto: nomeDigitado,
-        nomeEmpresa: oficinaDigitada,
-        empresaId
-      }, { merge: true });
-    } catch (e) {
-      console.warn('[AuthService] Falha ao criar documento em emailsAutorizados:', e);
+      await sendEmailVerification(fbUser);
+    } catch (_) {}
+
+    // 3. Validação de e-mail verificado
+    if (!fbUser.emailVerified) {
+      const unverifiedError: any = new Error('EMAIL_NOT_VERIFIED');
+      unverifiedError.code = 'EMAIL_NOT_VERIFIED';
+      unverifiedError.user = fbUser;
+      throw unverifiedError;
     }
 
+    const idToken = await fbUser.getIdToken(true);
+
+    // 4. Criação do tenant e autorização de forma estritamente server-authoritative no backend
+    const response = await fetch('/api/onboarding/trial', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`
+      },
+      body: JSON.stringify({
+        nomeResponsavel: nomeDigitado,
+        nomeEmpresa: oficinaDigitada,
+        perfilEmpresa: 'mecanica_pesada',
+      })
+    });
+
+    if (!response.ok) {
+      let erroMsg = 'Falha ao registrar tenant no servidor.';
+      try {
+        const errorJson = await response.json();
+        if (errorJson?.error) erroMsg = errorJson.error;
+      } catch (_) {}
+      throw new Error(erroMsg);
+    }
+
+    let serverResult: any;
+    try {
+      serverResult = await response.json();
+    } catch (_) {
+      throw new Error('Resposta inválida ou corrompida do servidor de cadastro.');
+    }
+
+    if (
+      !serverResult ||
+      typeof serverResult.empresaId !== 'string' ||
+      !serverResult.empresaId.trim() ||
+      typeof serverResult.dataExpiracaoTrial !== 'string' ||
+      !serverResult.dataExpiracaoTrial.trim() ||
+      typeof serverResult.trialAtivo !== 'boolean' ||
+      !serverResult.usuario ||
+      typeof serverResult.usuario.role !== 'string' ||
+      !serverResult.usuario.role.trim() ||
+      typeof serverResult.usuario.statusConta !== 'string' ||
+      !serverResult.usuario.statusConta.trim()
+    ) {
+      throw new Error('Dados administrativos incompletos retornados pelo servidor de cadastro.');
+    }
+
+    const empresaId: string = serverResult.empresaId;
+    const dataExpiracaoTrial: string = serverResult.dataExpiracaoTrial;
+    const userRole: string = serverResult.usuario.role;
+    const trialAtivo: boolean = serverResult.trialAtivo;
+    const statusConta: string = serverResult.usuario.statusConta;
+
+    const now = new Date().toISOString();
     const usuario: Usuario = {
       id: uid,
-      nome: nomeDigitado,
+      nome: serverResult.usuario.nome || nomeDigitado,
       email: emailNormalizado,
       empresaId,
-      statusConta: 'pending',
+      statusConta: statusConta as any,
       dataCadastro: now,
       ultimoAcesso: now
     };
 
-    // Salva em users/{uid}
-    try {
-      const userDocRef = doc(db, 'users', uid);
-      await setDoc(userDocRef, {
-        id: usuario.id,
-        nome: usuario.nome,
-        email: usuario.email,
-        empresaId: usuario.empresaId,
-        statusConta: usuario.statusConta,
-        dataCadastro: usuario.dataCadastro,
-        ultimoAcesso: usuario.ultimoAcesso
-      }, { merge: true });
-    } catch (e) {
-      console.warn('[AuthService] Erro ao salvar novo usuário em users/{uid}:', e);
-    }
+    localStorage.setItem('empresaId', empresaId);
+    localStorage.setItem('userEmail', emailNormalizado);
+    localStorage.setItem('userName', usuario.nome);
+    localStorage.setItem('userRole', userRole);
+    localStorage.setItem('trial_active', trialAtivo ? 'true' : 'false');
+    localStorage.setItem('trial_expiration', dataExpiracaoTrial);
+    localStorage.setItem('perfilEmpresa', 'mecanica_pesada');
 
-    // Salva perfil da empresa
-    await EmpresaService.saveEmpresa({
-      id: empresaId,
-      nomeFantasia: oficinaDigitada,
-      razaoSocial: oficinaDigitada,
-      cnpj: '00.000.000/0001-00',
-      inscricaoEstadual: 'Isento',
-      endereco: 'Rua Principal',
-      numero: '100',
-      bairro: 'Centro',
-      cidade: 'São Paulo',
-      estado: 'SP',
-      cep: '01000-000',
-      telefone: '(11) 99999-9999',
-      whatsapp: '(11) 99999-9999',
-      email: emailNormalizado,
-      usuarioProprietario: usuario,
-      createdAt: now,
-      updatedAt: now
-    }, emailNormalizado);
+    const uiCache: UserUICache = {
+      nome: usuario.nome,
+      email: usuario.email,
+      photoURL: fbUser.photoURL || undefined,
+    };
+    safeStorage.setItem(SESSION_UI_KEY, JSON.stringify(uiCache));
+    safeStorage.removeItem(LEGACY_SESSION_KEY);
 
-    safeStorage.setItem(SESSION_USER_KEY, JSON.stringify(usuario));
     return usuario;
   },
 
@@ -356,7 +453,8 @@ export const AuthService = {
     try {
       await signOut(auth);
     } catch (_) {}
-    safeStorage.removeItem(SESSION_USER_KEY);
+    safeStorage.removeItem(SESSION_UI_KEY);
+    safeStorage.removeItem(LEGACY_SESSION_KEY);
 
     const provider = new GoogleAuthProvider();
     let fbUser: User;
@@ -372,7 +470,8 @@ export const AuthService = {
       return await this.processUserSession(fbUser);
     } catch (err: any) {
       await signOut(auth);
-      safeStorage.removeItem(SESSION_USER_KEY);
+      safeStorage.removeItem(SESSION_UI_KEY);
+      safeStorage.removeItem(LEGACY_SESSION_KEY);
       throw new Error(getFriendlyErrorMessage(err, 'Falha ao processar login com o Google.'));
     }
   },
@@ -448,9 +547,31 @@ export const AuthService = {
         const isPago = status === 'pago';
         const now = Date.now();
         let isTrialExpired = false;
-        let diasRestantes = isPago ? 9999 : 7;
+        let diasRestantes = 0;
 
-        if (!isPago && status === 'trial') {
+        // Parse accessUntil / validade
+        let accessUntilMs: number | null = null;
+        const rawAccessField = data.accessUntil || data.validade;
+        if (rawAccessField) {
+          if (typeof rawAccessField.toMillis === 'function') accessUntilMs = rawAccessField.toMillis();
+          else if (typeof rawAccessField.toDate === 'function') accessUntilMs = rawAccessField.toDate().getTime();
+          else if (typeof rawAccessField.seconds === 'number') accessUntilMs = rawAccessField.seconds * 1000;
+          else if (typeof rawAccessField === 'string' || typeof rawAccessField === 'number') {
+            const d = new Date(rawAccessField);
+            if (!isNaN(d.getTime())) accessUntilMs = d.getTime();
+          }
+        }
+
+        let isPaidExpired = false;
+        if (isPago) {
+          if (accessUntilMs === null || isNaN(accessUntilMs) || now >= accessUntilMs) {
+            isPaidExpired = true;
+            diasRestantes = 0;
+          } else {
+            const diffMs = accessUntilMs - now;
+            diasRestantes = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+          }
+        } else if (status === 'trial') {
           if (criadoEmDate) {
             const diffMs = now - criadoEmDate.getTime();
             const diffDays = diffMs / (1000 * 60 * 60 * 24);
@@ -469,12 +590,19 @@ export const AuthService = {
               diasRestantes = 0;
             }
           }
-        } else if (!isPago && status === 'expired') {
+
+          if (accessUntilMs !== null && now >= accessUntilMs) {
+            isTrialExpired = true;
+            diasRestantes = 0;
+          }
+        } else if (status === 'expired' || status === 'cancelled' || status === 'blocked' || status === 'overdue') {
           isTrialExpired = true;
           diasRestantes = 0;
         }
 
-        const isAccessBlocked = isPago ? (ativo === false || data.bloqueado === true) : (ativo === false || data.bloqueado === true || isTrialExpired);
+        const isAccessBlocked = isPago 
+          ? (ativo === false || data.bloqueado === true || isPaidExpired)
+          : (ativo === false || data.bloqueado === true || isTrialExpired || status === 'expired');
 
         return {
           exists: true,
@@ -482,7 +610,7 @@ export const AuthService = {
           status,
           ativo,
           criadoEm,
-          isTrialExpired,
+          isTrialExpired: isTrialExpired || isPaidExpired,
           isAccessBlocked,
           diasRestantes
         };
@@ -498,28 +626,35 @@ export const AuthService = {
       ativo: false,
       criadoEm: null,
       isTrialExpired: false,
-      isAccessBlocked: false,
-      diasRestantes: 7
+      isAccessBlocked: true,
+      diasRestantes: 0
     };
   },
 
   /**
-   * Finaliza a sessão do usuário no cliente e no Firebase.
+   * Finaliza a sessão do usuário no cliente e no Firebase Auth.
+   * Remove imediatamente todos os dados de cache de UI.
    */
   async logout(): Promise<void> {
     await signOut(auth);
-    safeStorage.removeItem(SESSION_USER_KEY);
+    safeStorage.removeItem(SESSION_UI_KEY);
+    safeStorage.removeItem(LEGACY_SESSION_KEY);
   },
 
   /**
-   * Atualiza os dados de perfil do usuário logado na sessão ativa.
+   * Atualiza os dados de apresentação de UI do usuário logado na sessão ativa.
    */
   async updateSessionUser(usuario: Usuario): Promise<void> {
-    safeStorage.setItem(SESSION_USER_KEY, JSON.stringify(usuario));
+    const uiCache: UserUICache = {
+      nome: usuario.nome,
+      email: usuario.email,
+    };
+    safeStorage.setItem(SESSION_UI_KEY, JSON.stringify(uiCache));
   },
 
   /**
-   * Configura o ouvinte para sincronização e validação contínua da sessão ativa.
+   * Configura o ouvinte para sincronização e validação contínua da sessão ativa nativa do Firebase Auth.
+   * Esta é a única fonte de verdade para o ciclo de vida da autenticação.
    */
   subscribeToAuthState(onUserChanged: (user: Usuario | null) => void) {
     return onAuthStateChanged(auth, async (fbUser) => {
@@ -530,11 +665,13 @@ export const AuthService = {
         } catch (error) {
           console.error('[AuthService] Acesso negado ou erro ao sincronizar estado de autenticação:', error);
           await signOut(auth);
-          safeStorage.removeItem(SESSION_USER_KEY);
+          safeStorage.removeItem(SESSION_UI_KEY);
+          safeStorage.removeItem(LEGACY_SESSION_KEY);
           onUserChanged(null);
         }
       } else {
-        safeStorage.removeItem(SESSION_USER_KEY);
+        safeStorage.removeItem(SESSION_UI_KEY);
+        safeStorage.removeItem(LEGACY_SESSION_KEY);
         onUserChanged(null);
       }
     });

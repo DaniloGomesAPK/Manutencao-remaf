@@ -19,7 +19,8 @@ export const ServicoProvider: React.FC<ServicoProviderProps> = ({ children }) =>
   const [isLoadingServicos, setIsLoadingServicos] = useState<boolean>(false);
 
   const loadServicosForUser = async () => {
-    if (!auth || !auth.currentUser) {
+    const empresaId = auth?.currentUser?.empresaId?.trim();
+    if (!empresaId) {
       setServicos([]);
       setIsLoadingServicos(false);
       return;
@@ -27,7 +28,7 @@ export const ServicoProvider: React.FC<ServicoProviderProps> = ({ children }) =>
 
     setIsLoadingServicos(true);
     try {
-      const list = await ServicoInteligenteService.getServicos(auth.currentUser.empresaId);
+      const list = await ServicoInteligenteService.getServicos(empresaId);
       setServicos(list);
     } catch (err) {
       console.error('Erro ao carregar serviços inteligentes:', err);
@@ -42,9 +43,10 @@ export const ServicoProvider: React.FC<ServicoProviderProps> = ({ children }) =>
     // Escuta por atualizações de serviços para sincronizar estados
     const handleUpdate = (e: Event) => {
       const customEvent = e as CustomEvent;
-      if (customEvent.detail?.empresaId === auth?.currentUser?.empresaId) {
-        loadServicosForUser();
-      } else if (!customEvent.detail) {
+      const currentEmpresaId = auth?.currentUser?.empresaId?.trim();
+      if (!currentEmpresaId) return;
+
+      if (customEvent.detail?.empresaId === currentEmpresaId || !customEvent.detail) {
         loadServicosForUser();
       }
     };
@@ -55,11 +57,16 @@ export const ServicoProvider: React.FC<ServicoProviderProps> = ({ children }) =>
   }, [auth?.currentUser?.empresaId]);
 
   const saveServico = async (data: Servico): Promise<Servico> => {
+    const empresaId = auth?.currentUser?.empresaId?.trim();
+    if (!empresaId) {
+      throw new Error('Operação bloqueada: empresaId é obrigatório e não foi informado para salvar Serviço.');
+    }
+
     setIsLoadingServicos(true);
     try {
       const saved = await ServicoInteligenteService.saveServico({
         ...data,
-        empresaId: auth?.currentUser?.empresaId || 'default_tenant'
+        empresaId
       });
       await loadServicosForUser();
       return saved;
@@ -69,9 +76,14 @@ export const ServicoProvider: React.FC<ServicoProviderProps> = ({ children }) =>
   };
 
   const deleteServico = async (id: string): Promise<void> => {
+    const empresaId = auth?.currentUser?.empresaId?.trim();
+    if (!empresaId) {
+      throw new Error('Operação bloqueada: empresaId é obrigatório e não foi informado para excluir Serviço.');
+    }
+
     setIsLoadingServicos(true);
     try {
-      await ServicoInteligenteService.deleteServico(id, auth?.currentUser?.empresaId || 'default_tenant');
+      await ServicoInteligenteService.deleteServico(id, empresaId);
       await loadServicosForUser();
     } finally {
       setIsLoadingServicos(false);
@@ -79,7 +91,12 @@ export const ServicoProvider: React.FC<ServicoProviderProps> = ({ children }) =>
   };
 
   const registrarUtilizacao = async (id: string): Promise<void> => {
-    await ServicoInteligenteService.registrarUtilizacao(id, auth?.currentUser?.empresaId || 'default_tenant');
+    const empresaId = auth?.currentUser?.empresaId?.trim();
+    if (!empresaId) {
+      throw new Error('Operação bloqueada: empresaId é obrigatório para registrar utilização de Serviço.');
+    }
+
+    await ServicoInteligenteService.registrarUtilizacao(id, empresaId);
     await loadServicosForUser();
   };
 

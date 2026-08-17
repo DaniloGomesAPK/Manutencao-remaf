@@ -19,7 +19,8 @@ export const PrecificacaoProvider: React.FC<PrecificacaoProviderProps> = ({ chil
   const [isLoadingPrecificacoes, setIsLoadingPrecificacoes] = useState<boolean>(false);
 
   const loadPrecificacoesForUser = async () => {
-    if (!auth || !auth.currentUser) {
+    const empresaId = auth?.currentUser?.empresaId?.trim();
+    if (!empresaId) {
       setPrecificacoes([]);
       setIsLoadingPrecificacoes(false);
       return;
@@ -27,7 +28,7 @@ export const PrecificacaoProvider: React.FC<PrecificacaoProviderProps> = ({ chil
 
     setIsLoadingPrecificacoes(true);
     try {
-      const list = await PrecificacaoService.getPrecificacoes(auth.currentUser.empresaId);
+      const list = await PrecificacaoService.getPrecificacoes(empresaId);
       setPrecificacoes(list);
     } catch (err) {
       console.error('Erro ao carregar precificações:', err);
@@ -42,9 +43,10 @@ export const PrecificacaoProvider: React.FC<PrecificacaoProviderProps> = ({ chil
     // Escuta por atualizações de precificações para sincronizar estados
     const handleUpdate = (e: Event) => {
       const customEvent = e as CustomEvent;
-      if (customEvent.detail?.empresaId === auth?.currentUser?.empresaId) {
-        loadPrecificacoesForUser();
-      } else if (!customEvent.detail) {
+      const currentEmpresaId = auth?.currentUser?.empresaId?.trim();
+      if (!currentEmpresaId) return;
+
+      if (customEvent.detail?.empresaId === currentEmpresaId || !customEvent.detail) {
         loadPrecificacoesForUser();
       }
     };
@@ -55,11 +57,16 @@ export const PrecificacaoProvider: React.FC<PrecificacaoProviderProps> = ({ chil
   }, [auth?.currentUser?.empresaId]);
 
   const savePrecificacao = async (data: Precificacao): Promise<Precificacao> => {
+    const empresaId = auth?.currentUser?.empresaId?.trim();
+    if (!empresaId) {
+      throw new Error('Operação bloqueada: empresaId é obrigatório e não foi informado para salvar Precificação.');
+    }
+
     setIsLoadingPrecificacoes(true);
     try {
       const saved = await PrecificacaoService.savePrecificacao({
         ...data,
-        empresaId: auth?.currentUser?.empresaId || 'default_tenant'
+        empresaId
       });
       await loadPrecificacoesForUser();
       return saved;
@@ -69,9 +76,14 @@ export const PrecificacaoProvider: React.FC<PrecificacaoProviderProps> = ({ chil
   };
 
   const deletePrecificacao = async (id: string): Promise<void> => {
+    const empresaId = auth?.currentUser?.empresaId?.trim();
+    if (!empresaId) {
+      throw new Error('Operação bloqueada: empresaId é obrigatório e não foi informado para excluir Precificação.');
+    }
+
     setIsLoadingPrecificacoes(true);
     try {
-      await PrecificacaoService.deletePrecificacao(id, auth?.currentUser?.empresaId || 'default_tenant');
+      await PrecificacaoService.deletePrecificacao(id, empresaId);
       await loadPrecificacoesForUser();
     } finally {
       setIsLoadingPrecificacoes(false);

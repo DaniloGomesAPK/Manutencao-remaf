@@ -3,71 +3,83 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { EmailAutorizado, LicencaAtual, License, StatusLicenca } from '../models/License';
 
-const LOCAL_STORAGE_PREFIX = 'remaf_licenca_';
+const LOCAL_STORAGE_PREFIX = 'dg_license_';
 
 export const LicenseService = {
   /**
-   * Obtém a licença e status de autorização diretamente da ÚNICA fonte de verdade:
-   * a coleção emailsAutorizados/{email} no Firestore (com fallback no cache local para Offline First).
+   * Obtém a autorização e licença do usuário diretamente pelo e-mail
+   * na coleção emailsAutorizados/{email} no Firestore.
+   * Em caso de falha de conexão ou ausência, retorna null (Fail-Closed).
+   * O cache local é mantido exclusivamente para exibição de UI através de getLicencaLocal().
    */
   async getLicencaByEmail(email: string): Promise<LicencaAtual | null> {
     const emailNorm = email?.trim().toLowerCase();
     if (!emailNorm) return null;
 
-    let docData: EmailAutorizado | null = null;
-
-    // 1. Tenta carregar do Firestore emailsAutorizados/{email} (Única fonte de verdade)
+    // 1. Consulta o Firestore emailsAutorizados/{email} (Única fonte de verdade)
     try {
       const emailDocRef = doc(db, 'emailsAutorizados', emailNorm);
-      const snap = await getDoc(emailDocRef);
-      if (snap.exists()) {
-        docData = snap.data() as EmailAutorizado;
-        // Atualiza cache local para Offline First
-        try {
-          localStorage.setItem(`${LOCAL_STORAGE_PREFIX}${emailNorm}`, JSON.stringify(docData));
-        } catch (_) {}
+      const docSnap = await getDoc(emailDocRef);
+      
+      if (docSnap.exists()) {
+        const data = docSnap.data() as EmailAutorizado;
+        const lic = this.mapDocToLicencaAtual(data, emailNorm);
+        this.saveLicencaLocal(emailNorm, data);
+        return lic;
       }
     } catch (e) {
-      console.warn('[LicenseService] Falha ao ler emailsAutorizados no Firestore, recorrendo ao cache local:', e);
+      console.warn('[LicenseService] Falha ao consultar emailsAutorizados no Firestore (Fail-Closed):', e);
+      return null;
     }
 
-    // 2. Se não encontrou online / erro de rede, tenta recuperar do LocalStorage
-    if (!docData) {
-      try {
-        const cached = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}${emailNorm}`);
-        if (cached) {
-          docData = JSON.parse(cached) as EmailAutorizado;
-        }
-      } catch (_) {}
-    }
-
-    if (!docData) return null;
-
-    return this.mapDocToLicencaAtual(docData, emailNorm);
+    return null;
   },
 
   /**
-   * Mantém assinatura para compatibilidade com partes existentes que chamavam por empresaId ou uid
+   * Salva o cache de licença no LocalStorage
    */
-  async getLicenca(empresaIdOrEmail: string, uidOrEmail?: string): Promise<LicencaAtual | null> {
-    const emailToUse = empresaIdOrEmail.includes('@')
-      ? empresaIdOrEmail
-      : (uidOrEmail && uidOrEmail.includes('@') ? uidOrEmail : null);
-
-    if (emailToUse) {
-      return await this.getLicencaByEmail(emailToUse);
-    }
-
-    // Se só foi passado empresaId sem email, busca no cache local
+  saveLicencaLocal(email: string, data: EmailAutorizado): void {
     try {
-      const cached = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}${empresaIdOrEmail}`);
+      const emailNorm = email.trim().toLowerCase();
+      localStorage.setItem(`${LOCAL_STORAGE_PREFIX}${emailNorm}`, JSON.stringify(data));
+    } catch (_) {}
+  },
+
+  /**
+   * Recupera o cache de licença do LocalStorage
+   */
+  getLicencaLocal(email: string): LicencaAtual | null {
+    try {
+      const emailNorm = email.trim().toLowerCase();
+      const cached = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}${emailNorm}`);
       if (cached) {
-        const parsed = JSON.parse(cached);
-        return this.mapDocToLicencaAtual(parsed, parsed.email || '');
+        const parsed = JSON.parse(cached) as EmailAutorizado;
+        return this.mapDocToLicencaAtual(parsed, emailNorm);
+      }
+    } catch (_) {}
+    return null;
+  },
+
+  /**
+   * Busca por empresaId (retrocompatibilidade com fallback)
+   */
+  async getLicenca(empresaId: string): Promise<LicencaAtual | null> {
+    if (!empresaId) return null;
+
+    try {
+      const keys = Object.keys(localStorage).filter(k => k.startsWith(LOCAL_STORAGE_PREFIX));
+      for (const k of keys) {
+        const item = localStorage.getItem(k);
+        if (item) {
+          const parsed = JSON.parse(item) as EmailAutorizado;
+          if (parsed.empresaId === empresaId) {
+            return this.mapDocToLicencaAtual(parsed, parsed.email);
+          }
+        }
       }
     } catch (_) {}
 
@@ -75,20 +87,12 @@ export const LicenseService = {
   },
 
   /**
-   * Converte qualquer formato de data do Firestore (Timestamp, string, number, object) para Date
+   * Converte data ISO, Timestamp ou número para Date
    */
   parseCriadoEmDate(criadoEm: any): Date | null {
     if (!criadoEm) return null;
-    if (criadoEm instanceof Date) return isNaN(criadoEm.getTime()) ? null : criadoEm;
-    if (typeof criadoEm.toDate === 'function') {
-      try {
-        const d = criadoEm.toDate();
-        return isNaN(d.getTime()) ? null : d;
-      } catch (_) {}
-    }
-    if (typeof criadoEm === 'object' && typeof criadoEm.seconds === 'number') {
-      return new Date(criadoEm.seconds * 1000);
-    }
+    if (typeof criadoEm.toDate === 'function') return criadoEm.toDate();
+    if (typeof criadoEm === 'object' && typeof criadoEm.seconds === 'number') return new Date(criadoEm.seconds * 1000);
     if (typeof criadoEm === 'string' || typeof criadoEm === 'number') {
       const d = new Date(criadoEm);
       return isNaN(d.getTime()) ? null : d;
@@ -99,141 +103,54 @@ export const LicenseService = {
   /**
    * Mapeia o documento de emailsAutorizados para o objeto de LicencaAtual
    */
-  mapDocToLicencaAtual(docData: Partial<EmailAutorizado>, email: string): LicencaAtual {
-    const emailNorm = email || docData.email || '';
-    const empresaId = docData.empresaId || `emp_${emailNorm.replace(/[^a-zA-Z0-9]/g, '')}`;
-    const status: StatusLicenca = docData.status || 'pending';
-    const plano = docData.plano || null;
-    
-    const criadoEmDate = this.parseCriadoEmDate(docData.criadoEm || docData.createdAt);
-    const trialInicio = docData.trialInicio || (criadoEmDate ? criadoEmDate.toISOString() : null);
-    const trialFim = docData.trialFim || (criadoEmDate ? new Date(criadoEmDate.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString() : null);
-    const validade = docData.validade || null;
-    const ativo = docData.ativo ?? true;
-    const bloqueado = docData.bloqueado ?? false;
+  mapDocToLicencaAtual(data: EmailAutorizado, emailFallback: string): LicencaAtual {
+    const rawStatus = (data.status || 'pending') as StatusLicenca;
+    const isAtivo = data.ativo === true;
+    const isBloqueado = data.bloqueado === true;
+
+    let finalStatus: StatusLicenca = rawStatus;
+    if (isBloqueado) {
+      finalStatus = 'blocked';
+    } else if (!isAtivo) {
+      finalStatus = 'expired';
+    }
+
+    const rawAny = data as any;
+    const effectiveValidade = data.validade || data.trialFim || rawAny.dataExpiracaoTrial || null;
 
     return {
-      email: emailNorm,
-      empresaId,
-      status,
-      plano,
-      trialInicio,
-      trialFim,
-      validade,
-      ativo,
-      bloqueado,
-      criadoEm: docData.criadoEm || docData.createdAt,
-      createdAt: docData.createdAt || docData.criadoEm,
-      inicio: trialInicio || validade || (criadoEmDate ? criadoEmDate.toISOString() : new Date().toISOString()),
-      fim: validade || trialFim || new Date().toISOString(),
-      trialUtilizado: !!trialInicio || !!criadoEmDate,
-      ultimaAtualizacao: docData.ultimaAtualizacao || new Date().toISOString()
+      id: `lic_${data.email ? data.email.replace(/[^a-zA-Z0-9]/g, '') : emailFallback.replace(/[^a-zA-Z0-9]/g, '')}`,
+      email: data.email || emailFallback,
+      empresaId: data.empresaId || '',
+      status: finalStatus,
+      plano: data.plano || (data.status === 'trial' ? 'Trial 7 Dias' : null),
+      inicio: data.trialInicio || rawAny.dataCriacao || null,
+      fim: effectiveValidade,
+      trialInicio: data.trialInicio || rawAny.dataCriacao || null,
+      trialFim: data.trialFim || rawAny.dataExpiracaoTrial || null,
+      validade: effectiveValidade,
+      accessUntil: data.accessUntil || effectiveValidade,
+      ativo: isAtivo,
+      bloqueado: isBloqueado,
+      criadoEm: rawAny.dataCriacao || rawAny.createdAt || data.trialInicio || null,
+      ultimaAtualizacao: data.ultimaAtualizacao || rawAny.updatedAt || new Date().toISOString()
     };
   },
 
   /**
-   * Salva alterações de autorização exclusivamente no documento emailsAutorizados/{email}
-   */
-  async saveAutorizacao(email: string, updates: Partial<EmailAutorizado>): Promise<LicencaAtual> {
-    const emailNorm = email.trim().toLowerCase();
-    if (!emailNorm) throw new Error('E-mail obrigatório para salvar autorização.');
-
-    const emailDocRef = doc(db, 'emailsAutorizados', emailNorm);
-    
-    // Consulta existente para preservar trial se já iniciado
-    let existing: Partial<EmailAutorizado> | null = null;
-    try {
-      const snap = await getDoc(emailDocRef);
-      if (snap.exists()) existing = snap.data() as EmailAutorizado;
-    } catch (_) {}
-
-    const preservedTrialInicio = existing?.trialInicio || updates.trialInicio || null;
-    const preservedTrialFim = existing?.trialFim || updates.trialFim || null;
-
-    const finalData: EmailAutorizado = {
-      email: emailNorm,
-      empresaId: updates.empresaId || existing?.empresaId || `emp_${emailNorm.replace(/[^a-zA-Z0-9]/g, '')}`,
-      status: updates.status || existing?.status || 'pending',
-      plano: updates.plano !== undefined ? updates.plano : (existing?.plano || null),
-      trialInicio: preservedTrialInicio,
-      trialFim: preservedTrialFim,
-      validade: updates.validade !== undefined ? updates.validade : (existing?.validade || null),
-      ativo: updates.ativo !== undefined ? updates.ativo : (existing?.ativo ?? true),
-      bloqueado: updates.bloqueado !== undefined ? updates.bloqueado : (existing?.bloqueado ?? false),
-      ultimaAtualizacao: new Date().toISOString()
-    };
-
-    // Salva no Firestore
-    try {
-      await setDoc(emailDocRef, finalData, { merge: true });
-    } catch (e) {
-      console.warn('[LicenseService] Falha ao salvar emailsAutorizados no Firestore:', e);
-    }
-
-    // Salva no cache LocalStorage
-    try {
-      localStorage.setItem(`${LOCAL_STORAGE_PREFIX}${emailNorm}`, JSON.stringify(finalData));
-    } catch (_) {}
-
-    return this.mapDocToLicencaAtual(finalData, emailNorm);
-  },
-
-  /**
-   * Inicia o período de teste de 7 dias no documento emailsAutorizados/{email}.
-   * NUNCA reinicia nem recalcula o Trial se já foi iniciado anteriormente.
-   */
-  async iniciarTrial(email: string): Promise<LicencaAtual> {
-    const emailNorm = email.trim().toLowerCase();
-    const existing = await this.getLicencaByEmail(emailNorm);
-
-    // Se trial já tiver sido iniciado ou utilizado antes, impede novo início
-    if (existing?.trialInicio || existing?.trialFim) {
-      console.warn('[LicenseService] Trial já foi iniciado anteriormente para este e-mail.');
-      return existing;
-    }
-
-    const now = new Date();
-    const trialInicio = now.toISOString();
-    const trialFim = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
-
-    return await this.saveAutorizacao(emailNorm, {
-      status: 'trial',
-      plano: 'trial_7dias',
-      trialInicio,
-      trialFim,
-      validade: trialFim,
-      ativo: true,
-      bloqueado: false
-    });
-  },
-
-  /**
-   * Ativa a licença no documento emailsAutorizados/{email}
-   */
-  async ativarLicenca(email: string, plano: string, dias = 30): Promise<LicencaAtual> {
-    const emailNorm = email.trim().toLowerCase();
-    const now = new Date();
-    const validade = new Date(now.getTime() + dias * 24 * 60 * 60 * 1000).toISOString();
-
-    return await this.saveAutorizacao(emailNorm, {
-      status: 'active',
-      plano,
-      validade,
-      ativo: true,
-      bloqueado: false
-    });
-  },
-
-  /**
-   * Valida rigorosamente a autorização e vigência do documento
+   * Valida rigorosamente a autorização e vigência do documento.
+   * Exige:
+   * 1. ativo === true e bloqueado !== true.
+   * 2. Licenças pagas ('pago'/'active'): accessUntil existente, conversível e no futuro.
+   * 3. Trial ('trial'): data de expiração confiável (accessUntil, trialFim ou criadoEm válido) e vigência não expirada.
    */
   validarLicenca(licenca: LicencaAtual | EmailAutorizado | null): { isValid: boolean; status: StatusLicenca; reason?: string } {
     if (!licenca) {
       return { isValid: false, status: 'blocked', reason: 'Documento de e-mail autorizado não encontrado.' };
     }
 
-    if (licenca.bloqueado === true || licenca.ativo === false) {
-      return { isValid: false, status: 'expired', reason: 'Acesso bloqueado ou inativo.' };
+    if (licenca.bloqueado === true || licenca.ativo !== true) {
+      return { isValid: false, status: licenca.bloqueado === true ? 'blocked' : 'expired', reason: 'Acesso bloqueado ou inativo (ativo !== true).' };
     }
 
     const validStatuses: StatusLicenca[] = ['pending', 'trial', 'active', 'pago', 'expired', 'blocked', 'cancelled', 'overdue'];
@@ -241,21 +158,16 @@ export const LicenseService = {
       return { isValid: false, status: 'blocked', reason: 'Status de licença desconhecido.' };
     }
 
-    // Status "pago": Assinatura ou compra confirmada (acesso pleno e sem expiração de teste)
-    if (licenca.status === 'pago') {
-      return { isValid: true, status: 'pago' };
-    }
-
     if (licenca.status === 'blocked') {
       return { isValid: false, status: 'blocked', reason: 'Conta bloqueada administrativamente.' };
     }
 
-    if (licenca.status === 'expired') {
-      return { isValid: false, status: 'expired', reason: 'Licença de uso expirada.' };
-    }
-
     if (licenca.status === 'cancelled') {
       return { isValid: false, status: 'cancelled', reason: 'Assinatura cancelada.' };
+    }
+
+    if (licenca.status === 'expired') {
+      return { isValid: false, status: 'expired', reason: 'Licença de uso expirada.' };
     }
 
     if (licenca.status === 'overdue') {
@@ -268,19 +180,66 @@ export const LicenseService = {
 
     const now = Date.now();
 
-    // Valida data do Trial
+    // Helper para extrair ms de data de expiração / accessUntil
+    const getAccessUntilMs = (): number | null => {
+      const field = (licenca as any).accessUntil || licenca.validade || (licenca as LicencaAtual).fim;
+      if (!field) return null;
+      if (typeof field.toMillis === 'function') return field.toMillis();
+      if (typeof field.toDate === 'function') return field.toDate().getTime();
+      if (typeof field.seconds === 'number') return field.seconds * 1000;
+      if (typeof field === 'string' || typeof field === 'number') {
+        const d = new Date(field);
+        return isNaN(d.getTime()) ? null : d.getTime();
+      }
+      return null;
+    };
+
+    // Validação estrita para licenças pagas ('pago' ou 'active'):
+    // Exige estritamente accessUntil existente, conversível e no futuro (Fail-Closed)
+    if (licenca.status === 'pago' || licenca.status === 'active') {
+      const expMs = getAccessUntilMs();
+      if (expMs === null || isNaN(expMs) || now >= expMs) {
+        return { 
+          isValid: false, 
+          status: 'expired', 
+          reason: expMs === null 
+            ? 'Licença paga sem vigência confiável (accessUntil ausente ou inválido).' 
+            : 'Licença paga ou assinatura expirada.' 
+        };
+      }
+      return { isValid: true, status: licenca.status };
+    }
+
+    // Validação estrita para período de Trial (7 dias):
+    // Exige uma data de expiração confiável (accessUntil, trialFim ou data de criação com cálculo de 7 dias).
+    // Trial sem informação suficiente é bloqueado (Fail-Closed).
     if (licenca.status === 'trial') {
-      // 1. Verifica trialFim se presente
-      if (licenca.trialFim) {
-        const trialFimMs = new Date(licenca.trialFim).getTime();
-        if (!isNaN(trialFimMs) && now > trialFimMs) {
+      let hasReliableDate = false;
+
+      // 1. Verifica accessUntil / validade
+      const expMs = getAccessUntilMs();
+      if (expMs !== null && !isNaN(expMs)) {
+        hasReliableDate = true;
+        if (now >= expMs) {
           return { isValid: false, status: 'expired', reason: 'O período de teste gratuito de 7 dias expirou.' };
         }
       }
 
-      // 2. Verifica criadoEm diretamente (calcula se passaram mais de 7 dias)
+      // 2. Verifica trialFim
+      if (licenca.trialFim) {
+        const trialFimMs = new Date(licenca.trialFim).getTime();
+        if (!isNaN(trialFimMs)) {
+          hasReliableDate = true;
+          if (now > trialFimMs) {
+            return { isValid: false, status: 'expired', reason: 'O período de teste gratuito de 7 dias expirou.' };
+          }
+        }
+      }
+
+      // 3. Verifica criadoEm / trialInicio (limite estrito de 7 dias)
       const criadoEmDate = this.parseCriadoEmDate((licenca as any).criadoEm || (licenca as any).createdAt || (licenca as any).trialInicio);
-      if (criadoEmDate) {
+      if (criadoEmDate && !isNaN(criadoEmDate.getTime())) {
+        hasReliableDate = true;
         const diffMs = now - criadoEmDate.getTime();
         const diffDays = diffMs / (1000 * 60 * 60 * 24);
         if (diffDays > 7) {
@@ -288,19 +247,16 @@ export const LicenseService = {
         }
       }
 
-      return { isValid: true, status: 'trial' };
-    }
-
-    // Valida data do Plano Ativo
-    if (licenca.status === 'active') {
-      const dateToCheck = licenca.validade || (licenca as LicencaAtual).fim;
-      if (dateToCheck) {
-        const valMs = new Date(dateToCheck).getTime();
-        if (!isNaN(valMs) && now > valMs) {
-          return { isValid: false, status: 'expired', reason: 'Assinatura expirada.' };
-        }
+      // Se não existir nenhuma data válida para determinar o vencimento: FAIL CLOSED
+      if (!hasReliableDate) {
+        return { 
+          isValid: false, 
+          status: 'expired', 
+          reason: 'Período de teste sem data de expiração confiável. Acesso bloqueado.' 
+        };
       }
-      return { isValid: true, status: 'active' };
+
+      return { isValid: true, status: 'trial' };
     }
 
     return { isValid: false, status: licenca.status, reason: 'Licença inválida.' };
@@ -355,36 +311,5 @@ export const LicenseService = {
       ultimaSincronizacao: lic.ultimaAtualizacao,
       isActive: val.isValid
     };
-  },
-
-  // Métodos retrocompatíveis
-  async saveLicenca(empresaId: string, licenca: LicencaAtual, email?: string): Promise<LicencaAtual> {
-    const emailToUse = email || licenca.email;
-    if (emailToUse) {
-      return await this.saveAutorizacao(emailToUse, {
-        empresaId,
-        status: licenca.status,
-        plano: licenca.plano,
-        trialInicio: licenca.trialInicio,
-        trialFim: licenca.trialFim,
-        validade: licenca.validade || licenca.fim
-      });
-    }
-    return licenca;
-  },
-
-  async bloquearLicenca(email: string): Promise<License> {
-    const lic = await this.saveAutorizacao(email, { status: 'blocked', bloqueado: true });
-    return this.mapToLicenseObject(lic);
-  },
-
-  async liberarLicenca(email: string): Promise<License> {
-    const lic = await this.saveAutorizacao(email, { status: 'active', ativo: true, bloqueado: false });
-    return this.mapToLicenseObject(lic);
-  },
-
-  async encerrarPeriodoTeste(email: string): Promise<License> {
-    const lic = await this.saveAutorizacao(email, { status: 'expired', trialFim: new Date().toISOString() });
-    return this.mapToLicenseObject(lic);
   }
 };

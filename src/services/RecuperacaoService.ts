@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { FirestoreRepository } from './FirestoreRepository';
+import { FirestoreRepository, markAsDeletedLocally, deleteLocalStoreItem } from './FirestoreRepository';
 import { LogService } from './LogService';
 import { Cliente, Equipamento, OrdemDeServico, LancamentoFinanceiro } from '../types';
 
@@ -273,7 +273,7 @@ export const RecuperacaoService = {
       }
     }
 
-    // 1. Devolve o objeto original para a coleção de origem
+    // 1. Devolve o objeto original para a coleção de origem no Firestore e Cache Local
     const payload = registro.dadosOriginais || { id: registro.originalId, empresaId };
     await FirestoreRepository.add(registro.colecaoOrigem, payload, empresaId, userEmail);
 
@@ -290,29 +290,75 @@ export const RecuperacaoService = {
       `Registro de ${registro.tipo} (${registro.nome}) restaurado com sucesso.`
     );
 
-    // 4. Disparar evento customizado para atualizar a interface/Histórico imediatamente
+    // 4. Disparar eventos customizados para atualizar as interfaces imediatamente
     if (typeof window !== 'undefined') {
+      const cleanEmpresaId = empresaId.trim();
       window.dispatchEvent(
         new CustomEvent('ordens_servico_updated', {
           detail: {
             colecao: registro.colecaoOrigem,
             originalId: registro.originalId,
+            empresaId: cleanEmpresaId,
             timestamp: Date.now(),
           },
         })
       );
+      window.dispatchEvent(
+        new CustomEvent('lixeira_updated', {
+          detail: {
+            id: registro.id,
+            originalId: registro.originalId,
+            colecao: registro.colecaoOrigem,
+            empresaId: cleanEmpresaId,
+            timestamp: Date.now(),
+          },
+        })
+      );
+      if (registro.colecaoOrigem === 'clientes') {
+        window.dispatchEvent(new CustomEvent('clientes_updated', { detail: { empresaId: cleanEmpresaId } }));
+      } else if (registro.colecaoOrigem === 'ordensServico' || registro.colecaoOrigem === 'serviceOrders') {
+        window.dispatchEvent(new CustomEvent('ordens_servico_updated', { detail: { empresaId: cleanEmpresaId } }));
+      } else if (registro.colecaoOrigem === 'financeiro') {
+        window.dispatchEvent(new CustomEvent('financeiro_updated', { detail: { empresaId: cleanEmpresaId } }));
+      } else if (registro.colecaoOrigem === 'equipamentos') {
+        window.dispatchEvent(new CustomEvent('equipamentos_updated', { detail: { empresaId: cleanEmpresaId } }));
+      } else if (registro.colecaoOrigem === 'servicos_inteligentes' || registro.colecaoOrigem === 'servicos') {
+        window.dispatchEvent(new CustomEvent('servicos_updated', { detail: { empresaId: cleanEmpresaId } }));
+      }
     }
   },
 
   /**
    * Exclusão Definitiva (Hard Delete)
-   * Remove permanentemente o registro da Central de Recuperação.
+   * Remove permanentemente o registro da Central de Recuperação:
+   * 1. Exclui no Firestore (lixeira);
+   * 2. Remove do IndexedDB;
+   * 3. Remove do localStorage;
+   * 4. Mantém a marca de exclusão (tombstone) para impedir que cache antigo restaure o registro;
+   * 5. Atualiza a interface em tempo real.
    */
   async hardDeleteRecord(registro: RegistroLixeira, empresaId: string, userEmail?: string): Promise<void> {
     if (!registro || !empresaId) return;
 
-    // Remove definitivamente da lixeira
-    await FirestoreRepository.delete('lixeira', registro.id, empresaId, userEmail);
+    const cleanEmpresaId = empresaId.trim();
+
+    // 1. Exclui no Firestore (coleção 'lixeira') e limpa cache da lixeira
+    await FirestoreRepository.delete('lixeira', registro.id, cleanEmpresaId, userEmail);
+
+    // 2 & 3. Remove do IndexedDB e localStorage para a coleção de origem
+    if (registro.colecaoOrigem && registro.originalId) {
+      try {
+        await deleteLocalStoreItem(registro.colecaoOrigem, registro.originalId, cleanEmpresaId);
+      } catch (err) {
+        console.warn('[RecuperacaoService] Aviso ao limpar store local da coleção de origem:', err);
+      }
+
+      // 4. Garante que a marca de exclusão (tombstone) permaneça ativa para a coleção original
+      markAsDeletedLocally(registro.colecaoOrigem, registro.originalId, cleanEmpresaId);
+    }
+
+    // Marca também a lixeiraId como excluída definitivamente
+    markAsDeletedLocally('lixeira', registro.id, cleanEmpresaId);
 
     // Registra no LogService auditoria de Exclusão Definitiva
     LogService.logOperation(
@@ -331,5 +377,30 @@ export const RecuperacaoService = {
       undefined,
       'exclusao_definitiva_efetuada'
     );
+
+    // 5. Atualiza a interface
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('lixeira_updated', {
+          detail: {
+            id: registro.id,
+            originalId: registro.originalId,
+            colecao: registro.colecaoOrigem,
+            timestamp: Date.now(),
+          },
+        })
+      );
+      if (registro.colecaoOrigem === 'clientes') {
+        window.dispatchEvent(new CustomEvent('clientes_updated', { detail: { empresaId: cleanEmpresaId } }));
+      } else if (registro.colecaoOrigem === 'ordensServico' || registro.colecaoOrigem === 'serviceOrders') {
+        window.dispatchEvent(new CustomEvent('ordens_servico_updated', { detail: { empresaId: cleanEmpresaId } }));
+      } else if (registro.colecaoOrigem === 'financeiro') {
+        window.dispatchEvent(new CustomEvent('financeiro_updated', { detail: { empresaId: cleanEmpresaId } }));
+      } else if (registro.colecaoOrigem === 'equipamentos') {
+        window.dispatchEvent(new CustomEvent('equipamentos_updated', { detail: { empresaId: cleanEmpresaId } }));
+      } else if (registro.colecaoOrigem === 'servicos_inteligentes' || registro.colecaoOrigem === 'servicos') {
+        window.dispatchEvent(new CustomEvent('servicos_updated', { detail: { empresaId: cleanEmpresaId } }));
+      }
+    }
   }
 };

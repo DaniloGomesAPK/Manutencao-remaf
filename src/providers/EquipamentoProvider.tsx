@@ -19,7 +19,8 @@ export const EquipamentoProvider: React.FC<EquipamentoProviderProps> = ({ childr
   const [isLoadingEquipamentos, setIsLoadingEquipamentos] = useState<boolean>(false);
 
   const loadEquipamentosForUser = async () => {
-    if (!auth || !auth.currentUser) {
+    const empresaId = auth?.currentUser?.empresaId?.trim();
+    if (!empresaId) {
       setEquipamentos([]);
       setIsLoadingEquipamentos(false);
       return;
@@ -27,7 +28,7 @@ export const EquipamentoProvider: React.FC<EquipamentoProviderProps> = ({ childr
 
     setIsLoadingEquipamentos(true);
     try {
-      const list = await EquipamentoService.getEquipamentos(auth.currentUser.empresaId);
+      const list = await EquipamentoService.getEquipamentos(empresaId);
       setEquipamentos(list);
     } catch (err) {
       console.error('Erro ao carregar equipamentos:', err);
@@ -42,9 +43,10 @@ export const EquipamentoProvider: React.FC<EquipamentoProviderProps> = ({ childr
     // Escuta por atualizações de equipamentos ou de clientes (para atualizar o nome do cliente no cache)
     const handleUpdate = (e: Event) => {
       const customEvent = e as CustomEvent;
-      if (customEvent.detail?.empresaId === auth?.currentUser?.empresaId) {
-        loadEquipamentosForUser();
-      } else if (!customEvent.detail) {
+      const currentEmpresaId = auth?.currentUser?.empresaId?.trim();
+      if (!currentEmpresaId) return;
+
+      if (customEvent.detail?.empresaId === currentEmpresaId || !customEvent.detail) {
         loadEquipamentosForUser();
       }
     };
@@ -59,11 +61,16 @@ export const EquipamentoProvider: React.FC<EquipamentoProviderProps> = ({ childr
   }, [auth?.currentUser?.empresaId]);
 
   const saveEquipamento = async (data: Equipamento): Promise<Equipamento> => {
+    const empresaId = auth?.currentUser?.empresaId?.trim();
+    if (!empresaId) {
+      throw new Error('Operação bloqueada: empresaId é obrigatório e não foi informado para salvar Equipamento.');
+    }
+
     setIsLoadingEquipamentos(true);
     try {
       const saved = await EquipamentoService.saveEquipamento({
         ...data,
-        empresaId: auth?.currentUser?.empresaId || 'default_tenant'
+        empresaId
       });
       await loadEquipamentosForUser();
       return saved;
@@ -73,9 +80,14 @@ export const EquipamentoProvider: React.FC<EquipamentoProviderProps> = ({ childr
   };
 
   const deleteEquipamento = async (id: string): Promise<void> => {
+    const empresaId = auth?.currentUser?.empresaId?.trim();
+    if (!empresaId) {
+      throw new Error('Operação bloqueada: empresaId é obrigatório e não foi informado para excluir Equipamento.');
+    }
+
     setIsLoadingEquipamentos(true);
     try {
-      await EquipamentoService.deleteEquipamento(id, auth?.currentUser?.empresaId || 'default_tenant');
+      await EquipamentoService.deleteEquipamento(id, empresaId);
       await loadEquipamentosForUser();
     } finally {
       setIsLoadingEquipamentos(false);
@@ -83,7 +95,11 @@ export const EquipamentoProvider: React.FC<EquipamentoProviderProps> = ({ childr
   };
 
   const searchEquipamentos = async (term: string): Promise<Equipamento[]> => {
-    return await EquipamentoService.searchEquipamentos(auth?.currentUser?.empresaId || 'default_tenant', term);
+    const empresaId = auth?.currentUser?.empresaId?.trim();
+    if (!empresaId) {
+      throw new Error('Operação bloqueada: empresaId é obrigatório e não foi informado para buscar Equipamentos.');
+    }
+    return await EquipamentoService.searchEquipamentos(empresaId, term);
   };
 
   const reloadEquipamentos = async () => {

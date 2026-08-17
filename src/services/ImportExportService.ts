@@ -471,8 +471,14 @@ export const ImportExportService = {
     duplicateDecision: 'update' | 'ignore' | 'create_new',
     aliquotaEfetiva: number,
     existingServices: Servico[],
-    saveServicoFn: (s: Servico) => Promise<Servico>
+    saveServicoFn: (s: Servico) => Promise<Servico>,
+    empresaId?: string
   ): Promise<{ imported: number; updated: number; ignored: number }> {
+    const targetEmpresaId = empresaId?.trim();
+    if (!targetEmpresaId) {
+      throw new Error('Operação bloqueada: empresaId é obrigatório e não foi informado para salvar importação.');
+    }
+
     let imported = 0;
     let updated = 0;
     let ignored = 0;
@@ -509,6 +515,7 @@ export const ImportExportService = {
         if (duplicateDecision === 'update') {
           const updatedSrv: Servico = {
             ...existing,
+            empresaId: targetEmpresaId,
             categoria: record.categoria,
             descricao: record.descricao || existing.descricao,
             tipoCadastro: record.tipoCadastro,
@@ -540,7 +547,7 @@ export const ImportExportService = {
 
           const newSrv: Servico = {
             id: 'srv_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now(),
-            empresaId: existing.empresaId,
+            empresaId: targetEmpresaId,
             nome: newName,
             categoria: record.categoria,
             descricao: record.descricao,
@@ -570,7 +577,7 @@ export const ImportExportService = {
       } else {
         const newSrv: Servico = {
           id: 'srv_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now(),
-          empresaId: 'default_tenant',
+          empresaId: targetEmpresaId,
           nome: record.nome,
           categoria: record.categoria,
           descricao: record.descricao,

@@ -3,197 +3,293 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { doc, getDoc, setDoc, serverTimestamp, writeBatch, collection } from 'firebase/firestore';
-import { signInAnonymously, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import { auth, db } from '../config/firebase';
+import { 
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  updateProfile,
+  User
+} from 'firebase/auth';
+import { 
+  doc, 
+  getDoc 
+} from 'firebase/firestore';
 import { Usuario } from '../models/Usuario';
-import { Empresa } from '../models/Empresa';
-import { FirestoreRepository } from './FirestoreRepository';
-import { safeStorage } from '../utils/safeStorage';
-import { getFriendlyErrorMessage } from '../utils/errorUtils';
 
 export interface DadosCadastroTrial {
-  nomeResponsavel: string;
-  nomeEmpresa: string;
+  nome?: string;
+  nomeResponsavel?: string;
   email: string;
   whatsapp: string;
-  perfilEmpresa: string;
+  nomeEmpresa: string;
+  perfilEmpresa?: string;
+  senha?: string;
 }
 
-export async function cadastrarEmpresaTrial(dados: DadosCadastroTrial): Promise<{ empresaId: string; usuario: Usuario }> {
+export interface RegistroAuthPendente {
+  user: User;
+  email: string;
+  nomeResponsavel: string;
+  nomeEmpresa: string;
+  perfilEmpresa: string;
+  whatsapp: string;
+}
+
+/**
+ * Validação de requisitos de segurança para senha forte:
+ * - Mínimo 8 caracteres
+ * - Pelo menos uma letra maiúscula
+ * - Pelo menos uma letra minúscula
+ * - Pelo menos um número
+ * - Pelo menos um caractere especial
+ */
+export function validarForcaSenha(senha: string): { valida: boolean; mensagem?: string } {
+  if (!senha || senha.length < 8) {
+    return { valida: false, mensagem: 'A senha deve conter no mínimo 8 caracteres.' };
+  }
+  if (!/[A-Z]/.test(senha)) {
+    return { valida: false, mensagem: 'A senha deve conter pelo menos uma letra maiúscula.' };
+  }
+  if (!/[a-z]/.test(senha)) {
+    return { valida: false, mensagem: 'A senha deve conter pelo menos uma letra minúscula.' };
+  }
+  if (!/[0-9]/.test(senha)) {
+    return { valida: false, mensagem: 'A senha deve conter pelo menos um número.' };
+  }
+  if (!/[^A-Za-z0-9]/.test(senha)) {
+    return { valida: false, mensagem: 'A senha deve conter pelo menos um caractere especial (ex: @, #, $, %, etc).' };
+  }
+  return { valida: true };
+}
+
+/**
+ * Etapa 1 do Cadastro: Cria a conta de autenticação no Firebase Auth
+ * e envia imediatamente o e-mail de verificação (sendEmailVerification).
+ * NÃO cria empresa, tenant nem trial nesta etapa.
+ */
+export async function iniciarCadastroTrial(dados: DadosCadastroTrial): Promise<RegistroAuthPendente> {
+  const emailClean = dados.email.trim().toLowerCase();
+  const nomeFinal = dados.nomeResponsavel?.trim() || dados.nome?.trim() || 'Administrador';
+  const perfilEmpresaFinal = dados.perfilEmpresa || 'mecanica_pesada';
+  const nomeEmpresaFinal = dados.nomeEmpresa?.trim() || 'Minha Empresa';
+  const whatsappFinal = dados.whatsapp?.trim() || '';
+
+  // 1. Validação estrita de senha forte no cliente
+  const senhaInformada = dados.senha?.trim() || '';
+  const validacaoSenha = validarForcaSenha(senhaInformada);
+  if (!validacaoSenha.valida) {
+    throw new Error(validacaoSenha.mensagem || 'Senha inválida.');
+  }
+
+  let fbUser: User;
+
+  // 2. Criação do usuário no Firebase Auth
   try {
-    let fbUser = auth.currentUser;
-    let uid = fbUser?.uid;
-
-    // 1. Tenta autenticar no Firebase Auth se não estiver logado
-    if (!fbUser) {
-      try {
-        const userCredential = await signInAnonymously(auth);
-        fbUser = userCredential.user;
-        uid = fbUser.uid;
-      } catch (anonErr: any) {
-        console.warn('[TrialService] Login anônimo indisponível no Firebase Console, usando autenticação via e-mail:', anonErr?.code || anonErr?.message);
-        
-        const emailClean = dados.email.trim().toLowerCase();
-        const tempPassword = `Trial@${dados.whatsapp.replace(/\D/g, '') || '2026'}`;
-
-        try {
-          const userCred = await createUserWithEmailAndPassword(auth, emailClean, tempPassword);
-          fbUser = userCred.user;
-          uid = fbUser.uid;
-        } catch (createErr: any) {
-          if (createErr?.code === 'auth/email-already-in-use') {
-            try {
-              const loginCred = await signInWithEmailAndPassword(auth, emailClean, tempPassword);
-              fbUser = loginCred.user;
-              uid = fbUser.uid;
-            } catch (_) {
-              uid = `usr_${emailClean.replace(/[^a-z0-9]/g, '')}`;
-            }
-          } else {
-            uid = `usr_${emailClean.replace(/[^a-z0-9]/g, '')}_${Date.now()}`;
-          }
-        }
-      }
-    }
-
-    const emailClean = dados.email.trim().toLowerCase();
-    const finalUid = uid || `usr_trial_${Date.now()}`;
+    const userCred = await createUserWithEmailAndPassword(auth, emailClean, senhaInformada);
+    fbUser = userCred.user;
     
-    // Cria referência dos documentos
-    const empresaRef = doc(collection(db, 'empresas'));
-    const empresaId = empresaRef.id || `emp_${finalUid}`;
-    const emailDocRef = doc(db, 'emailsAutorizados', emailClean);
-
-    // Usamos um BATCH para garantir que ou grava nos dois locais ou não grava em nenhum
-    const batch = writeBatch(db);
-
-    // 1. Grava na coleção 'empresas'
-    batch.set(empresaRef, {
-      id: empresaId,
-      nomeResponsavel: dados.nomeResponsavel.trim(),
-      nomeEmpresa: dados.nomeEmpresa.trim(),
-      email: emailClean,
-      whatsapp: dados.whatsapp.trim(),
-      perfilEmpresa: dados.perfilEmpresa,
-      configuracaoInicialConcluida: false,
-      status: 'trial',
-      criadoEm: serverTimestamp() // Seguro: Horário do servidor
+    await updateProfile(fbUser, {
+      displayName: nomeFinal
     });
+  } catch (createErr: any) {
+    if (createErr?.code === 'auth/email-already-in-use') {
+      throw new Error('Este e-mail já está cadastrado no sistema. Por favor, faça login ou utilize a recuperação de senha.');
+    }
+    throw new Error(`Falha ao registrar credenciais de autenticação: ${createErr?.message || 'Erro desconhecido'}`);
+  }
 
-    // 2. Grava na coleção 'emailsAutorizados' (O que o sistema de licença busca)
-    batch.set(emailDocRef, {
-      email: emailClean,
-      empresaId: empresaId,
-      status: 'trial',
-      ativo: true,
-      criadoEm: serverTimestamp() // Seguro: Horário do servidor
-    });
+  // 3. Envio do e-mail de verificação oficial pelo Firebase Auth
+  try {
+    await sendEmailVerification(fbUser);
+  } catch (emailErr: any) {
+    console.warn('[TrialService] Falha no envio inicial do e-mail de verificação:', emailErr);
+    // Não interrompe o fluxo caso seja rate-limit momentâneo do Firebase
+  }
 
-    // Executa as duas gravações simultaneamente
-    await batch.commit();
+  return {
+    user: fbUser,
+    email: emailClean,
+    nomeResponsavel: nomeFinal,
+    nomeEmpresa: nomeEmpresaFinal,
+    perfilEmpresa: perfilEmpresaFinal,
+    whatsapp: whatsappFinal
+  };
+}
 
-    // 3. Inicializa o documento 'company_profile' no repositório com perfilEmpresa e configuracaoInicialConcluida=false
-    const initialCompanyProfile: Empresa = {
-      id: empresaId,
-      nomeFantasia: dados.nomeEmpresa.trim(),
-      razaoSocial: dados.nomeEmpresa.trim(),
-      cnpj: '',
-      inscricaoEstadual: '',
-      endereco: '',
-      numero: '',
-      bairro: '',
-      cidade: '',
-      estado: '',
-      cep: '',
-      telefone: dados.whatsapp.trim(),
-      whatsapp: dados.whatsapp.trim(),
-      email: emailClean,
-      perfilEmpresa: dados.perfilEmpresa,
-      configuracaoInicialConcluida: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+/**
+ * Reenvia o e-mail de confirmação pelo Firebase Auth
+ */
+export async function reenviarEmailVerificacao(user?: User | null): Promise<void> {
+  const targetUser = user || auth.currentUser;
+  if (!targetUser) {
+    throw new Error('Nenhum usuário conectado para reenviar confirmação.');
+  }
+  await sendEmailVerification(targetUser);
+}
 
+/**
+ * Etapa 2 do Cadastro: Verifica se o e-mail foi validado (user.reload() + emailVerified).
+ * Se verificado, solicita um novo ID Token e chama /api/onboarding/trial para ativar empresa e trial.
+ */
+export async function confirmarEmailEAtivarTrial(
+  fbUser: User,
+  dadosCadastro: {
+    nomeResponsavel: string;
+    nomeEmpresa: string;
+    perfilEmpresa: string;
+    whatsapp: string;
+  }
+): Promise<{ empresaId: string; usuario: Usuario }> {
+  // 1. Recarrega o estado do usuário no Firebase Auth para obter a confirmação mais recente
+  await fbUser.reload();
+
+  if (!fbUser.emailVerified) {
+    throw new Error('EMAIL_NAO_CONFIRMADO');
+  }
+
+  const emailClean = (fbUser.email || '').trim().toLowerCase();
+  const uid = fbUser.uid;
+
+  // 2. Obtenção do novo Firebase ID Token COM a claim email_verified atualizada
+  const idToken = await fbUser.getIdToken(true);
+
+  // 3. Solicitação Server-Authoritative de criação de Tenant e Período Trial
+  const response = await fetch('/api/onboarding/trial', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${idToken}`
+    },
+    body: JSON.stringify({
+      nomeResponsavel: dadosCadastro.nomeResponsavel,
+      nomeEmpresa: dadosCadastro.nomeEmpresa,
+      perfilEmpresa: dadosCadastro.perfilEmpresa,
+      whatsapp: dadosCadastro.whatsapp
+    })
+  });
+
+  if (!response.ok) {
+    let erroDetalhe = 'Falha ao processar cadastro no servidor.';
     try {
-      await FirestoreRepository.add<Empresa>('company_profile', initialCompanyProfile, empresaId, emailClean);
-    } catch (profileErr) {
-      console.warn('[TrialService] Aviso ao inicializar company_profile:', profileErr);
+      const errorJson = await response.json();
+      if (errorJson?.error) erroDetalhe = errorJson.error;
+    } catch (_) {}
+    throw new Error(erroDetalhe);
+  }
+
+  let serverResult: any;
+  try {
+    serverResult = await response.json();
+  } catch (_) {
+    throw new Error('Resposta inválida do servidor de cadastro.');
+  }
+
+  if (
+    !serverResult ||
+    typeof serverResult.empresaId !== 'string' ||
+    !serverResult.empresaId.trim() ||
+    typeof serverResult.dataExpiracaoTrial !== 'string' ||
+    !serverResult.dataExpiracaoTrial.trim() ||
+    typeof serverResult.trialAtivo !== 'boolean' ||
+    !serverResult.usuario ||
+    typeof serverResult.usuario.role !== 'string' ||
+    !serverResult.usuario.role.trim() ||
+    typeof serverResult.usuario.statusConta !== 'string' ||
+    !serverResult.usuario.statusConta.trim()
+  ) {
+    throw new Error('Resposta incompleta do servidor de cadastro. Operação abortada.');
+  }
+
+  const empresaId: string = serverResult.empresaId;
+  const dataExpiracaoTrial: string = serverResult.dataExpiracaoTrial;
+  const userRole: string = serverResult.usuario.role;
+  const statusConta: string = serverResult.usuario.statusConta;
+  const trialAtivo: boolean = serverResult.trialAtivo;
+
+  const usuario: Usuario = {
+    id: uid,
+    nome: serverResult.usuario.nome || dadosCadastro.nomeResponsavel,
+    email: emailClean,
+    empresaId: empresaId,
+    statusConta: statusConta as any,
+    dataCadastro: new Date().toISOString(),
+    ultimoAcesso: new Date().toISOString()
+  };
+
+  // 4. Atualiza o armazenamento local para persistência de sessão e cache não privilegiado de UI
+  localStorage.setItem('empresaId', empresaId);
+  localStorage.setItem('userEmail', emailClean);
+  localStorage.setItem('userName', usuario.nome);
+  localStorage.setItem('userRole', userRole);
+  localStorage.setItem('trial_active', trialAtivo ? 'true' : 'false');
+  localStorage.setItem('trial_expiration', dataExpiracaoTrial);
+  localStorage.setItem('perfilEmpresa', dadosCadastro.perfilEmpresa);
+
+  return {
+    empresaId,
+    usuario
+  };
+}
+
+export async function verificarAcessoTrial(empresaId: string): Promise<{ ativo: boolean; diasRestantes: number; expirado: boolean }> {
+  try {
+    if (!empresaId || !empresaId.trim()) {
+      return { ativo: false, diasRestantes: 0, expirado: true };
     }
 
-    // Salva no safeStorage para controle do PWA sem risco de QuotaExceeded
-    safeStorage.setItem('empresaId', empresaId);
-    safeStorage.setItem('remaf_empresa_id', empresaId);
-    safeStorage.setItem('empresaNome', dados.nomeEmpresa.trim());
+    const docRef = doc(db, 'empresas', empresaId);
+    const docSnap = await getDoc(docRef);
 
-    // Perfil da sessão ativa
-    const usuario: Usuario = {
-      id: finalUid,
-      nome: dados.nomeResponsavel.trim(),
-      email: emailClean,
-      empresaId: empresaId,
-      statusConta: 'active',
-      dataCadastro: new Date().toISOString(),
-      ultimoAcesso: new Date().toISOString(),
+    if (!docSnap.exists()) {
+      console.warn(`[TrialService] Empresa ${empresaId} não foi encontrada no Firestore.`);
+      return { ativo: false, diasRestantes: 0, expirado: true };
+    }
+
+    const data = docSnap.data();
+
+    // Se a empresa estiver bloqueada ou inativa -> Acesso negado
+    if (data.ativo === false || data.bloqueado === true) {
+      return { ativo: false, diasRestantes: 0, expirado: true };
+    }
+    
+    // Obter data de expiração oficial
+    const rawExpiration = data.dataExpiracaoTrial || data.dataExpiracaoLicenca || data.validade || data.accessUntil;
+    if (!rawExpiration) {
+      return { ativo: false, diasRestantes: 0, expirado: true };
+    }
+
+    let expMs: number | null = null;
+    if (typeof rawExpiration.toMillis === 'function') expMs = rawExpiration.toMillis();
+    else if (typeof rawExpiration.toDate === 'function') expMs = rawExpiration.toDate().getTime();
+    else if (typeof rawExpiration.seconds === 'number') expMs = rawExpiration.seconds * 1000;
+    else if (typeof rawExpiration === 'string' || typeof rawExpiration === 'number') {
+      const d = new Date(rawExpiration);
+      if (!isNaN(d.getTime())) expMs = d.getTime();
+    }
+
+    if (expMs === null || isNaN(expMs)) {
+      return { ativo: false, diasRestantes: 0, expirado: true };
+    }
+
+    const agora = Date.now();
+    const diffMs = expMs - agora;
+    const diasRestantes = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+    return {
+      ativo: diasRestantes > 0,
+      diasRestantes: Math.max(0, diasRestantes),
+      expirado: diasRestantes <= 0
     };
-
-    safeStorage.setItem('remaf_saas_user', JSON.stringify(usuario));
-
-    return { empresaId, usuario };
-  } catch (error: any) {
-    console.error('[TrialService] Erro ao cadastrar trial:', error);
-
-    if (
-      error?.code === 'permission-denied' ||
-      error?.message?.toLowerCase().includes('permission-denied') ||
-      error?.message?.toLowerCase().includes('insufficient permissions')
-    ) {
-      throw new Error('TRIAL_EXPIRADO');
-    }
-
-    throw new Error(getFriendlyErrorMessage(error, 'Falha ao realizar o cadastro do teste gratuito no sistema. Verifique os dados e tente novamente.'));
+  } catch (error) {
+    console.warn('[TrialService] Verificação de acesso capturada (Fail-Closed):', error);
+    return { ativo: false, diasRestantes: 0, expirado: true };
   }
 }
 
 export const TrialService = {
-  cadastrarEmpresaTrial,
-
-  /**
-   * Tenta ler os dados da empresa no Firestore para verificar a validade das regras de 7 dias.
-   * Se o Firestore retornar 'permission-denied', o trial expirou no servidor do Firebase.
-   */
-  async verificarAcessoEmpresa(empresaId: string): Promise<boolean> {
-    if (!empresaId) return false;
-
-    try {
-      if (!auth.currentUser) {
-        try {
-          await signInAnonymously(auth);
-        } catch (_) {}
-      }
-
-      const empresaDocRef = doc(db, 'empresas', empresaId);
-      const snapshot = await getDoc(empresaDocRef);
-
-      if (!snapshot.exists()) {
-        console.warn(`[TrialService] Empresa ${empresaId} não foi encontrada no Firestore.`);
-        return false;
-      }
-
-      return true;
-    } catch (error: any) {
-      console.warn('[TrialService] Verificação de acesso capturada:', error);
-
-      if (
-        error?.code === 'permission-denied' ||
-        error?.message?.toLowerCase().includes('permission-denied') ||
-        error?.message?.toLowerCase().includes('insufficient permissions') ||
-        error?.message?.toLowerCase().includes('permissão')
-      ) {
-        throw new Error('TRIAL_EXPIRADO');
-      }
-
-      throw error;
-    }
-  },
+  iniciarCadastroTrial,
+  reenviarEmailVerificacao,
+  confirmarEmailEAtivarTrial,
+  verificarAcessoTrial,
+  validarForcaSenha
 };

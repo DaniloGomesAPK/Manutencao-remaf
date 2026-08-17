@@ -124,11 +124,12 @@ export const safeStorage = {
     }
 
     // Limpa chaves de cache grandes ou transitórias
+    // NOTA: remaf_deleted_* são tombstones de exclusão permanentes e NUNCA devem ser apagadas pela limpeza automática
     try {
       const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
-        if (k && (k.startsWith('remaf_cache_') || k.startsWith('remaf_temp_') || k.startsWith('remaf_deleted_'))) {
+        if (k && (k.startsWith('remaf_cache_') || k.startsWith('remaf_temp_'))) {
           keysToRemove.push(k);
         }
       }

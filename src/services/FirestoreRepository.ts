@@ -251,7 +251,9 @@ export const FirestoreRepository = {
   },
 
   /**
-   * Exclui um documento do Firestore e do banco local
+   * Exclui um documento do Firestore e do banco local.
+   * Somente remove do cache local após confirmação de sucesso do deleteDoc() no Firestore.
+   * Se o Firestore falhar, registra erro no console e lança exceção (Fail-Closed).
    */
   async delete(
     colecao: MappedCollectionName | string,
@@ -262,21 +264,45 @@ export const FirestoreRepository = {
     const startTime = performance.now();
     const validTenantId = validateEmpresaId(empresaId, 'delete', colecao, userEmail);
 
-    await deleteLocalStoreItem(colecao, docId, validTenantId);
+    if (!docId || typeof docId !== 'string' || !docId.trim()) {
+      const errorMsg = `[FirestoreRepository] ID do documento é obrigatório para exclusão na coleção ${colecao}.`;
+      console.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+    const cleanDocId = docId.trim();
 
     if (this.isOnline()) {
       try {
         const collectionPath = getTenantCollectionPath(colecao, validTenantId, 'delete');
-        const docRef = doc(db, collectionPath, docId);
+        const docRef = doc(db, collectionPath, cleanDocId);
+        
+        // 1. Executa deleteDoc no Firestore na coleção oficial do inquilino
         await deleteDoc(docRef);
 
-        LogService.logOperation(userEmail || 'usuario', colecao, docId, 'delete', performance.now() - startTime);
-      } catch (error) {
-        LogService.logOperation(userEmail || 'usuario', colecao, docId, 'delete', performance.now() - startTime, error);
-        console.warn(`[FirestoreRepository] Falha ao excluir no Firestore (${colecao}/${docId}):`, error);
+        console.log(`[DELETE CLIENTE] FIRESTORE DELETE SUCCESS`, {
+          collection: colecao,
+          path: `${collectionPath}/${cleanDocId}`,
+          empresaId: validTenantId,
+          docId: cleanDocId
+        });
+
+        // 2. Somente após confirmação de sucesso do Firestore, remove do cache local
+        await deleteLocalStoreItem(colecao, cleanDocId, validTenantId);
+
+        LogService.logOperation(userEmail || 'usuario', colecao, cleanDocId, 'delete', performance.now() - startTime);
+      } catch (error: any) {
+        console.error(`[DELETE CLIENTE] FIRESTORE DELETE ERROR: ${error?.message || error}`, error);
+        LogService.logOperation(userEmail || 'usuario', colecao, cleanDocId, 'delete', performance.now() - startTime, error);
+        console.error(`[FirestoreRepository] Falha ao excluir no Firestore (${colecao}/${cleanDocId}):`, error);
+        // Não apaga do armazenamento local e propaga o erro (Fail-Closed)
+        throw new Error(error?.message || `Falha ao excluir o documento no Firestore na coleção ${colecao}.`);
       }
     } else {
-      LogService.logOperation(userEmail || 'usuario', colecao, docId, 'delete', performance.now() - startTime, 'Offline mode - deleted locally');
+      const offlineMsg = `Não foi possível excluir no momento: dispositivo sem conexão com o servidor.`;
+      console.error(`[DELETE CLIENTE] FIRESTORE DELETE ERROR: ${offlineMsg}`);
+      LogService.logOperation(userEmail || 'usuario', colecao, cleanDocId, 'delete', performance.now() - startTime, offlineMsg);
+      console.error(`[FirestoreRepository] ${offlineMsg}`);
+      throw new Error(offlineMsg);
     }
 
     notifySyncStatusChange();
@@ -588,16 +614,18 @@ async function getLocalStoreItems<T>(colecao: string, empresaId: string): Promis
     const idbName = mapCollectionToStoreName(colecao);
     if (idbName) {
       const dbInstance = await openDB();
-      const items = await new Promise<T[]>((resolve, reject) => {
-        const transaction = dbInstance.transaction(idbName, 'readonly');
-        const store = transaction.objectStore(idbName);
-        const request = store.getAll();
-        request.onsuccess = () => resolve((request.result as T[]) || []);
-        request.onerror = () => reject(request.error);
-      });
+      if (dbInstance.objectStoreNames.contains(idbName)) {
+        const items = await new Promise<T[]>((resolve, reject) => {
+          const transaction = dbInstance.transaction(idbName, 'readonly');
+          const store = transaction.objectStore(idbName);
+          const request = store.getAll();
+          request.onsuccess = () => resolve((request.result as T[]) || []);
+          request.onerror = () => reject(request.error);
+        });
 
-      const filtered = items.filter((i: any) => (!i.empresaId || i.empresaId === validTenantId) && !deletedIds.includes(i.id));
-      if (filtered.length > 0) return filtered;
+        const filtered = items.filter((i: any) => (!i.empresaId || i.empresaId === validTenantId) && !deletedIds.includes(i.id));
+        if (filtered.length > 0) return filtered;
+      }
     }
   } catch (_) {}
 
@@ -627,13 +655,15 @@ async function saveLocalStoreItem(colecao: string, item: any): Promise<void> {
     const idbName = mapCollectionToStoreName(colecao);
     if (idbName) {
       const dbInstance = await openDB();
-      await new Promise<void>((resolve, reject) => {
-        const transaction = dbInstance.transaction(idbName, 'readwrite');
-        const store = transaction.objectStore(idbName);
-        const request = store.put(item);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-      });
+      if (dbInstance.objectStoreNames.contains(idbName)) {
+        await new Promise<void>((resolve, reject) => {
+          const transaction = dbInstance.transaction(idbName, 'readwrite');
+          const store = transaction.objectStore(idbName);
+          const request = store.put(item);
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+      }
     }
   } catch (idbErr) {
     console.warn(`[FirestoreRepository] Falha ao persistir item no IndexedDB para ${colecao}:`, idbErr);
@@ -679,11 +709,13 @@ async function saveLocalStoreBatch(colecao: string, items: any[], empresaId: str
     const idbName = mapCollectionToStoreName(colecao);
     if (idbName) {
       const dbInstance = await openDB();
-      const tx = dbInstance.transaction(idbName, 'readwrite');
-      const store = tx.objectStore(idbName);
-      for (const item of items) {
-        unmarkAsDeletedLocally(colecao, item.id, validTenantId);
-        store.put(item);
+      if (dbInstance.objectStoreNames.contains(idbName)) {
+        const tx = dbInstance.transaction(idbName, 'readwrite');
+        const store = tx.objectStore(idbName);
+        for (const item of items) {
+          unmarkAsDeletedLocally(colecao, item.id, validTenantId);
+          store.put(item);
+        }
       }
     }
   } catch (idbErr) {
@@ -708,29 +740,38 @@ async function saveLocalStoreBatch(colecao: string, items: any[], empresaId: str
   }
 }
 
-async function deleteLocalStoreItem(colecao: string, id: string, empresaId: string): Promise<void> {
+export async function deleteLocalStoreItem(colecao: string, id: string, empresaId: string): Promise<void> {
   const validTenantId = validateEmpresaId(empresaId, 'deleteLocalStoreItem', colecao);
   markAsDeletedLocally(colecao, id, validTenantId);
 
+  // 1. Tenta remover do IndexedDB (falhas no IndexedDB não bloqueiam limpeza do localStorage)
   try {
     const idbName = mapCollectionToStoreName(colecao);
     if (idbName) {
       const dbInstance = await openDB();
-      await new Promise<void>((resolve, reject) => {
-        const transaction = dbInstance.transaction(idbName, 'readwrite');
-        const store = transaction.objectStore(idbName);
-        const request = store.delete(id);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-      });
+      if (dbInstance.objectStoreNames.contains(idbName)) {
+        await new Promise<void>((resolve, reject) => {
+          const transaction = dbInstance.transaction(idbName, 'readwrite');
+          const store = transaction.objectStore(idbName);
+          const request = store.delete(id);
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+      }
     }
+  } catch (e) {
+    console.warn(`[FirestoreRepository] Falha ao excluir do IndexedDB (${colecao}/${id}), prosseguindo com limpeza de localStorage:`, e);
+  }
 
+  // 2. Remove de todas as chaves pertinentes no localStorage
+  try {
     const keys = [
       `remaf_cache_${colecao}_${validTenantId}`,
       `remaf_cache_ordensServico_${validTenantId}`,
       `remaf_cache_service_orders_${validTenantId}`,
       `remaf_prod_service_orders_cache_${validTenantId}`,
-      `remaf_service_orders_${validTenantId}`
+      `remaf_service_orders_${validTenantId}`,
+      `remaf_cache_lixeira_${validTenantId}`
     ];
 
     for (const key of keys) {
@@ -738,25 +779,28 @@ async function deleteLocalStoreItem(colecao: string, id: string, empresaId: stri
       if (cached) {
         let list: any[] = JSON.parse(cached);
         if (Array.isArray(list)) {
-          list = list.filter((x) => x.id !== id);
+          list = list.filter((x) => x.id !== id && (x as any).originalId !== id);
           safeStorage.setItem(key, JSON.stringify(list));
         }
       }
     }
   } catch (e) {
-    console.warn(`[FirestoreRepository] Erro na exclusão local de ${colecao}:`, e);
+    console.warn(`[FirestoreRepository] Erro na exclusão de localStorage para ${colecao}:`, e);
   }
 }
 
-function mapCollectionToStoreName(colecao: string): string {
-  if (colecao === 'service_orders' || colecao === 'ordensServico') return 'service_orders';
-  if (colecao === 'company_profile') return 'company_profile';
+export function mapCollectionToStoreName(colecao: string): string {
+  if (colecao === 'ordensServico' || colecao === 'serviceOrders' || colecao === 'service_orders') return 'serviceOrders';
+  if (colecao === 'servicos_inteligentes' || colecao === 'servicos') return 'servicos';
+  if (colecao === 'precificacoes' || colecao === 'precificacao') return 'precificacao';
   if (colecao === 'clientes') return 'clientes';
   if (colecao === 'equipamentos') return 'equipamentos';
-  if (colecao === 'servicos_inteligentes' || colecao === 'servicos') return 'servicos_inteligentes';
-  if (colecao === 'precificacoes' || colecao === 'precificacao') return 'precificacoes';
+  if (colecao === 'lixeira') return 'lixeira';
   if (colecao === 'financeiro') return 'financeiro';
+  if (colecao === 'historicos') return 'historicos';
+  if (colecao === 'relatorios') return 'relatorios';
   if (colecao === 'configuracoes') return 'configuracoes';
+  if (colecao === 'company_profile' || colecao === 'empresa') return 'company_profile';
   return colecao;
 }
 

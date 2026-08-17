@@ -62,7 +62,12 @@ const getFitDimensions = (
  * and custom corporate brand colors (#003366 Deep Blue, #FF6600 Orange, and clean spacing).
  */
 export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> => {
-  const company = await EmpresaService.getEmpresa(os.empresaId || 'emp_daniloempreendimentos');
+  const targetEmpresaId = os.empresaId?.trim();
+  if (!targetEmpresaId) {
+    throw new Error('Erro de geração de PDF: vínculo empresarial ausente na Ordem de Serviço.');
+  }
+
+  const company = await EmpresaService.getEmpresa(targetEmpresaId);
   const perfilConfig = getPerfilConfig(company?.perfilEmpresa);
   const docTitleLabel = perfilConfig.labels.ordemServico || 'Ordem de Serviço';
   const { jsPDF } = await import('jspdf');

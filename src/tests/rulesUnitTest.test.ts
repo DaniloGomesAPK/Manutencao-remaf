@@ -93,7 +93,7 @@ export async function runRulesUnitTests() {
   // 3. Stress Test de Múltiplas Consultas Simultâneas de Licença (Simulação de Alto Tráfego Multi-Aparelho)
   try {
     const empresaIdStress = 'emp_stress_' + Date.now();
-    const promises = Array.from({ length: 20 }, () => LicenseService.getLicenca(empresaIdStress, 'user_stress_123'));
+    const promises = Array.from({ length: 20 }, () => LicenseService.getLicenca(empresaIdStress));
     const results = await Promise.all(promises);
 
     const allDefined = results.every(r => r !== null && r.empresaId === empresaIdStress);

@@ -37,7 +37,7 @@ export const LicenseProvider: React.FC<LicenseProviderProps> = ({ children }) =>
 
     setIsLoadingLicense(true);
 
-    // Listener permanente onSnapshot() na coleção emailsAutorizados/{email}
+    // Listener permanente onSnapshot() na coleção emailsAutorizados/{email} (Somente Leitura)
     const docRef = doc(db, 'emailsAutorizados', userEmail);
 
     const unsubscribe = onSnapshot(
@@ -88,90 +88,15 @@ export const LicenseProvider: React.FC<LicenseProviderProps> = ({ children }) =>
             );
           }
         } else {
-          // Documento não existe em emailsAutorizados: Verificar se é uma Empresa Trial em empresas/{empresaId}
-          const empresaId = auth?.currentUser?.empresaId || localStorage.getItem('empresaId') || `emp_${auth?.currentUser?.id}`;
-          
-          if (empresaId) {
-            try {
-              const empRef = doc(db, 'empresas', empresaId);
-              const empSnap = await getDoc(empRef);
-
-              if (empSnap.exists()) {
-                const empData = empSnap.data();
-                const empCriadoEm = empData.criadoEm;
-                let empCriadoEmDate: Date | null = null;
-                if (empCriadoEm) {
-                  if (typeof empCriadoEm.toDate === 'function') empCriadoEmDate = empCriadoEm.toDate();
-                  else if (typeof empCriadoEm === 'object' && typeof empCriadoEm.seconds === 'number') empCriadoEmDate = new Date(empCriadoEm.seconds * 1000);
-                  else if (typeof empCriadoEm === 'string' || typeof empCriadoEm === 'number') empCriadoEmDate = new Date(empCriadoEm);
-                }
-
-                const isEmpPago = empData.status === 'pago';
-                let isEmpTrialExpired = false;
-                if (!isEmpPago && empCriadoEmDate && !isNaN(empCriadoEmDate.getTime())) {
-                  const diffDays = (Date.now() - empCriadoEmDate.getTime()) / (1000 * 60 * 60 * 24);
-                  if (diffDays > 7) isEmpTrialExpired = true;
-                }
-
-                const resolvedStatus: StatusLicenca = isEmpPago ? 'pago' : (isEmpTrialExpired ? 'expired' : ((empData.status as StatusLicenca) || 'trial'));
-
-                const licTrial: LicencaAtual = {
-                  email: userEmail,
-                  empresaId: empresaId,
-                  status: resolvedStatus,
-                  plano: isEmpPago ? (empData.plano || 'Plano Pago') : (isEmpTrialExpired ? null : 'Trial 7 Dias'),
-                  validade: isEmpPago ? (empData.validade || null) : (isEmpTrialExpired ? new Date().toISOString() : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()),
-                  ativo: isEmpPago ? (empData.ativo ?? true) : !isEmpTrialExpired,
-                  bloqueado: isEmpPago ? (empData.bloqueado ?? false) : isEmpTrialExpired,
-                  criadoEm: empData.criadoEm,
-                  trialInicio: empCriadoEmDate ? empCriadoEmDate.toISOString() : new Date().toISOString(),
-                  trialFim: isEmpPago ? null : (empCriadoEmDate ? new Date(empCriadoEmDate.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString() : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()),
-                };
-                const mappedTrial = LicenseService.mapToLicenseObject(licTrial);
-                const valTrial = LicenseService.validarLicenca(licTrial);
-
-                setLicencaAtual(licTrial);
-                setLicense(mappedTrial);
-                setIsValid(valTrial.isValid);
-                setIsLoadingLicense(false);
-                return;
-              }
-            } catch (err: any) {
-              console.warn('[LicenseProvider] Leitura de empresa trial falhou:', err);
-              if (
-                err?.code === 'permission-denied' ||
-                err?.message?.toLowerCase().includes('permission-denied') ||
-                err?.message?.toLowerCase().includes('insufficient permissions') ||
-                err?.message?.toLowerCase().includes('permissão')
-              ) {
-                // Bloqueio de 7 dias acionado pelas Security Rules do Firebase!
-                const licExpirada: LicencaAtual = {
-                  email: userEmail,
-                  empresaId: empresaId,
-                  status: 'expired',
-                  plano: null,
-                  validade: new Date().toISOString(),
-                  ativo: false,
-                  bloqueado: true,
-                  trialInicio: null,
-                  trialFim: null,
-                };
-                setLicencaAtual(licExpirada);
-                setLicense(LicenseService.mapToLicenseObject(licExpirada));
-                setIsValid(false);
-                setIsLoadingLicense(false);
-                return;
-              }
-            }
-          }
-
-          console.warn(`[LicenseProvider] Documento emailsAutorizados/${userEmail} não existe.`);
+          // Documento não existe em emailsAutorizados: FAIL CLOSED (Não inventa tenant nem trial local)
+          console.warn(`[LicenseProvider] Documento emailsAutorizados/${userEmail} não encontrado. Fail-Closed.`);
           const licPendente: LicencaAtual = {
             email: userEmail,
-            empresaId: empresaId || 'emp_default',
+            empresaId: auth?.currentUser?.empresaId || '',
             status: 'pending',
             plano: null,
             validade: null,
+            accessUntil: null,
             ativo: false,
             bloqueado: false,
             trialInicio: null,
@@ -183,18 +108,19 @@ export const LicenseProvider: React.FC<LicenseProviderProps> = ({ children }) =>
           setIsLoadingLicense(false);
         }
       },
-      async (error) => {
+      (error) => {
         console.warn('[LicenseProvider] Erro no listener onSnapshot (provavelmente offline):', error);
-        // Fallback para Offline First usando cache local
-        const cachedLic = await LicenseService.getLicencaByEmail(userEmail);
+        // Cache local estritamente para visualização de UI - NUNCA concede acesso/autorização (Fail-Closed)
+        const cachedLic = LicenseService.getLicencaLocal(userEmail);
         if (cachedLic) {
-          const val = LicenseService.validarLicenca(cachedLic);
           setLicencaAtual(cachedLic);
           setLicense(LicenseService.mapToLicenseObject(cachedLic));
-          setIsValid(val.isValid);
         } else {
-          setIsValid(false);
+          setLicencaAtual(null);
+          setLicense(null);
         }
+        // Em erro de comunicação com a fonte oficial: isValid = false (Fail-Closed)
+        setIsValid(false);
         setIsLoadingLicense(false);
       }
     );
@@ -267,96 +193,13 @@ export const LicenseProvider: React.FC<LicenseProviderProps> = ({ children }) =>
     return val.isValid;
   };
 
-  const ativar = async (plano = 'Plano Mensal'): Promise<License> => {
-    if (!userEmail) throw new Error('Usuário não autenticado.');
-    setIsLoadingLicense(true);
-    try {
-      const lic = await LicenseService.ativarLicenca(userEmail, plano, 30);
-      setLicencaAtual(lic);
-      const mapped = LicenseService.mapToLicenseObject(lic);
-      setLicense(mapped);
-      setIsValid(true);
-      NotificationService.notify(
-        'success',
-        'Licença Ativada',
-        `Sua licença (${plano}) foi ativada com sucesso.`
-      );
-      return mapped;
-    } finally {
-      setIsLoadingLicense(false);
-    }
-  };
-
-  const renovar = async (dias = 365): Promise<License> => {
-    if (!userEmail) throw new Error('Usuário não autenticado.');
-    setIsLoadingLicense(true);
-    try {
-      const lic = await LicenseService.ativarLicenca(userEmail, 'Plano Anual', dias);
-      setLicencaAtual(lic);
-      const mapped = LicenseService.mapToLicenseObject(lic);
-      setLicense(mapped);
-      setIsValid(true);
-      return mapped;
-    } finally {
-      setIsLoadingLicense(false);
-    }
-  };
-
-  const bloquear = async (): Promise<License> => {
-    if (!userEmail) throw new Error('Usuário não autenticado.');
-    const mapped = await LicenseService.bloquearLicenca(userEmail);
-    setIsValid(false);
-    return mapped;
-  };
-
-  const liberar = async (): Promise<License> => {
-    if (!userEmail) throw new Error('Usuário não autenticado.');
-    const mapped = await LicenseService.liberarLicenca(userEmail);
-    setIsValid(true);
-    return mapped;
-  };
-
-  const iniciarTrial = async (): Promise<License> => {
-    if (!userEmail) throw new Error('Usuário não autenticado.');
-    setIsLoadingLicense(true);
-    try {
-      const lic = await LicenseService.iniciarTrial(userEmail);
-      setLicencaAtual(lic);
-      const mapped = LicenseService.mapToLicenseObject(lic);
-      setLicense(mapped);
-      const val = LicenseService.validarLicenca(lic);
-      setIsValid(val.isValid);
-      NotificationService.notify(
-        'success',
-        'Teste Gratuito Ativado',
-        'Seu período de teste de 7 dias foi ativado!'
-      );
-      return mapped;
-    } finally {
-      setIsLoadingLicense(false);
-    }
-  };
-
-  const encerrarTrial = async (): Promise<License> => {
-    if (!userEmail) throw new Error('Usuário não autenticado.');
-    const mapped = await LicenseService.encerrarPeriodoTeste(userEmail);
-    setIsValid(false);
-    return mapped;
-  };
-
   const value: LicenseContextType = {
     license,
     licencaAtual,
     isLoadingLicense,
     isValid,
     verificarStatus,
-    refreshLicenca,
-    ativar,
-    renovar,
-    bloquear,
-    liberar,
-    iniciarTrial,
-    encerrarTrial
+    refreshLicenca
   };
 
   return <LicenseContext.Provider value={value}>{children}</LicenseContext.Provider>;

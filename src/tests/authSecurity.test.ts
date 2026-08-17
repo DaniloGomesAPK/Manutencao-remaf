@@ -4,6 +4,7 @@
  */
 
 import { AuthService } from '../services/AuthService';
+import { safeStorage } from '../utils/safeStorage';
 import { Usuario } from '../models/Usuario';
 
 /**
@@ -31,7 +32,7 @@ export async function runAuthSecurityTests() {
     await AuthService.login(fakeEmail, 'SenhaErrada123!');
     logFail('Usuário Inexistente Negado', 'Deveria ter lançado erro de e-mail/senha inválidos, mas o login passou.');
   } catch (e: any) {
-    if (e.message.includes('E-mail ou senha inválidos') || e.message.includes('invalid') || e.message.includes('not found')) {
+    if (e.message.includes('E-mail ou senha') || e.message.includes('invalid') || e.message.includes('not found') || e.message.includes('credenciais')) {
       logPass('Usuário Inexistente Negado');
     } else {
       logFail('Usuário Inexistente Negado', `Mensagem de erro inesperada: ${e.message}`);
@@ -44,7 +45,7 @@ export async function runAuthSecurityTests() {
     await AuthService.login('admin@remaf.com.br', 'SenhaTotalmenteIncorreta999!');
     logFail('Senha Incorreta Negada', 'Deveria ter negado o acesso para senha incorreta.');
   } catch (e: any) {
-    if (e.message.includes('E-mail ou senha inválidos') || e.message.includes('invalid') || e.message.includes('wrong')) {
+    if (e.message.includes('E-mail ou senha') || e.message.includes('invalid') || e.message.includes('wrong') || e.message.includes('credenciais')) {
       logPass('Senha Incorreta Negada');
     } else {
       logFail('Senha Incorreta Negada', `Mensagem de erro inesperada: ${e.message}`);
@@ -69,7 +70,6 @@ export async function runAuthSecurityTests() {
 
     // Força checagem com status de conta bloqueada
     await AuthService.processUserSession(mockUserBlocked);
-    // Se o documento users/{uid} tiver statusConta = 'blocked', processUserSession deve rejeitar
     logPass('Validação de Status de Conta');
   } catch (e: any) {
     if (e.message.includes('desabilitada') || e.message.includes('suspensa') || e.message.includes('blocked')) {
@@ -79,17 +79,17 @@ export async function runAuthSecurityTests() {
     }
   }
 
-  // Teste 5: Garantir que o localStorage é limpo antes de novos logins
-  localStorage.setItem('remaf_saas_user', JSON.stringify({ id: 'fake_previous_user', email: 'anterior@fake.com' }));
+  // Teste 5: Garantir que o cache de sessão é limpo antes de novos logins
+  safeStorage.setItem('remaf_saas_user', JSON.stringify({ id: 'fake_previous_user', email: 'anterior@fake.com' }));
   try {
     await AuthService.login('inexistente@remaf.com.br', 'senhaQualquer123!');
   } catch (_) {}
 
-  const cachedAfterFail = localStorage.getItem('remaf_saas_user');
+  const cachedAfterFail = safeStorage.getItem('remaf_saas_user');
   if (cachedAfterFail === null) {
     logPass('Limpeza Rigorosa de Sessão Prévia em Caso de Falha');
   } else {
-    logFail('Limpeza Rigorosa de Sessão Prévia em Caso de Falha', `Sessão anterior continuou no localStorage: ${cachedAfterFail}`);
+    logFail('Limpeza Rigorosa de Sessão Prévia em Caso de Falha', `Sessão anterior continuou no storage: ${cachedAfterFail}`);
   }
 
   console.log(`\n=== RESUMO DOS TESTES DE SEGURANÇA DE AUTENTICAÇÃO ===`);

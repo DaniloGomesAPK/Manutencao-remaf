@@ -192,21 +192,21 @@ export const IntegridadeService = {
       const clienteNome = clienteTarget?.nome?.trim().toLowerCase();
       const clienteDocDigits = clienteTarget?.documento?.replace(/\D/g, '');
 
-      // Verifica OS / Orçamentos
+      // Verifica OS / Orçamentos vinculados pelo clienteId ou nome exato normalizado
       const countOS = ordens.filter(os => {
-        if (os.clienteId === clienteId) return true;
-        if (clienteNome && os.clienteNome?.trim().toLowerCase() === clienteNome) return true;
+        if (os.clienteId && os.clienteId === clienteId) return true;
+        if (clienteNome && clienteNome.length >= 3 && os.clienteNome && os.clienteNome.trim().toLowerCase() === clienteNome) return true;
         return false;
       }).length;
 
-      // Verifica Lançamentos Financeiros
+      // Verifica Lançamentos Financeiros vinculados pelo clienteId ou nome exato normalizado
       const countFin = financeiro.filter(f => {
-        if (f.clienteId === clienteId) return true;
-        if (clienteNome && f.clienteNome?.trim().toLowerCase() === clienteNome) return true;
+        if (f.clienteId && f.clienteId === clienteId) return true;
+        if (clienteNome && clienteNome.length >= 3 && f.clienteNome && f.clienteNome.trim().toLowerCase() === clienteNome) return true;
         return false;
       }).length;
 
-      // Verifica Equipamentos
+      // Verifica Equipamentos vinculados
       const countEq = equipamentos.filter(eq => eq.clienteId === clienteId).length;
 
       if (countOS > 0 || countFin > 0 || countEq > 0) {
@@ -215,7 +215,7 @@ export const IntegridadeService = {
         if (countFin > 0) motivos.push(`• ${countFin} Lançamento(s) Financeiro(s)`);
         if (countEq > 0) motivos.push(`• ${countEq} Equipamento(s) cadastrado(s)`);
 
-        const reason = `Este cliente não pode ser excluído porque possui:\n${motivos.join('\n')}`;
+        const reason = `Este cliente não pode ser excluído porque possui registros vinculados:\n\n${motivos.join('\n')}\n\nPara excluir este cliente, remova ou desvincule esses registros primeiro.`;
 
         LogService.logError(
           'Integridade',
