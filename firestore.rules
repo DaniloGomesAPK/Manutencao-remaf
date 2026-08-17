@@ -2,56 +2,446 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --- FUNÇÕES DE VALIDAÇÃO DE SEGURANÇA E TRIAL ---
-    
-    // Verifica se o usuário está autenticado no Firebase Auth
-    function usuarioAutenticado() {
+    // =========================================================================
+    // FUNÇÕES AUXILIARES DE IDENTIDADE E TENANT (ISOLAMENTO MULTIEMPRESA)
+    // =========================================================================
+
+    function isAuthenticated() {
       return request.auth != null;
     }
 
-    // Verifica se o período de Trial de 7 dias ainda está válido com base no tempo do servidor (request.time)
-    function trialAtivo(criadoEm) {
-      return criadoEm is timestamp && request.time < criadoEm + duration.value(7, 'd');
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    // --- REGRAS DA COLEÇÃO EMPRESAS ---
-    match /empresas/{empresaId} {
+    function getUserEmpresaId() {
+      return getUserData().empresaId;
+    }
+
+    function hasActiveAccess() {
+      let userData = getUserData();
+      return userData.ativo == true
+        && userData.statusConta == 'active'
+        && ('accessUntil' in userData)
+        && request.time < userData.accessUntil;
+    }
+
+    function isTenantMember(empresaId) {
+      return isAuthenticated() 
+        && getUserEmpresaId() == empresaId
+        && hasActiveAccess();
+    }
+
+    // =========================================================================
+    // 1. COLEÇÃO: USERS (PERFIL E VÍNCULO DE TENANT)
+    // =========================================================================
+    match /users/{userId} {
+      // Leitura individual do próprio perfil
+      allow get: if isAuthenticated() && request.auth.uid == userId;
       
-      // 1. Criação do Trial:
-      // Permite criar apenas se o status for exatamente 'trial' e 'criadoEm' for rigorosamente o serverTimestamp()
-      allow create: if request.resource.data.status == 'trial'
-                    && request.resource.data.criadoEm == request.time;
+      // Criação inicial delegada exclusivamente ao backend confiável (Server-Authoritative Onboarding)
+      allow create: if false;
 
-      // 2. Leitura (get, list) e Atualização (update):
-      // Permite ler e atualizar apenas se a requisição ocorrer dentro da janela de 7 dias a partir do criadoEm
-      allow read, update: if trialAtivo(resource.data.criadoEm);
+      // Atualização do próprio perfil com bloqueio de Tenant Hopping e elevação de privilégios
+      allow update: if isAuthenticated() 
+        && request.auth.uid == userId
+        // Imutabilidade estrita dos identificadores e do vínculo de empresa
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.empresaId == resource.data.empresaId
+        // Bloqueio de alteração em campos administrativos e de controle de licença
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'id', 
+          'email', 
+          'empresaId', 
+          'role', 
+          'trialAtivo', 
+          'dataExpiracaoTrial', 
+          'accessUntil',
+          'ativo', 
+          'statusConta', 
+          'statusLicenca',
+          'ownerUid', 
+          'dataCadastro', 
+          'createdAt'
+        ]));
 
-      // 3. Exclusão (delete):
-      // Bloqueada para proteger os registros contra remoção não autorizada
+      // Proibida exclusão direta pelo cliente
+      allow delete: if false;
+    }
+
+    // =========================================================================
+    // 2. COLEÇÃO: EMPRESAS E SUBCOLEÇÕES OPERACIONAIS (ESTRUTURA MULTI-TENANT)
+    // Caminho padrão do SaaS: /empresas/{empresaId}/{colecao}/{docId}
+    // =========================================================================
+    match /empresas/{empresaId} {
+      // Leitura do documento cadastral da própria empresa
+      allow get: if isTenantMember(empresaId);
+
+      // Criação delegada exclusivamente ao backend confiável (Server-Authoritative Onboarding)
+      allow create: if false;
+
+      // Edição de dados cadastrais da própria empresa com bloqueio de campos administrativos
+      allow update: if isTenantMember(empresaId)
+        // Imutabilidade do identificador
+        && request.resource.data.id == resource.data.id
+        // Bloqueio estrito de alteração em campos de licença, faturamento, titularidade e metadados
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'id', 
+          'ownerUid', 
+          'trialAtivo', 
+          'dataCriacao', 
+          'dataExpiracaoTrial', 
+          'accessUntil',
+          'plano', 
+          'validade', 
+          'bloqueado', 
+          'statusLicenca',
+          'limiteUsuarios', 
+          'createdAt'
+        ]));
+
+      // Proibida exclusão de tenant pelo cliente
       allow delete: if false;
 
-      // Subcoleções internas da empresa (ex: clientes, ordensServico, etc.)
-      match /{subcollection}/{document=**} {
-        allow read, create, update: if trialAtivo(get(/databases/$(database)/documents/empresas/$(empresaId)).data.criadoEm);
-        allow delete: if false;
+      // -----------------------------------------------------------------------
+      // SUBCOLEÇÃO OPERACIONAL: CLIENTES
+      // -----------------------------------------------------------------------
+      match /clientes/{clienteId} {
+        allow get, list: if isTenantMember(empresaId);
+        allow create: if isTenantMember(empresaId)
+          && request.resource.data.empresaId == empresaId;
+        allow update: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId
+          && request.resource.data.empresaId == empresaId
+          && (request.resource.data.id == resource.data.id || request.resource.data.id == clienteId);
+        allow delete: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId;
+      }
+
+      // -----------------------------------------------------------------------
+      // SUBCOLEÇÃO OPERACIONAL: EQUIPAMENTOS / VEÍCULOS
+      // -----------------------------------------------------------------------
+      match /equipamentos/{equipamentoId} {
+        allow get, list: if isTenantMember(empresaId);
+        allow create: if isTenantMember(empresaId)
+          && request.resource.data.empresaId == empresaId;
+        allow update: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId
+          && request.resource.data.empresaId == empresaId
+          && (request.resource.data.id == resource.data.id || request.resource.data.id == equipamentoId);
+        allow delete: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId;
+      }
+
+      match /veiculos/{veiculoId} {
+        allow get, list: if isTenantMember(empresaId);
+        allow create: if isTenantMember(empresaId)
+          && request.resource.data.empresaId == empresaId;
+        allow update: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId
+          && request.resource.data.empresaId == empresaId
+          && (request.resource.data.id == resource.data.id || request.resource.data.id == veiculoId);
+        allow delete: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId;
+      }
+
+      // -----------------------------------------------------------------------
+      // SUBCOLEÇÃO OPERACIONAL: ORDENS DE SERVIÇO (ordensServico e ordens_servico)
+      // -----------------------------------------------------------------------
+      match /ordensServico/{osId} {
+        allow get, list: if isTenantMember(empresaId);
+        allow create: if isTenantMember(empresaId)
+          && request.resource.data.empresaId == empresaId;
+        allow update: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId
+          && request.resource.data.empresaId == empresaId
+          && (request.resource.data.id == resource.data.id || request.resource.data.id == osId);
+        allow delete: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId;
+      }
+
+      match /ordens_servico/{osId} {
+        allow get, list: if isTenantMember(empresaId);
+        allow create: if isTenantMember(empresaId)
+          && request.resource.data.empresaId == empresaId;
+        allow update: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId
+          && request.resource.data.empresaId == empresaId
+          && (request.resource.data.id == resource.data.id || request.resource.data.id == osId);
+        allow delete: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId;
+      }
+
+      // -----------------------------------------------------------------------
+      // SUBCOLEÇÃO OPERACIONAL: SERVIÇOS E PRECIFICAÇÃO
+      // -----------------------------------------------------------------------
+      match /servicos/{servicoId} {
+        allow get, list: if isTenantMember(empresaId);
+        allow create: if isTenantMember(empresaId)
+          && request.resource.data.empresaId == empresaId;
+        allow update: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId
+          && request.resource.data.empresaId == empresaId
+          && (request.resource.data.id == resource.data.id || request.resource.data.id == servicoId);
+        allow delete: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId;
+      }
+
+      match /servicos_inteligentes/{servicoId} {
+        allow get, list: if isTenantMember(empresaId);
+        allow create: if isTenantMember(empresaId)
+          && request.resource.data.empresaId == empresaId;
+        allow update: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId
+          && request.resource.data.empresaId == empresaId
+          && (request.resource.data.id == resource.data.id || request.resource.data.id == servicoId);
+        allow delete: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId;
+      }
+
+      match /precificacao/{precificacaoId} {
+        allow get, list: if isTenantMember(empresaId);
+        allow create: if isTenantMember(empresaId)
+          && request.resource.data.empresaId == empresaId;
+        allow update: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId
+          && request.resource.data.empresaId == empresaId
+          && (request.resource.data.id == resource.data.id || request.resource.data.id == precificacaoId);
+        allow delete: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId;
+      }
+
+      // -----------------------------------------------------------------------
+      // SUBCOLEÇÃO OPERACIONAL: FINANCEIRO
+      // -----------------------------------------------------------------------
+      match /financeiro/{lancamentoId} {
+        allow get, list: if isTenantMember(empresaId);
+        allow create: if isTenantMember(empresaId)
+          && request.resource.data.empresaId == empresaId;
+        allow update: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId
+          && request.resource.data.empresaId == empresaId
+          && (request.resource.data.id == resource.data.id || request.resource.data.id == lancamentoId);
+        allow delete: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId;
+      }
+
+      // -----------------------------------------------------------------------
+      // SUBCOLEÇÕES OPERACIONAIS: HISTÓRICOS, RELATÓRIOS, CONFIGURAÇÕES, COMPANY PROFILE, LIXEIRA
+      // -----------------------------------------------------------------------
+      match /historicos/{historicoId} {
+        allow get, list: if isTenantMember(empresaId);
+        allow create: if isTenantMember(empresaId)
+          && request.resource.data.empresaId == empresaId;
+        allow update: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId
+          && request.resource.data.empresaId == empresaId
+          && (request.resource.data.id == resource.data.id || request.resource.data.id == historicoId);
+        allow delete: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId;
+      }
+
+      match /relatorios/{relatorioId} {
+        allow get, list: if isTenantMember(empresaId);
+        allow create: if isTenantMember(empresaId)
+          && request.resource.data.empresaId == empresaId;
+        allow update: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId
+          && request.resource.data.empresaId == empresaId
+          && (request.resource.data.id == resource.data.id || request.resource.data.id == relatorioId);
+        allow delete: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId;
+      }
+
+      match /configuracoes/{configId} {
+        allow get, list: if isTenantMember(empresaId);
+        allow create: if isTenantMember(empresaId)
+          && request.resource.data.empresaId == empresaId;
+        allow update: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId
+          && request.resource.data.empresaId == empresaId
+          && (request.resource.data.id == resource.data.id || request.resource.data.id == configId);
+        allow delete: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId;
+      }
+
+      match /company_profile/{docId} {
+        allow get, list: if isTenantMember(empresaId);
+        allow create: if isTenantMember(empresaId)
+          && request.resource.data.empresaId == empresaId;
+        allow update: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId
+          && request.resource.data.empresaId == empresaId
+          && (request.resource.data.id == resource.data.id || request.resource.data.id == docId);
+        allow delete: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId;
+      }
+
+      match /lixeira/{registroId} {
+        allow get, list: if isTenantMember(empresaId);
+        allow create: if isTenantMember(empresaId)
+          && request.resource.data.empresaId == empresaId;
+        allow update: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId
+          && request.resource.data.empresaId == empresaId
+          && (request.resource.data.id == resource.data.id || request.resource.data.id == registroId);
+        allow delete: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId;
+      }
+
+      // -----------------------------------------------------------------------
+      // SUBCOLEÇÃO SENSÍVEL: LICENÇA (SOMENTE LEITURA / ADMIN & WEBHOOK ONLY)
+      // Bloqueio estrito de escrita pelo cliente
+      // -----------------------------------------------------------------------
+      match /licenca/{docId} {
+        allow get, list: if isTenantMember(empresaId);
+        allow create, update, delete: if false;
       }
     }
 
-    // Coleção de e-mails autorizados (leitura e cadastros de trial)
+    // =========================================================================
+    // 3. COLEÇÃO: EMAILS AUTORIZADOS (LICENCIAMENTO E ACESSO)
+    // =========================================================================
     match /emailsAutorizados/{email} {
-      allow read: if true;
-      allow create, update: if request.resource.data.status == 'trial' || request.auth != null;
-      allow delete: if false;
+      // Leitura permitida apenas do próprio e-mail autenticado
+      allow get: if isAuthenticated() && request.auth.token.email.lower() == email.lower();
+      
+      // Criação, atualização e exclusão delegadas exclusivamente ao backend confiável (Server-Authoritative)
+      allow create, update, delete: if false;
     }
 
-    // Perfil de Usuário
-    match /users/{uid} {
-      allow read, write: if true;
-    }
-
-    // Coleção Global de Clientes
+    // =========================================================================
+    // 4. COLEÇÕES LEGADAS DE PRIMEIRO NÍVEL (COMPATIBILIDADE E ISOLAMENTO)
+    // Mantidas para suporte retroativo sem enfraquecer o isolamento multi-tenant
+    // =========================================================================
     match /clientes/{clienteId} {
-      allow read, write: if true;
+      allow get, list: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow create: if isAuthenticated() && request.resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow update: if isAuthenticated() 
+        && resource.data.empresaId == getUserEmpresaId()
+        && request.resource.data.empresaId == resource.data.empresaId
+        && (request.resource.data.id == resource.data.id || request.resource.data.id == clienteId)
+        && hasActiveAccess();
+      allow delete: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+    }
+
+    match /veiculos/{veiculoId} {
+      allow get, list: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow create: if isAuthenticated() && request.resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow update: if isAuthenticated() 
+        && resource.data.empresaId == getUserEmpresaId()
+        && request.resource.data.empresaId == resource.data.empresaId
+        && (request.resource.data.id == resource.data.id || request.resource.data.id == veiculoId)
+        && hasActiveAccess();
+      allow delete: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+    }
+
+    match /equipamentos/{equipamentoId} {
+      allow get, list: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow create: if isAuthenticated() && request.resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow update: if isAuthenticated() 
+        && resource.data.empresaId == getUserEmpresaId()
+        && request.resource.data.empresaId == resource.data.empresaId
+        && (request.resource.data.id == resource.data.id || request.resource.data.id == equipamentoId)
+        && hasActiveAccess();
+      allow delete: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+    }
+
+    match /servicos/{servicoId} {
+      allow get, list: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow create: if isAuthenticated() && request.resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow update: if isAuthenticated() 
+        && resource.data.empresaId == getUserEmpresaId()
+        && request.resource.data.empresaId == resource.data.empresaId
+        && (request.resource.data.id == resource.data.id || request.resource.data.id == servicoId)
+        && hasActiveAccess();
+      allow delete: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+    }
+
+    match /ordensServico/{osId} {
+      allow get, list: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow create: if isAuthenticated() && request.resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow update: if isAuthenticated() 
+        && resource.data.empresaId == getUserEmpresaId()
+        && request.resource.data.empresaId == resource.data.empresaId
+        && (request.resource.data.id == resource.data.id || request.resource.data.id == osId)
+        && hasActiveAccess();
+      allow delete: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+    }
+
+    match /ordens_servico/{osId} {
+      allow get, list: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow create: if isAuthenticated() && request.resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow update: if isAuthenticated() 
+        && resource.data.empresaId == getUserEmpresaId()
+        && request.resource.data.empresaId == resource.data.empresaId
+        && (request.resource.data.id == resource.data.id || request.resource.data.id == osId)
+        && hasActiveAccess();
+      allow delete: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+    }
+
+    match /financeiro/{lancamentoId} {
+      allow get, list: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow create: if isAuthenticated() && request.resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow update: if isAuthenticated() 
+        && resource.data.empresaId == getUserEmpresaId()
+        && request.resource.data.empresaId == resource.data.empresaId
+        && (request.resource.data.id == resource.data.id || request.resource.data.id == lancamentoId)
+        && hasActiveAccess();
+      allow delete: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+    }
+
+    match /precificacao/{precificacaoId} {
+      allow get, list: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow create: if isAuthenticated() && request.resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow update: if isAuthenticated() 
+        && resource.data.empresaId == getUserEmpresaId()
+        && request.resource.data.empresaId == resource.data.empresaId
+        && (request.resource.data.id == resource.data.id || request.resource.data.id == precificacaoId)
+        && hasActiveAccess();
+      allow delete: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+    }
+
+    match /servicos_inteligentes/{servicoId} {
+      allow get, list: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow create: if isAuthenticated() && request.resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow update: if isAuthenticated() 
+        && resource.data.empresaId == getUserEmpresaId()
+        && request.resource.data.empresaId == resource.data.empresaId
+        && (request.resource.data.id == resource.data.id || request.resource.data.id == servicoId)
+        && hasActiveAccess();
+      allow delete: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+    }
+
+    match /lixeira/{registroId} {
+      allow get, list: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow create: if isAuthenticated() && request.resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow update: if isAuthenticated() 
+        && resource.data.empresaId == getUserEmpresaId()
+        && request.resource.data.empresaId == resource.data.empresaId
+        && (request.resource.data.id == resource.data.id || request.resource.data.id == registroId)
+        && hasActiveAccess();
+      allow delete: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+    }
+
+    match /company_profile/{docId} {
+      allow get, list: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow create: if isAuthenticated() && request.resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow update: if isAuthenticated() 
+        && resource.data.empresaId == getUserEmpresaId()
+        && request.resource.data.empresaId == resource.data.empresaId
+        && (request.resource.data.id == resource.data.id || request.resource.data.id == docId)
+        && hasActiveAccess();
+      allow delete: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+    }
+
+    // =========================================================================
+    // 5. DENY BY DEFAULT (FECHAMENTO ESTATÍSTICO DE SEGURANÇA)
+    // Nenhuma regra genérica permissiva. Qualquer caminho não explicitamente mapeado é negado.
+    // =========================================================================
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
