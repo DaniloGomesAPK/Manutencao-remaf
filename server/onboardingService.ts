@@ -1,3 +1,8 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getFirebaseAdmin } from './firebaseAdmin';
@@ -37,33 +42,29 @@ function sanitizeString(val: any, maxLength = 150): string {
 }
 
 /**
- * Operação Server-Authoritative para Onboarding de novo Tenant Trial (Etapa 01B).
+ * Operação Server-Authoritative para Onboarding / Ativação / Recuperação de Tenant Trial (7 dias).
  * 
  * Regras Estritas de Segurança:
  * 1. O Firebase ID Token é verificado exclusivamente pelo Firebase Admin SDK via Authorization Bearer.
  * 2. UID e E-mail são extraídos EXCLUSIVAMENTE do token verificado.
- * 3. Qualquer empresaId, role, trialAtivo, dataExpiracaoTrial ou limiteUsuarios enviado pelo cliente é 100% ignorado.
- * 4. Usuário existente (mesmo UID com onboarding comprovado):
- *    - Exige diretamente de users/{uid}: statusConta, trialAtivo, dataExpiracaoTrial, role, empresaId.
- *    - Se qualquer campo estiver ausente ou inválido, retorna erro administrativo (sem fallbacks).
- *    - Se o trial existente já expirou, rejeita com erro sem conceder novo período.
- * 5. E-mail com histórico existente em emailsAutorizados/{email}:
- *    - Se o documento já existir e o UID atual não for o usuário vinculado comprovado, rejeita a criação de novo Trial.
- *    - Impede que um e-mail ganhe novos 7 dias apenas recriando credenciais Auth com novo UID.
- * 6. Proteção contra Tenant Hijacking e Empresa sem ownerUid:
- *    - Se a empresa existir e ownerUid === uid -> permite retry/idempotência.
- *    - Se a empresa existir e ownerUid !== uid -> rejeita com erro de segurança.
- *    - Se a empresa existir sem ownerUid -> só aceita se users/{uid}.empresaId == empresaId; caso contrário rejeita.
- * 7. Novo Tenant Legítimo:
- *    - Gera empresaId deterministicamente a partir do UID completo do usuário (emp_${cleanUid}).
- *    - Define exatamente 7 dias de avaliação no relógio do servidor.
- *    - Gravação atômica via WriteBatch em users, empresas, emailsAutorizados e company_profile.
+ * 3. email_verified DEVE ser estritamente true (sendEmailVerification + reload).
+ * 4. Gravações atômicas (WriteBatch) sincronizam:
+ *    - users/{uid}
+ *    - empresas/{empresaId}
+ *    - emailsAutorizados/{userEmail} (com status: "trial", ativo: true, bloqueado: false, trialAtivo: true, trialInicio, trialFim, accessUntil)
+ *    - empresas/{empresaId}/company_profile/{empresaId}
+ * 5. Recuperação Idempotente:
+ *    - Se o usuário já possui histórico ou onboarding incompleto, recupera o estado sem estender os 7 dias e sem criar empresa duplicada.
+ *    - Se o Trial já expirou, rejeita com erro administrativo objetivo sem liberar novo período.
+ *    - Se a conta ou empresa estiver bloqueada, rejeita.
+ *    - Se houver plano pago existente, preserva sem rebaixar para trial.
  */
 export async function handleTrialOnboarding(
   idToken: string,
   rawPayload: TrialOnboardingInput = {}
 ): Promise<TrialOnboardingResult> {
   if (!idToken || typeof idToken !== 'string' || !idToken.trim()) {
+    console.error('[ONBOARDING ERROR] etapa: validacao_token, code: TOKEN_MISSING, message: ID Token ausente ou inválido.');
     throw new Error('ID Token ausente ou inválido. Acesso não autorizado.');
   }
 
@@ -76,7 +77,7 @@ export async function handleTrialOnboarding(
   try {
     decodedToken = await auth.verifyIdToken(idToken.trim());
   } catch (verifyErr: any) {
-    console.error('[Onboarding] Falha na validação do ID Token:', verifyErr?.message || verifyErr);
+    console.error('[ONBOARDING ERROR] etapa: validacao_token, code: TOKEN_INVALID, message: Falha ao verificar token Firebase Admin.');
     throw new Error('Sessão expirada ou token de autenticação inválido.');
   }
 
@@ -84,16 +85,21 @@ export async function handleTrialOnboarding(
   const userEmail = decodedToken.email?.trim().toLowerCase();
 
   if (!userEmail) {
+    console.error('[ONBOARDING ERROR] etapa: validacao_token, code: NO_EMAIL, message: Token sem endereço de e-mail associado.');
     throw new Error('O token de autenticação não possui endereço de e-mail associado.');
   }
 
-  // Validação obrigatória de segurança: e-mail deve estar verificado no Firebase Auth
+  console.log(`[ONBOARDING] token validado (UID: ${uid})`);
+
+  // 2. Validação obrigatória de segurança: e-mail deve estar verificado no Firebase Auth
   if (decodedToken.email_verified !== true) {
-    console.warn(`[Onboarding] Bloqueio 403: E-mail não verificado para UID ${uid} (${userEmail}).`);
+    console.warn(`[ONBOARDING ERROR] etapa: validacao_email, code: EMAIL_NOT_VERIFIED, message: E-mail ${userEmail} não confirmado no Firebase Auth.`);
     throw new Error('EMAIL_NAO_VERIFICADO: É necessário confirmar seu endereço de e-mail antes de ativar o período de avaliação.');
   }
 
-  // 2. Sanitização estrita de dados cadastrais não privilegiados
+  console.log(`[ONBOARDING] email verified: ${userEmail}`);
+
+  // 3. Sanitização de dados cadastrais
   const nomeResponsavelSanitizado = sanitizeString(rawPayload.nomeResponsavel, 120);
   const nomeEmpresaSanitizado = sanitizeString(rawPayload.nomeEmpresa, 120);
   const perfilEmpresaSanitizado = sanitizeString(rawPayload.perfilEmpresa, 60);
@@ -115,159 +121,309 @@ export async function handleTrialOnboarding(
 
   const whatsappFinal = whatsappSanitizado;
 
-  // 3. Verificação de Usuário Existente em users/{uid} (Idempotência / Retry do mesmo UID)
-  // Se users/{uid} já existir, NUNCA deve continuar para o fluxo de novo tenant.
+  // 4. Consulta de estado existente no Firestore (users, emailsAutorizados, empresas)
   const userRef = db.collection('users').doc(uid);
   const userDoc = await userRef.get();
 
-  if (userDoc.exists) {
-    const existingUserData = userDoc.data()!;
+  const emailAuthRef = db.collection('emailsAutorizados').doc(userEmail);
+  const emailAuthDoc = await emailAuthRef.get();
 
-    // 3.1. Bloqueio administrativo existente
-    if (
-      existingUserData.ativo === false ||
-      existingUserData.bloqueado === true ||
-      existingUserData.statusConta === 'blocked' ||
-      existingUserData.statusConta === 'revoked'
-    ) {
-      console.warn(`[Onboarding] Bloqueio: UID ${uid} com status inativo/bloqueado.`);
-      throw new Error('Conta de usuário bloqueada ou revogada administrativamente.');
-    }
+  // Determinar empresaId determinístico ou existente
+  let empresaId = '';
+  if (userDoc.exists && userDoc.data()?.empresaId) {
+    empresaId = userDoc.data()!.empresaId;
+  } else if (emailAuthDoc.exists && emailAuthDoc.data()?.empresaId) {
+    empresaId = emailAuthDoc.data()!.empresaId;
+  } else {
+    const cleanUid = uid.replace(/[^a-zA-Z0-9_-]/g, '');
+    empresaId = `emp_${cleanUid}`;
+  }
 
-    const existingEmpresaId = existingUserData.empresaId;
-    const existingRole = existingUserData.role;
-    const existingStatus = existingUserData.statusConta;
-    const existingTrialAtivo = existingUserData.trialAtivo;
-    const existingExpDate = existingUserData.dataExpiracaoTrial;
+  const empresaRef = db.collection('empresas').doc(empresaId);
+  const empresaDoc = await empresaRef.get();
 
-    // Validação estrita direta de users/{uid} sem fallbacks, derivações ou valores inventados
-    // users/{uid} existente sem empresaId ou com qualquer campo ausente/inválido -> ERRO administrativo imediato
-    if (
-      typeof existingEmpresaId !== 'string' ||
-      !existingEmpresaId.trim() ||
-      typeof existingRole !== 'string' ||
-      !existingRole.trim() ||
-      typeof existingStatus !== 'string' ||
-      !existingStatus.trim() ||
-      typeof existingTrialAtivo !== 'boolean' ||
-      typeof existingExpDate !== 'string' ||
-      !existingExpDate.trim()
-    ) {
-      console.error(`[Onboarding] Inconsistência administrativa em users/${uid}: Campos administrativos incompletos ou ausentes.`);
-      throw new Error('Inconsistência administrativa no cadastro do usuário existente. Contate o suporte.');
-    }
+  // 4.1. Verificação de Bloqueios Administrativos
+  const isUserBlocked = userDoc.exists && (
+    userDoc.data()?.ativo === false ||
+    userDoc.data()?.bloqueado === true ||
+    userDoc.data()?.statusConta === 'blocked' ||
+    userDoc.data()?.statusConta === 'revoked'
+  );
 
-    // Validação de conversão de dataExpiracaoTrial para uma data válida
-    const expMs = new Date(existingExpDate).getTime();
-    if (isNaN(expMs)) {
-      console.error(`[Onboarding] Inconsistência administrativa em users/${uid}: dataExpiracaoTrial inválida (${existingExpDate}).`);
-      throw new Error('Inconsistência administrativa no cadastro do usuário existente: data de expiração inválida. Contate o suporte.');
-    }
+  const isEmailBlocked = emailAuthDoc.exists && (
+    emailAuthDoc.data()?.ativo === false ||
+    emailAuthDoc.data()?.bloqueado === true ||
+    emailAuthDoc.data()?.status === 'blocked' ||
+    emailAuthDoc.data()?.status === 'revoked'
+  );
 
-    // Verificação de Trial expirado no documento do usuário existente
-    if (expMs < Date.now()) {
-      console.warn(`[Onboarding] Bloqueio: UID ${uid} com Trial expirado (${existingExpDate}).`);
-      throw new Error('Período de avaliação já expirado para este usuário. Para continuar utilizando, adquira uma licença.');
-    }
+  const isEmpresaBlocked = empresaDoc.exists && (
+    empresaDoc.data()?.ativo === false ||
+    empresaDoc.data()?.bloqueado === true
+  );
 
-    // Busca dados da empresa existente
-    const existingEmpresaDoc = await db.collection('empresas').doc(existingEmpresaId).get();
-    if (existingEmpresaDoc.exists && existingEmpresaDoc.data()?.bloqueado === true) {
-      throw new Error('Empresa bloqueada administrativamente.');
+  if (isUserBlocked || isEmailBlocked || isEmpresaBlocked) {
+    console.error(`[ONBOARDING ERROR] etapa: checagem_bloqueio, code: BLOCKED, message: Conta ${userEmail} ou empresa ${empresaId} bloqueada.`);
+    throw new Error('Conta de usuário ou empresa bloqueada administrativamente.');
+  }
+
+  // 4.2. Proteção contra Tenant Hijacking
+  if (empresaDoc.exists && empresaDoc.data()?.ownerUid && empresaDoc.data()!.ownerUid !== uid) {
+    console.error(`[ONBOARDING ERROR] etapa: protecao_tenant, code: TENANT_HIJACK, message: Conflito de integridade no tenant ${empresaId} para UID ${uid}`);
+    throw new Error('Conflito de integridade de inquilino. Operação negada por segurança.');
+  }
+
+  // 4.3. Verificação de Plano Pago Existente (Preservar sem alterar vigência ou rebaixar)
+  if (emailAuthDoc.exists && (emailAuthDoc.data()?.status === 'pago' || emailAuthDoc.data()?.status === 'active')) {
+    console.log(`[ONBOARDING] histórico encontrado (plano pago ativo para ${userEmail})`);
+    const emailData = emailAuthDoc.data()!;
+    const paidEmpresaId = emailData.empresaId || empresaId;
+    const paidAccessUntil = emailData.accessUntil || emailData.validade || null;
+    const nowIso = new Date().toISOString();
+
+    if (!userDoc.exists || !userDoc.data()?.empresaId) {
+      const batch = db.batch();
+      batch.set(
+        userRef,
+        {
+          id: uid,
+          nome: nomeFinal,
+          email: userEmail,
+          whatsapp: whatsappFinal,
+          role: 'admin',
+          empresaId: paidEmpresaId,
+          statusConta: 'active',
+          ativo: true,
+          bloqueado: false,
+          accessUntil: paidAccessUntil,
+          updatedAt: nowIso,
+        },
+        { merge: true }
+      );
+      await batch.commit();
+      console.log('[ONBOARDING] batch concluído (vínculo de usuário com plano pago existente)');
     }
 
     return {
       success: true,
       isExisting: true,
-      empresaId: existingEmpresaId,
-      trialAtivo: existingTrialAtivo,
-      dataExpiracaoTrial: existingExpDate,
+      empresaId: paidEmpresaId,
+      trialAtivo: false,
+      dataExpiracaoTrial: emailData.validade || '',
       usuario: {
         id: uid,
-        nome: existingUserData.nome || nomeFinal,
+        nome: nomeFinal,
         email: userEmail,
-        whatsapp: existingUserData.whatsapp || whatsappFinal,
-        empresaId: existingEmpresaId,
-        role: existingRole,
-        statusConta: existingStatus,
-        trialAtivo: existingTrialAtivo,
-        dataExpiracaoTrial: existingExpDate,
+        whatsapp: whatsappFinal,
+        empresaId: paidEmpresaId,
+        role: 'admin',
+        statusConta: 'active',
+        trialAtivo: false,
+        dataExpiracaoTrial: emailData.validade || '',
       },
     };
   }
 
-  // 4. Verificação de Histórico e Bloqueios em emailsAutorizados/{userEmail}
-  // Se o e-mail já existe na base e o UID atual ainda não possui vínculo comprovado acima,
-  // BLOQUEIA a criação de novo Trial (não concede novos 7 dias para o mesmo e-mail com outro UID)
-  const emailAuthRef = db.collection('emailsAutorizados').doc(userEmail);
-  const emailAuthDoc = await emailAuthRef.get();
+  // 4.4. Verificação de Histórico de Trial Existente (Idempotência e Recuperação)
+  const userData = userDoc.exists ? userDoc.data() : null;
+  const emailData = emailAuthDoc.exists ? emailAuthDoc.data() : null;
+  const empData = empresaDoc.exists ? empresaDoc.data() : null;
 
-  if (emailAuthDoc.exists) {
-    const emailData = emailAuthDoc.data()!;
-    if (
-      emailData.ativo === false ||
-      emailData.bloqueado === true ||
-      emailData.status === 'blocked' ||
-      emailData.status === 'revoked'
-    ) {
-      console.warn(`[Onboarding] Bloqueio: e-mail ${userEmail} marcado como bloqueado/revogado.`);
-      throw new Error('Acesso bloqueado ou revogado administrativamente. Entre em contato com o suporte.');
-    }
+  const existingExpStr =
+    emailData?.trialFim ||
+    userData?.dataExpiracaoTrial ||
+    empData?.dataExpiracaoTrial ||
+    emailData?.dataExpiracaoTrial ||
+    emailData?.validade;
 
-    // Se o documento existe e o UID atual não possui vínculo pré-estabelecido com este tenant/e-mail
-    console.warn(`[Onboarding] Bloqueio: e-mail ${userEmail} já possui histórico em emailsAutorizados sem vínculo prévio com UID ${uid}.`);
-    throw new Error('Este e-mail já possui histórico de cadastro ou avaliação no sistema. Contate o suporte para recuperar seu acesso.');
-  }
+  const existingInicioStr =
+    emailData?.trialInicio ||
+    emailData?.dataCriacao ||
+    userData?.dataCadastro ||
+    userData?.createdAt ||
+    empData?.dataCriacao ||
+    empData?.createdAt;
 
-  // 5. Geração determinística de empresaId baseada no UID completo (sem truncamento)
-  const cleanUid = uid.replace(/[^a-zA-Z0-9_-]/g, '');
-  const empresaId = `emp_${cleanUid}`;
+  const existingAccessUntil =
+    emailData?.accessUntil ||
+    userData?.accessUntil ||
+    empData?.accessUntil;
 
-  // 6. Verificação de Empresa Existente e Proteção contra Tenant Hijacking
-  const empresaRef = db.collection('empresas').doc(empresaId);
-  const empresaDoc = await empresaRef.get();
-
-  if (empresaDoc.exists) {
-    const empData = empresaDoc.data()!;
-    if (empData.bloqueado === true) {
-      throw new Error('Empresa bloqueada administrativamente.');
-    }
-
-    if (empData.ownerUid && empData.ownerUid !== uid) {
-      console.error(`[SECURITY ALERT] Tentativa de colisão ou hijacking no tenant ${empresaId} pelo UID ${uid}.`);
-      throw new Error('Conflito de integridade de inquilino. Operação negada por segurança.');
-    }
-
-    if (!empData.ownerUid) {
-      // Empresa legada sem ownerUid: só aceita se houver prova server-side confiável
-      const isUserLinked = userDoc.exists && userDoc.data()?.empresaId === empresaId;
-      if (!isUserLinked) {
-        console.error(`[SECURITY ALERT] Empresa existente ${empresaId} sem ownerUid e sem vínculo comprovado com UID ${uid}.`);
-        throw new Error('Empresa existente sem comprovação de propriedade. Contate o suporte.');
-      }
-    }
-
-    // Se a empresa já existir, verifica se o trial dela já expirou
-    if (empData.dataExpiracaoTrial) {
-      const expMs = new Date(empData.dataExpiracaoTrial).getTime();
-      if (!isNaN(expMs) && expMs < Date.now()) {
-        console.warn(`[Onboarding] Bloqueio: Empresa ${empresaId} com Trial já expirado (${empData.dataExpiracaoTrial}).`);
-        throw new Error('Período de avaliação já expirado para esta empresa. Para continuar utilizando, adquira uma licença.');
-      }
+  let existingExpMs: number | null = null;
+  if (existingAccessUntil) {
+    if (typeof existingAccessUntil.toMillis === 'function') existingExpMs = existingAccessUntil.toMillis();
+    else if (typeof existingAccessUntil.toDate === 'function') existingExpMs = existingAccessUntil.toDate().getTime();
+    else if (typeof existingAccessUntil.seconds === 'number') existingExpMs = existingAccessUntil.seconds * 1000;
+    else if (typeof existingAccessUntil === 'string' || typeof existingAccessUntil === 'number') {
+      const d = new Date(existingAccessUntil);
+      if (!isNaN(d.getTime())) existingExpMs = d.getTime();
     }
   }
 
-  // 7. Cálculo server-side do período de Trial (exatamente 7 dias no relógio do servidor)
+  if (existingExpMs === null && existingExpStr) {
+    const d = new Date(existingExpStr);
+    if (!isNaN(d.getTime())) existingExpMs = d.getTime();
+  }
+
+  if (existingExpMs === null && existingInicioStr) {
+    const d = new Date(existingInicioStr);
+    if (!isNaN(d.getTime())) existingExpMs = d.getTime() + 7 * 24 * 60 * 60 * 1000;
+  }
+
   const now = new Date();
   const nowIso = now.toISOString();
+
+  // Se já existe registro prévio de Trial para este usuário/e-mail
+  if (existingExpMs !== null) {
+    // 4.4.1. Trial expirado: NÃO conceder novos dias
+    if (existingExpMs < Date.now()) {
+      console.warn(`[ONBOARDING ERROR] etapa: validacao_trial, code: TRIAL_EXPIRED, message: Trial expirado para ${userEmail} em ${new Date(existingExpMs).toISOString()}`);
+      throw new Error('Período de avaliação já expirado para este usuário. Para continuar utilizando, adquira uma licença.');
+    }
+
+    // 4.4.2. Trial ainda ativo: Recuperação Idempotente sem estender vigência
+    console.log(`[ONBOARDING] histórico encontrado: recuperando estado do trial existente até ${new Date(existingExpMs).toISOString()} para ${userEmail}`);
+    const trialExpiresAtIso = new Date(existingExpMs).toISOString();
+    const trialInicioIso = existingInicioStr
+      ? new Date(existingInicioStr).toISOString()
+      : new Date(existingExpMs - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const accessUntilTimestamp = Timestamp.fromDate(new Date(existingExpMs));
+
+    const batch = db.batch();
+
+    // Sincroniza users/{uid}
+    batch.set(
+      userRef,
+      {
+        id: uid,
+        nome: nomeFinal,
+        email: userEmail,
+        whatsapp: whatsappFinal || userData?.whatsapp || '',
+        role: 'admin',
+        empresaId: empresaId,
+        perfilEmpresa: perfilEmpresaFinal || userData?.perfilEmpresa || 'mecanica_pesada',
+        trialAtivo: true,
+        dataExpiracaoTrial: trialExpiresAtIso,
+        accessUntil: accessUntilTimestamp,
+        ativo: true,
+        bloqueado: false,
+        statusConta: 'active',
+        dataCadastro: trialInicioIso,
+        createdAt: trialInicioIso,
+        updatedAt: nowIso,
+      },
+      { merge: true }
+    );
+
+    // Sincroniza empresas/{empresaId}
+    batch.set(
+      empresaRef,
+      {
+        id: empresaId,
+        ownerUid: uid,
+        nome: nomeEmpresaFinal || empData?.nome || 'Minha Empresa',
+        emailContato: userEmail,
+        telefone: whatsappFinal || empData?.telefone || '',
+        perfilEmpresa: perfilEmpresaFinal || empData?.perfilEmpresa || 'mecanica_pesada',
+        trialAtivo: true,
+        status: 'trial',
+        dataCriacao: trialInicioIso,
+        dataExpiracaoTrial: trialExpiresAtIso,
+        accessUntil: accessUntilTimestamp,
+        limiteUsuarios: 2,
+        ativo: true,
+        bloqueado: false,
+        createdAt: trialInicioIso,
+        updatedAt: nowIso,
+      },
+      { merge: true }
+    );
+
+    // Sincroniza emailsAutorizados/{userEmail} com todos os campos exigidos pelo LicenseService
+    batch.set(
+      emailAuthRef,
+      {
+        email: userEmail,
+        role: 'admin',
+        empresaId: empresaId,
+        status: 'trial',
+        plano: 'Trial 7 Dias',
+        ativo: true,
+        bloqueado: false,
+        trialAtivo: true,
+        trialInicio: trialInicioIso,
+        trialFim: trialExpiresAtIso,
+        validade: trialExpiresAtIso,
+        dataCriacao: trialInicioIso,
+        dataExpiracaoTrial: trialExpiresAtIso,
+        accessUntil: accessUntilTimestamp,
+        createdAt: trialInicioIso,
+        updatedAt: nowIso,
+        ultimaAtualizacao: nowIso,
+      },
+      { merge: true }
+    );
+
+    // Sincroniza company_profile/{empresaId}
+    const companyProfileRef = db
+      .collection('empresas')
+      .doc(empresaId)
+      .collection('company_profile')
+      .doc(empresaId);
+
+    batch.set(
+      companyProfileRef,
+      {
+        id: empresaId,
+        empresaId: empresaId,
+        nomeFantasia: nomeEmpresaFinal || empData?.nome || 'Minha Empresa',
+        razaoSocial: nomeEmpresaFinal || empData?.nome || 'Minha Empresa',
+        nomeEmpresa: nomeEmpresaFinal || empData?.nome || 'Minha Empresa',
+        perfilEmpresa: perfilEmpresaFinal || 'mecanica_pesada',
+        nomeResponsavel: nomeFinal,
+        whatsapp: whatsappFinal,
+        telefone: whatsappFinal,
+        email: userEmail,
+        trialAtivo: true,
+        dataExpiracaoTrial: trialExpiresAtIso,
+        accessUntil: accessUntilTimestamp,
+        createdAt: trialInicioIso,
+        updatedAt: nowIso,
+      },
+      { merge: true }
+    );
+
+    await batch.commit();
+    console.log('[ONBOARDING] batch concluído');
+
+    return {
+      success: true,
+      isExisting: true,
+      empresaId,
+      trialAtivo: true,
+      dataExpiracaoTrial: trialExpiresAtIso,
+      usuario: {
+        id: uid,
+        nome: nomeFinal,
+        email: userEmail,
+        whatsapp: whatsappFinal,
+        empresaId: empresaId,
+        role: 'admin',
+        statusConta: 'active',
+        trialAtivo: true,
+        dataExpiracaoTrial: trialExpiresAtIso,
+      },
+    };
+  }
+
+  // 5. Novo Trial Legítimo (Exatamente 7 dias a partir do momento atual no servidor)
   const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
   const expiresAtIso = expiresAt.toISOString();
   const accessUntilTimestamp = Timestamp.fromDate(expiresAt);
 
-  // 8. Preparação do WriteBatch Atômico
   const batch = db.batch();
 
-  // 8.1. Documento em users/{uid}
+  // 5.1. users/{uid}
   batch.set(
     userRef,
     {
@@ -282,14 +438,16 @@ export async function handleTrialOnboarding(
       dataExpiracaoTrial: expiresAtIso,
       accessUntil: accessUntilTimestamp,
       ativo: true,
+      bloqueado: false,
       statusConta: 'active',
+      dataCadastro: nowIso,
       createdAt: nowIso,
       updatedAt: nowIso,
     },
     { merge: true }
   );
 
-  // 8.2. Documento em empresas/{empresaId}
+  // 5.2. empresas/{empresaId}
   batch.set(
     empresaRef,
     {
@@ -300,30 +458,45 @@ export async function handleTrialOnboarding(
       telefone: whatsappFinal,
       perfilEmpresa: perfilEmpresaFinal,
       trialAtivo: true,
+      status: 'trial',
       dataCriacao: nowIso,
       dataExpiracaoTrial: expiresAtIso,
       accessUntil: accessUntilTimestamp,
       limiteUsuarios: 2,
+      ativo: true,
+      bloqueado: false,
       createdAt: nowIso,
       updatedAt: nowIso,
     },
     { merge: true }
   );
 
-  // 8.3. Documento em emailsAutorizados/{email}
-  batch.set(emailAuthRef, {
-    email: userEmail,
-    role: 'admin',
-    empresaId: empresaId,
-    ativo: true,
-    trialAtivo: true,
-    dataCriacao: nowIso,
-    dataExpiracaoTrial: expiresAtIso,
-    accessUntil: accessUntilTimestamp,
-    updatedAt: nowIso,
-  });
+  // 5.3. emailsAutorizados/{userEmail} (Status "trial" obrigatório e coerente com LicenseService)
+  batch.set(
+    emailAuthRef,
+    {
+      email: userEmail,
+      role: 'admin',
+      empresaId: empresaId,
+      status: 'trial',
+      plano: 'Trial 7 Dias',
+      ativo: true,
+      bloqueado: false,
+      trialAtivo: true,
+      trialInicio: nowIso,
+      trialFim: expiresAtIso,
+      validade: expiresAtIso,
+      dataCriacao: nowIso,
+      dataExpiracaoTrial: expiresAtIso,
+      accessUntil: accessUntilTimestamp,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      ultimaAtualizacao: nowIso,
+    },
+    { merge: true }
+  );
 
-  // 8.4. Documento multi-tenant em empresas/{empresaId}/company_profile/{empresaId}
+  // 5.4. company_profile/{empresaId}
   const companyProfileRef = db
     .collection('empresas')
     .doc(empresaId)
@@ -352,10 +525,8 @@ export async function handleTrialOnboarding(
     { merge: true }
   );
 
-  // 9. Commit Atômico
   await batch.commit();
-
-  console.log(`[Onboarding] Novo tenant ${empresaId} criado com sucesso para ${userEmail} (UID: ${uid}).`);
+  console.log('[ONBOARDING] batch concluído');
 
   return {
     success: true,

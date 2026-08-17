@@ -57,6 +57,7 @@ async function startServer() {
         error.message?.includes('bloqueada') ||
         error.message?.includes('bloqueado') ||
         error.message?.includes('revogado') ||
+        error.message?.includes('expirado') ||
         error.message?.includes('utilizado');
       const status = isAuthErr ? 401 : isForbidden ? 403 : 400;
 
