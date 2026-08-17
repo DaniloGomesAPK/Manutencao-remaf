@@ -8,9 +8,12 @@ import {
   ShieldCheck, 
   Sparkles, 
   CheckCircle, 
-  RefreshCw,
+  CreditCard,
+  Zap
 } from 'lucide-react';
 import { LicenseContext } from '../contexts/LicenseContext';
+import { AuthContext } from '../contexts/AuthContext';
+import { CheckoutService } from '../services/CheckoutService';
 import { UIHeader, UICard, UIButton, UIBadge } from '../components/ui/UIComponents';
 
 interface LicenciamentoProps {
@@ -19,21 +22,20 @@ interface LicenciamentoProps {
 
 export default function Licenciamento({ onBack }: LicenciamentoProps) {
   const licenseCtx = useContext(LicenseContext);
+  const authCtx = useContext(AuthContext);
 
   const license = licenseCtx?.license;
+  const userEmail = authCtx?.currentUser?.email || license?.email;
   const daysRemaining = license?.dataExpiracao 
     ? Math.max(0, Math.ceil((new Date(license.dataExpiracao).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))
     : 0;
 
-  const handleRenew = () => {
-    try {
-      if (licenseCtx?.renovar) {
-        licenseCtx.renovar(30);
-        alert("Licença renovada com sucesso por mais 30 dias de acesso premium!");
-      }
-    } catch (err) {
-      console.error(err);
-    }
+  const handleAssinarMensal = () => {
+    CheckoutService.openMonthlyCheckout(userEmail);
+  };
+
+  const handleAssinarAnual = () => {
+    CheckoutService.openAnnualCheckout(userEmail);
   };
 
   return (
@@ -111,38 +113,48 @@ export default function Licenciamento({ onBack }: LicenciamentoProps) {
           {/* Quick billing statement info */}
           <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 text-xs leading-relaxed text-slate-500 font-medium">
             <span className="font-bold text-slate-700 block uppercase tracking-wider text-[10px] mb-1">Informações de Faturamento</span>
-            As assinaturas deste sistema são protegidas de ponta-a-ponta. Seus dados cadastrais, informações de clientes e históricos de ordens de serviço ficam em segurança e integrados à nuvem SaaS para sincronia automatizada.
+            As assinaturas deste sistema são processadas com segurança. Após a confirmação do pagamento pelo gateway, sua licença e recursos são atualizados automaticamente na plataforma.
           </div>
         </UICard>
 
-        {/* Sidebar Renew box */}
+        {/* Sidebar Upgrade / Renewal Box */}
         <div className="bg-[#003366] text-white p-6 rounded-2xl border border-[#003366]/30 flex flex-col justify-between gap-6 shadow-xs relative overflow-hidden">
           <div className="space-y-4 relative z-10">
             <div className="p-3 bg-white/10 w-fit rounded-xl">
               <Sparkles className="w-6 h-6 text-[#FF6600]" />
             </div>
             <div className="space-y-1.5">
-              <h3 className="font-bold text-base uppercase tracking-tight">Precisa de mais tempo?</h3>
+              <h3 className="font-bold text-base uppercase tracking-tight">Assinar ou Renovar</h3>
               <p className="text-xs text-slate-300 leading-relaxed font-medium">
-                Estenda sua licença profissional instantaneamente e continue aproveitando todos os recursos avançados sem interrupções.
+                Garanta acesso contínuo aos recursos avançados de emissão de OS, precificação e sincronização em nuvem.
               </p>
             </div>
             
             <div className="border-t border-white/10 pt-4 space-y-1">
-              <span className="text-[10px] text-white/60 uppercase font-bold tracking-wider block">Data de Expiração</span>
+              <span className="text-[10px] text-white/60 uppercase font-bold tracking-wider block">Data de Expiração Atual</span>
               <span className="font-mono text-sm font-bold text-[#FF6600]">
                 {license?.dataExpiracao ? new Date(license.dataExpiracao).toLocaleDateString('pt-BR') : 'Sem dados'}
               </span>
             </div>
           </div>
 
-          <UIButton
-            onClick={handleRenew}
-            className="w-full bg-[#FF6600] hover:bg-[#E05500] text-white py-3 px-4 rounded-xl text-xs font-bold uppercase tracking-wider transition duration-150 cursor-pointer shadow-xs flex items-center justify-center gap-2 relative z-10 border-none"
-            icon={RefreshCw}
-          >
-            Renovar por 30 Dias
-          </UIButton>
+          <div className="space-y-3 relative z-10">
+            <UIButton
+              onClick={handleAssinarMensal}
+              className="w-full bg-[#FF6600] hover:bg-[#E05500] text-white py-3 px-4 rounded-xl text-xs font-bold uppercase tracking-wider transition duration-150 cursor-pointer shadow-xs flex items-center justify-center gap-2 border-none"
+              icon={CreditCard}
+            >
+              Plano Mensal (R$ 30/mês)
+            </UIButton>
+
+            <UIButton
+              onClick={handleAssinarAnual}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 px-4 rounded-xl text-xs font-bold uppercase tracking-wider transition duration-150 cursor-pointer shadow-xs flex items-center justify-center gap-2 border-none"
+              icon={Zap}
+            >
+              Plano Anual (PIX R$ 300)
+            </UIButton>
+          </div>
 
           <div className="absolute right-0 bottom-0 top-0 w-1/2 bg-gradient-to-l from-white/5 to-transparent pointer-events-none"></div>
         </div>

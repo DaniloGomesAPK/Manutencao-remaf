@@ -62,7 +62,7 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
   const aliquotaEfetiva = company?.aliquotaImposto !== undefined ? company.aliquotaImposto : 6.00;
 
   const currentUser = authCtx?.currentUser;
-  const empresaId = currentUser?.empresaId || 'emp_daniloempreendimentos';
+  const empresaId = currentUser?.empresaId?.trim() || '';
 
   const { servicos, isLoadingServicos, saveServico, deleteServico, reloadServicos } = servicoCtx || {
     servicos: [],
@@ -224,6 +224,10 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
   // Cadastro Rápido Save Logic
   const handleQuickSave = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (!empresaId) {
+      showNotification('Erro crítico: sua sessão não possui vínculo empresarial. Faça login novamente.', 'error');
+      return;
+    }
     const isPeca = quickType === 'peca';
     const nomeTrimmed = quickNome.trim();
 
@@ -329,6 +333,10 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
 
   const handleConfirmImport = async () => {
     if (!previewResult || !importFile) return;
+    if (!empresaId) {
+      showNotification('Erro crítico: sua sessão não possui vínculo empresarial. Faça login novamente.', 'error');
+      return;
+    }
     setIsImporting(true);
     setImportProgress(15);
     try {
@@ -346,7 +354,8 @@ export default function CentralPrecificacao({ onBack }: CentralPrecificacaoProps
         duplicateDecision,
         aliquotaEfetiva,
         servicos,
-        trackingSave
+        trackingSave,
+        empresaId
       );
 
       clearInterval(progressInterval);

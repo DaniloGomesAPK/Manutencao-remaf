@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { OrdemDeServico, ItemOrcamento, Servico } from '../types';
 import { formatToBrazilianDate } from '../utils/dateFormatter';
+import { AuthContext } from '../contexts/AuthContext';
 import { ServicoContext } from '../contexts/ServicoContext';
 import { EmpresaContext } from '../contexts/EmpresaContext';
 import { ServicoInteligenteService } from '../services/ServicoInteligenteService';
@@ -43,6 +44,9 @@ interface OSFormStep3Props {
 }
 
 export default function OSFormStep3({ initialData, onNext, onBack, onCancel, onSaveProgress, isSaving = false }: OSFormStep3Props) {
+  const auth = useContext(AuthContext);
+  const empresaId = auth?.currentUser?.empresaId?.trim() || initialData.empresaId?.trim() || '';
+
   const servicoCtx = useContext(ServicoContext);
   const { servicos } = servicoCtx || { servicos: [] };
 
@@ -131,6 +135,7 @@ export default function OSFormStep3({ initialData, onNext, onBack, onCancel, onS
   const getCurrentStep3Data = (): Partial<OrdemDeServico> => {
     const total = items.reduce((acc, item) => acc + (item.valorTotal || 0), 0);
     return {
+      empresaId,
       orcamento: items,
       valorTotalOrcamento: total,
       formaPagamento,
@@ -246,9 +251,11 @@ export default function OSFormStep3({ initialData, onNext, onBack, onCancel, onS
   const injectServiceIntoOrcamento = async (srv: Servico, type: 'detalhada' | 'resumida' = 'detalhada', priceModal: 'minimo' | 'recomendado' | 'premium' = 'recomendado') => {
     setActiveSmartService(srv);
     try {
-      await ServicoInteligenteService.registrarUtilizacao(srv.id, initialData.empresaId || 'emp_daniloempreendimentos');
-      if (servicoCtx?.reloadServicos) {
-        await servicoCtx.reloadServicos();
+      if (empresaId) {
+        await ServicoInteligenteService.registrarUtilizacao(srv.id, empresaId);
+        if (servicoCtx?.reloadServicos) {
+          await servicoCtx.reloadServicos();
+        }
       }
     } catch (err) {
       console.warn("Erro ao registrar utilização do serviço inteligente:", err);
@@ -414,6 +421,7 @@ export default function OSFormStep3({ initialData, onNext, onBack, onCancel, onS
     }
 
     onNext({
+      empresaId,
       orcamento: items,
       valorTotalOrcamento: total,
       rentabilidade: rentabilidade || initialData.rentabilidade,

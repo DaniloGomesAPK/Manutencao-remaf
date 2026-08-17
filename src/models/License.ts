@@ -13,6 +13,7 @@ export interface EmailAutorizado {
   trialInicio: string | null;
   trialFim: string | null;
   validade: string | null;
+  accessUntil?: any;
   ativo: boolean;
   bloqueado: boolean;
   criadoEm?: any;
@@ -38,5 +39,3 @@ export interface License extends LicencaAtual {
   ultimaSincronizacao?: string;
   isActive?: boolean;
 }
-
-

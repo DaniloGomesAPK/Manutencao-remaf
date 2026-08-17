@@ -13,9 +13,9 @@ import {
   fetchAllServiceOrders, 
   uploadPDFReport,
   isLocalSandbox,
-  generateNewDocumentId,
-  deleteServiceOrder
+  generateNewDocumentId
 } from './db';
+import { OrdemServicoService } from './services/OSService';
 
 import { AuthContext } from './contexts/AuthContext';
 import { EmpresaContext } from './contexts/EmpresaContext';
@@ -81,6 +81,7 @@ export default function App() {
   const [loginError, setLoginError] = useState('');
   const [submittingLogin, setSubmittingLogin] = useState(false);
   const [showPlansInApp, setShowPlansInApp] = useState(false);
+  const [usuarioPendenteVerificacao, setUsuarioPendenteVerificacao] = useState<any>(null);
 
   // Esqueci a Senha States
   const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -161,7 +162,7 @@ export default function App() {
 
   // Multi-tenant database fetch trigger
   useEffect(() => {
-    if (activeUser?.empresaId) {
+    if (activeUser?.empresaId && activeUser.empresaId.trim() !== '') {
       loadServiceOrders();
     } else {
       setServiceOrders([]);
@@ -172,7 +173,7 @@ export default function App() {
   // Ouvinte global do evento "ordens_servico_updated" para recarregar imediatamente as ordens de serviço
   useEffect(() => {
     const handleOrdersUpdated = async () => {
-      if (activeUser?.empresaId) {
+      if (activeUser?.empresaId && activeUser.empresaId.trim() !== '') {
         try {
           const list = await fetchAllServiceOrders(activeUser.empresaId);
           setServiceOrders(list);
@@ -270,6 +271,11 @@ export default function App() {
     try {
       await auth?.login(loginEmail.trim().toLowerCase(), loginPassword);
     } catch (err: any) {
+      if (err?.code === 'EMAIL_NOT_VERIFIED' || err?.message?.includes('EMAIL_NOT_VERIFIED')) {
+        setUsuarioPendenteVerificacao(err.user || null);
+        setSaasView('trial');
+        return;
+      }
       setLoginError(getFriendlyErrorMessage(err, 'E-mail ou senha inválidos. Por favor, tente novamente.'));
     } finally {
       setSubmittingLogin(false);
@@ -338,10 +344,15 @@ export default function App() {
   // Explicit Save Progress Handler across any phase (1-5)
   const handleSaveProgress = async (stepData: Partial<OrdemDeServico>, targetStep?: OSStep) => {
     if (isSaving) return;
+    const empresaId = activeUser?.empresaId?.trim();
+    if (!empresaId) {
+      alert("Erro crítico de isolamento: Sessão sem vínculo empresarial. Operação bloqueada.");
+      return;
+    }
+
     setIsSaving(true);
     try {
       const docId = formData.id || stepData.id || generateNewDocumentId();
-      const empresaId = activeUser?.empresaId || 'default_tenant';
       const activeStep = targetStep || currentStep;
 
       const updatedOS: OrdemDeServico = {
@@ -364,10 +375,8 @@ export default function App() {
       }
 
       // Refresh service orders list silently
-      if (activeUser?.empresaId) {
-        const updatedList = await fetchAllServiceOrders(activeUser.empresaId);
-        setServiceOrders(updatedList);
-      }
+      const updatedList = await fetchAllServiceOrders(empresaId);
+      setServiceOrders(updatedList);
 
       // Toast feedback notification
       setToastMessage("Orçamento salvo com sucesso.");
@@ -382,9 +391,15 @@ export default function App() {
 
   // Duplicate an OS to facilitate creating the same budget for a different equipment
   const handleDuplicateOS = (os: OrdemDeServico) => {
+    const empresaId = activeUser?.empresaId?.trim() || os.empresaId?.trim();
+    if (!empresaId) {
+      alert("Erro crítico: Não é possível duplicar sem um vínculo empresarial ativo.");
+      return;
+    }
+
     const duplicated: Partial<OrdemDeServico> = {
       id: generateNewDocumentId(),
-      empresaId: os.empresaId,
+      empresaId,
       numeroOS: '', // will be auto-calculated in Step 1
       
       // Keep customer details
@@ -426,27 +441,25 @@ export default function App() {
     setViewingForm(true);
   };
 
-  // Delete a pending service order
+  // Delete a pending service order via Central de Recuperação
   const handleDeleteOS = async (id: string) => {
-    if (!activeUser?.empresaId) return;
+    const empresaId = activeUser?.empresaId?.trim();
+    if (!empresaId) {
+      alert("Erro crítico: Impossível excluir OS sem empresaId válido.");
+      return;
+    }
     try {
-      // Optimistic update of state
-      setServiceOrders(prev => prev.filter(o => o.id !== id));
-
       if (formData.id === id) {
         handleCancelForm();
       }
 
-      await deleteServiceOrder(id, activeUser.empresaId);
+      await OrdemServicoService.deleteOrdemServico(id, empresaId, activeUser?.email);
 
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('ordens_servico_updated', { detail: { empresaId: activeUser.empresaId, deletedId: id } }));
-      }
-
-      await loadServiceOrders(true); // reload list silently
-    } catch (err) {
+      // Recarrega lista
+      await loadServiceOrders(true);
+    } catch (err: any) {
       console.error("Failed to delete service order:", err);
-      alert("Erro ao excluir Ordem de Serviço.");
+      alert("Erro ao excluir Ordem de Serviço: " + (err?.message || 'Falha na exclusão.'));
       await loadServiceOrders(true);
     }
   };
@@ -476,8 +489,12 @@ export default function App() {
 
   // Wizard action: Next
   const handleStep1Submit = (step1Data: Partial<OrdemDeServico>) => {
+    const empresaId = activeUser?.empresaId?.trim();
+    if (!empresaId) {
+      alert("Erro crítico: Sessão sem empresa vinculada.");
+      return;
+    }
     const docId = formData.id || generateNewDocumentId();
-    const empresaId = activeUser?.empresaId || 'default_tenant';
     
     const updated = {
       ...formData,
@@ -497,10 +514,8 @@ export default function App() {
         await saveOrdemDeServico(updated);
 
         // Silently update list so the dashboard list has the correct local list
-        if (activeUser?.empresaId) {
-          const updatedList = await fetchAllServiceOrders(activeUser.empresaId);
-          setServiceOrders(updatedList);
-        }
+        const updatedList = await fetchAllServiceOrders(empresaId);
+        setServiceOrders(updatedList);
       } catch (err) {
         console.error("Failed to silently sync Step 1 transition:", err);
       }
@@ -508,8 +523,12 @@ export default function App() {
   };
 
   const handleStep2Submit = (step2Data: Partial<OrdemDeServico>) => {
+    const empresaId = activeUser?.empresaId?.trim();
+    if (!empresaId) {
+      alert("Erro crítico: Sessão sem empresa vinculada.");
+      return;
+    }
     const docId = formData.id || generateNewDocumentId();
-    const empresaId = activeUser?.empresaId || 'default_tenant';
 
     const updated = {
       ...formData,
@@ -529,10 +548,8 @@ export default function App() {
         await saveOrdemDeServico(updated);
 
         // Silently update list so the dashboard list has the correct local list
-        if (activeUser?.empresaId) {
-          const updatedList = await fetchAllServiceOrders(activeUser.empresaId);
-          setServiceOrders(updatedList);
-        }
+        const updatedList = await fetchAllServiceOrders(empresaId);
+        setServiceOrders(updatedList);
       } catch (err) {
         console.error("Failed to silently sync Step 2 transition:", err);
       }
@@ -540,8 +557,12 @@ export default function App() {
   };
 
   const handleStep3Submit = (step3Data: Partial<OrdemDeServico>) => {
+    const empresaId = activeUser?.empresaId?.trim();
+    if (!empresaId) {
+      alert("Erro crítico: Sessão sem empresa vinculada.");
+      return;
+    }
     const docId = formData.id || generateNewDocumentId();
-    const empresaId = activeUser?.empresaId || 'default_tenant';
 
     const updated = {
       ...formData,
@@ -558,10 +579,8 @@ export default function App() {
     (async () => {
       try {
         await saveOrdemDeServico(updated);
-        if (activeUser?.empresaId) {
-          const updatedList = await fetchAllServiceOrders(activeUser.empresaId);
-          setServiceOrders(updatedList);
-        }
+        const updatedList = await fetchAllServiceOrders(empresaId);
+        setServiceOrders(updatedList);
       } catch (err) {
         console.error("Failed to silently sync Step 3 transition:", err);
       }
@@ -569,8 +588,12 @@ export default function App() {
   };
 
   const handleStep4Submit = (step4Data: Partial<OrdemDeServico>) => {
+    const empresaId = activeUser?.empresaId?.trim();
+    if (!empresaId) {
+      alert("Erro crítico: Sessão sem empresa vinculada.");
+      return;
+    }
     const docId = formData.id || generateNewDocumentId();
-    const empresaId = activeUser?.empresaId || 'default_tenant';
 
     const updated = {
       ...formData,
@@ -587,10 +610,8 @@ export default function App() {
     (async () => {
       try {
         await saveOrdemDeServico(updated);
-        if (activeUser?.empresaId) {
-          const updatedList = await fetchAllServiceOrders(activeUser.empresaId);
-          setServiceOrders(updatedList);
-        }
+        const updatedList = await fetchAllServiceOrders(empresaId);
+        setServiceOrders(updatedList);
       } catch (err) {
         console.error("Failed to silently sync Step 4 transition:", err);
       }
@@ -599,10 +620,15 @@ export default function App() {
 
   // Save progress as a draft and generate its PDF immediately
   const handleSaveDraftAndPDF = async (stepData: Partial<OrdemDeServico>) => {
+    const empresaId = activeUser?.empresaId?.trim();
+    if (!empresaId) {
+      alert("Erro crítico: Impossível gerar rascunho sem empresaId.");
+      return;
+    }
+
     setIsSaving(true);
     try {
       const docId = formData.id || generateNewDocumentId();
-      const empresaId = activeUser?.empresaId || 'default_tenant';
 
       const draftDetails: OrdemDeServico = {
         ...formData,
@@ -635,10 +661,8 @@ export default function App() {
           await saveOrdemDeServico(draftDetails);
           
           // Silently refresh the list in the background
-          if (activeUser?.empresaId) {
-            const updatedList = await fetchAllServiceOrders(activeUser.empresaId);
-            setServiceOrders(updatedList);
-          }
+          const updatedList = await fetchAllServiceOrders(empresaId);
+          setServiceOrders(updatedList);
         } catch (uploadErr) {
           console.warn("Background Storage PDF upload bypassed or failed, falling back to local inline:", uploadErr);
         }
@@ -652,10 +676,15 @@ export default function App() {
 
   // Save full OS and render PDF
   const handleFullOSSave = async (step3Data: Partial<OrdemDeServico>) => {
+    const empresaId = activeUser?.empresaId?.trim();
+    if (!empresaId) {
+      alert("Erro crítico: Impossível concluir OS sem empresaId.");
+      return;
+    }
+
     setIsSaving(true);
     try {
       const docId = formData.id || generateNewDocumentId();
-      const empresaId = activeUser?.empresaId || 'default_tenant';
 
       const fullDetails: OrdemDeServico = {
         ...formData,
@@ -689,10 +718,8 @@ export default function App() {
           await saveOrdemDeServico(fullDetails);
           
           // Refetch latest silently
-          if (activeUser?.empresaId) {
-            const updatedList = await fetchAllServiceOrders(activeUser.empresaId);
-            setServiceOrders(updatedList);
-          }
+          const updatedList = await fetchAllServiceOrders(empresaId);
+          setServiceOrders(updatedList);
         } catch (uploadErr) {
           console.warn("Background full transaction assets sync bypassed:", uploadErr);
         }
@@ -753,15 +780,22 @@ export default function App() {
     if (saasView === 'trial') {
       return (
         <TrialRegistrationScreen
-          onBack={() => setSaasView('welcome')}
+          usuarioPendenteVerificacao={usuarioPendenteVerificacao}
+          onBack={() => {
+            setUsuarioPendenteVerificacao(null);
+            setSaasView('welcome');
+          }}
           onOpenLogin={() => {
+            setUsuarioPendenteVerificacao(null);
             setAuthMode('login');
             setSaasView('login');
           }}
           onAccessGranted={() => {
+            setUsuarioPendenteVerificacao(null);
             window.location.reload();
           }}
           onTrialExpired={() => {
+            setUsuarioPendenteVerificacao(null);
             setSaasView('plans');
           }}
         />
@@ -1028,8 +1062,35 @@ export default function App() {
 
   // 3. Authenticated State Machine Navigation
   const uid = activeUser?.id || '';
-  const empresaId = activeUser?.empresaId || '';
+  const empresaId = activeUser?.empresaId?.trim() || '';
   const lic = licenseCtx?.licencaAtual;
+
+  // FAIL-FAST TENANT ISOLATION: Bloqueio visual explícito se o usuário logado não possuir vínculo empresarial válido
+  if (!empresaId) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center font-sans">
+        <div className="bg-slate-800 border-2 border-red-500/50 rounded-3xl p-8 max-w-md w-full shadow-2xl space-y-6">
+          <div className="w-16 h-16 bg-red-500/10 border border-red-500/30 rounded-2xl flex items-center justify-center mx-auto text-red-500">
+            <AlertCircle className="w-8 h-8" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-lg font-black text-white tracking-tight uppercase">
+              Isolamento Empresarial
+            </h2>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Erro crítico: sua sessão não possui vínculo empresarial. Faça login novamente.
+            </p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider transition cursor-pointer shadow-lg"
+          >
+            Sair e Fazer Login Novamente
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Se a licença ainda não estiver carregada, permanece na tela de carregamento (É proibido utilizar 'pending' como fallback)
   if (!lic) {
@@ -1069,7 +1130,7 @@ export default function App() {
         userEmail={activeUser?.email}
         userName={activeUser?.nome}
         onStartTrial={async () => {
-          await licenseCtx?.iniciarTrial();
+          await licenseCtx?.refreshLicenca();
         }}
         onLogout={() => auth?.logout()}
       />
@@ -1089,27 +1150,42 @@ export default function App() {
     }
   }
 
-  const isAccessBlocked = isPago 
-    ? (lic.ativo === false || lic.bloqueado === true)
-    : (
-      auth?.isTrialExpired || 
-      auth?.isAccessBlocked || 
-      !licenseCtx?.isValid || 
-      lic.ativo === false || 
-      lic.bloqueado === true || 
-      status === 'expired' || 
-      isTrial7DaysExpired ||
-      status === 'blocked' || 
-      status === 'cancelled' || 
-      status === 'overdue'
-    );
+  // Verificação rigorosa de vigência de accessUntil para licença paga
+  const getAccessUntilMs = (): number | null => {
+    const field = (lic as any).accessUntil || lic.validade || lic.fim;
+    if (!field) return null;
+    if (typeof field.toMillis === 'function') return field.toMillis();
+    if (typeof field.toDate === 'function') return field.toDate().getTime();
+    if (typeof field.seconds === 'number') return field.seconds * 1000;
+    if (typeof field === 'string' || typeof field === 'number') {
+      const d = new Date(field);
+      return isNaN(d.getTime()) ? null : d.getTime();
+    }
+    return null;
+  };
+
+  const accessUntilMs = getAccessUntilMs();
+  const isPaidExpired = isPago && (accessUntilMs === null || isNaN(accessUntilMs) || Date.now() >= accessUntilMs);
+
+  const isAccessBlocked = 
+    auth?.isTrialExpired || 
+    auth?.isAccessBlocked || 
+    !licenseCtx?.isValid || 
+    lic.ativo === false || 
+    lic.bloqueado === true || 
+    status === 'expired' || 
+    status === 'blocked' || 
+    status === 'cancelled' || 
+    status === 'overdue' ||
+    isTrial7DaysExpired ||
+    isPaidExpired;
 
   // Expired, Inactive, Blocked, Cancelled, Overdue ou Inválido -> Route Guard: TrialExpired
   if (isAccessBlocked) {
     console.log('[AUTH]', uid);
     console.log('[EMPRESA]', empresaId);
-    console.log('[LICENÇA]', `status: ${status}, isValid: ${licenseCtx?.isValid}, isTrial7DaysExpired: ${isTrial7DaysExpired}, trialInicio: ${trialInicio}, trialFim: ${trialFim}`);
-    console.log('[ROTA GUARD]', `Acesso Bloqueado / Teste Expirado -> TrialExpired (Status: ${status})`);
+    console.log('[LICENÇA]', `status: ${status}, isValid: ${licenseCtx?.isValid}, isTrial7DaysExpired: ${isTrial7DaysExpired}, isPaidExpired: ${isPaidExpired}, trialInicio: ${trialInicio}, trialFim: ${trialFim}`);
+    console.log('[ROTA GUARD]', `Acesso Bloqueado / Teste ou Licença Expirada -> TrialExpired (Status: ${status})`);
 
     return (
       <TrialExpired

@@ -157,7 +157,8 @@ export default function ImportExportManager({
         duplicateDecision,
         aliquotaEfetiva,
         servicos,
-        trackingSave
+        trackingSave,
+        empresaId
       );
 
       clearInterval(progressInterval);

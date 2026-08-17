@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { generateNextOSNumber } from '../db';
 import { OrdemDeServico, Cliente } from '../types';
+import { AuthContext } from '../contexts/AuthContext';
 import { ClienteContext } from '../contexts/ClienteContext';
 import { EquipamentoContext } from '../contexts/EquipamentoContext';
 import { useEmpresa } from '../contexts/EmpresaContext';
@@ -52,6 +53,8 @@ interface OSFormStep1Props {
 
 export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrders, onSaveProgress, isSaving = false }: OSFormStep1Props) {
   const { perfilConfig } = useEmpresa();
+  const auth = useContext(AuthContext);
+  const empresaId = auth?.currentUser?.empresaId?.trim() || initialData?.empresaId?.trim() || '';
 
   const clienteCtx = useContext(ClienteContext);
   const { clientes, saveCliente } = clienteCtx || { clientes: [], saveCliente: async () => ({} as Cliente) };
@@ -143,16 +146,15 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
 
   // Automatic protocol sequence calculation on load if empty
   useEffect(() => {
-    if (!numeroOS && serviceOrders) {
+    if (!numeroOS && serviceOrders && empresaId) {
       setLoading(true);
-      const activeTenant = initialData?.empresaId || 'emp_daniloempreendimentos';
-      generateNextOSNumber(activeTenant, serviceOrders)
+      generateNextOSNumber(empresaId, serviceOrders)
         .then(num => {
           setNumeroOS(num);
         })
         .finally(() => setLoading(false));
     }
-  }, [numeroOS, serviceOrders]);
+  }, [numeroOS, serviceOrders, empresaId]);
 
   // Sync search input if client changes
   useEffect(() => {
@@ -181,12 +183,16 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
   const handleQuickAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!quickNome.trim()) return;
+    if (!empresaId) {
+      alert("Erro crítico: Impossível cadastrar cliente sem vínculo empresarial ativo.");
+      return;
+    }
 
     setQuickSaving(true);
     try {
       const saved = await saveCliente({
         id: '',
-        empresaId: initialData?.empresaId || 'default_tenant',
+        empresaId,
         nome: quickNome.trim(),
         documento: quickDoc.trim(),
         telefone: quickTel.trim(),
@@ -253,6 +259,7 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
     }
 
     onNext({
+      empresaId,
       numeroOS: numeroOS.trim(),
       dataAbertura,
       horaAbertura,
@@ -277,6 +284,7 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
 
   const getCurrentStep1Data = (): Partial<OrdemDeServico> => {
     return {
+      empresaId,
       numeroOS: numeroOS.trim(),
       dataAbertura,
       horaAbertura,

@@ -21,7 +21,9 @@ import {
   FileText, 
   ArrowLeft,
   ChevronRight,
-  Info
+  Info,
+  AlertTriangle,
+  Loader2
 } from 'lucide-react';
 import { ClienteContext } from '../contexts/ClienteContext';
 import { Cliente } from '../types';
@@ -50,6 +52,13 @@ export default function CadastroClientes({ onBack }: CadastroClientesProps) {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
+
+  // Deletion Modal State
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [clientToDelete, setClientToDelete] = useState<{ id: string; nome: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const firstInputRef = useRef<HTMLInputElement>(null);
@@ -123,6 +132,7 @@ export default function CadastroClientes({ onBack }: CadastroClientesProps) {
     setEstado('');
     setCep('');
     setObservacoes('');
+    setFormError(null);
     setIsFormOpen(true);
   };
 
@@ -140,6 +150,7 @@ export default function CadastroClientes({ onBack }: CadastroClientesProps) {
     setEstado(cliente.estado);
     setCep(cliente.cep);
     setObservacoes(cliente.observacoes || '');
+    setFormError(null);
     setIsFormOpen(true);
   };
 
@@ -148,15 +159,43 @@ export default function CadastroClientes({ onBack }: CadastroClientesProps) {
     setIsViewOpen(true);
   };
 
-  const handleDelete = async (id: string, nome: string) => {
-    if (window.confirm(`Tem certeza que deseja excluir o cliente "${nome}"?`)) {
-      try {
-        await deleteCliente(id);
-      } catch (err: any) {
-        console.error('Erro ao excluir cliente:', err);
-        alert(err.message || 'Não foi possível excluir o cliente.');
+  const handleOpenDeleteModal = (id: string, nome: string) => {
+    console.log('[DELETE CLIENTE] Abrindo modal de confirmação de exclusão', { id, nome });
+    setClientToDelete({ id, nome });
+    setDeleteError(null);
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!clientToDelete) return;
+    console.log('[DELETE CLIENTE] confirmação aceita no modal', clientToDelete);
+    console.log('[DELETE CLIENTE] clienteId:', clientToDelete.id);
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteCliente(clientToDelete.id);
+      console.log('[DELETE CLIENTE] Exclusão concluída com sucesso no estado e Firestore:', clientToDelete.id);
+      if (selectedCliente?.id === clientToDelete.id) {
+        setIsViewOpen(false);
+        setIsFormOpen(false);
+        setSelectedCliente(null);
       }
+      setIsDeleteModalOpen(false);
+      setClientToDelete(null);
+    } catch (err: any) {
+      console.error('[DELETE CLIENTE] Erro ao excluir cliente:', err);
+      setDeleteError(err.message || 'Não foi possível excluir o cliente.');
+    } finally {
+      setIsDeleting(false);
     }
+  };
+
+  const handleCloseDeleteModal = () => {
+    if (isDeleting) return;
+    console.log('[DELETE CLIENTE] Exclusão cancelada pelo usuário no modal');
+    setIsDeleteModalOpen(false);
+    setClientToDelete(null);
+    setDeleteError(null);
   };
 
   // Mask formatting
@@ -201,8 +240,9 @@ export default function CadastroClientes({ onBack }: CadastroClientesProps) {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     if (!nome.trim()) {
-      alert('O campo Nome Completo é obrigatório.');
+      setFormError('O campo Nome Completo é obrigatório.');
       return;
     }
 
@@ -229,7 +269,7 @@ export default function CadastroClientes({ onBack }: CadastroClientesProps) {
       setIsFormOpen(false);
     } catch (err: any) {
       console.error('Erro ao salvar cliente:', err);
-      alert(err.message || 'Erro ao salvar os dados do cliente.');
+      setFormError(err.message || 'Erro ao salvar os dados do cliente.');
     }
   };
 
@@ -342,7 +382,7 @@ export default function CadastroClientes({ onBack }: CadastroClientesProps) {
                             </button>
                             <button
                               title="Excluir"
-                              onClick={() => handleDelete(cliente.id, cliente.nome)}
+                              onClick={() => handleOpenDeleteModal(cliente.id, cliente.nome)}
                               className="p-1.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-lg transition cursor-pointer"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -378,7 +418,7 @@ export default function CadastroClientes({ onBack }: CadastroClientesProps) {
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => handleDelete(cliente.id, cliente.nome)}
+                          onClick={() => handleOpenDeleteModal(cliente.id, cliente.nome)}
                           className="p-2 bg-rose-50 text-rose-600 active:bg-rose-100 rounded-lg transition"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -437,6 +477,13 @@ export default function CadastroClientes({ onBack }: CadastroClientesProps) {
           </div>
 
           <form onSubmit={handleSave} className="p-5 sm:p-6 space-y-6">
+            {formError && (
+              <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 text-rose-800 text-xs leading-relaxed animate-in fade-in">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="whitespace-pre-line font-medium">{formError}</div>
+              </div>
+            )}
+
             {/* Secção: Dados Pessoais */}
             <div className="space-y-4">
               <h4 className="text-[11px] font-black uppercase text-slate-400 tracking-wider border-b border-slate-100 pb-1 flex items-center gap-1.5">
@@ -762,6 +809,81 @@ export default function CadastroClientes({ onBack }: CadastroClientesProps) {
                 className="px-5 py-2 bg-[#003366] hover:bg-[#002244] text-white font-bold rounded-xl text-xs uppercase tracking-wider transition cursor-pointer"
               >
                 Fechar Ficha
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal React de Confirmação de Exclusão de Cliente */}
+      {isDeleteModalOpen && clientToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-rose-50/50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">Excluir Cliente</h3>
+                  <p className="text-[11px] text-slate-500 font-medium">Confirmação de remoção</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseDeleteModal}
+                disabled={isDeleting}
+                className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition disabled:opacity-50 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-slate-700 leading-relaxed">
+                Tem certeza que deseja excluir o cliente <strong className="text-slate-900 font-bold underline decoration-[#FF6600]/40">{clientToDelete.nome}</strong>?
+              </p>
+              <div className="text-[11px] text-slate-600 bg-slate-50 border border-slate-200/80 p-3 rounded-xl flex items-start gap-2">
+                <Info className="w-4 h-4 text-[#003366] shrink-0 mt-0.5" />
+                <span>
+                  O registro será enviado para a <strong>Central de Recuperação</strong> (Lixeira) e poderá ser restaurado em até 30 dias se não houver vínculos impeditivos.
+                </span>
+              </div>
+
+              {deleteError && (
+                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 text-rose-800 text-xs leading-relaxed animate-in fade-in">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="whitespace-pre-line font-medium">{deleteError}</div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-150 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={handleCloseDeleteModal}
+                disabled={isDeleting}
+                className="px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs uppercase tracking-wider transition disabled:opacity-50 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition disabled:opacity-50 flex items-center gap-2 shadow-sm cursor-pointer"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Excluindo...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Excluir
+                  </>
+                )}
               </button>
             </div>
           </div>
