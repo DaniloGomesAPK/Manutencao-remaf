@@ -1,10 +1,15 @@
-import type { IncomingMessage, ServerResponse } from 'http';
-import { handleTrialOnboarding } from '../../server/onboardingService';
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
-    return res.status(405).json({ error: `Método ${req.method} não permitido. Utilize POST.` });
+    return res.status(405).json({
+      success: false,
+      error: `Método ${req.method} não permitido. Utilize POST.`,
+    });
   }
 
   const authHeader = req.headers?.authorization || '';
@@ -24,31 +29,63 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    console.log('[TRIAL API] handler iniciado');
+
+    const { handleTrialOnboarding } = await import('../../server/onboardingService');
+
+    console.log('[TRIAL API] onboardingService carregado');
+
     const result = await handleTrialOnboarding(idToken, req.body);
+
+    console.log('[TRIAL API] onboarding concluído com sucesso');
     return res.status(200).json(result);
   } catch (error: any) {
-    console.error('[Vercel Onboarding] Erro:', error.message || error);
-    const isAuthErr =
-      error.message?.includes('não autorizado') ||
-      error.message?.includes('Token') ||
-      error.message?.includes('expirada') ||
-      error.message?.includes('autenticação');
-    const isForbidden =
-      error.message?.includes('EMAIL_NAO_VERIFICADO') ||
-      error.message?.includes('não verificado') ||
-      error.message?.includes('negada') ||
-      error.message?.includes('integridade') ||
-      error.message?.includes('Conflito') ||
-      error.message?.includes('bloqueada') ||
-      error.message?.includes('bloqueado') ||
-      error.message?.includes('revogado') ||
-      error.message?.includes('expirado') ||
-      error.message?.includes('utilizado');
-    const status = isAuthErr ? 401 : isForbidden ? 403 : 400;
+    const errorMsg = error?.message || '';
 
-    return res.status(status).json({
+    const isAuthErr =
+      errorMsg.includes('não autorizado') ||
+      errorMsg.includes('Token') ||
+      errorMsg.includes('expirada') ||
+      errorMsg.includes('autenticação');
+
+    const isForbidden =
+      errorMsg.includes('EMAIL_NAO_VERIFICADO') ||
+      errorMsg.includes('não verificado') ||
+      errorMsg.includes('negada') ||
+      errorMsg.includes('integridade') ||
+      errorMsg.includes('Conflito') ||
+      errorMsg.includes('bloqueada') ||
+      errorMsg.includes('bloqueado') ||
+      errorMsg.includes('revogado') ||
+      errorMsg.includes('expirado') ||
+      errorMsg.includes('utilizado');
+
+    if (isAuthErr || isForbidden) {
+      console.warn('[TRIAL API REJEIÇÃO CONTROLADA]', {
+        name: error?.name,
+        code: error?.code,
+        message: errorMsg,
+      });
+
+      const status = isAuthErr ? 401 : 403;
+      return res.status(status).json({
+        success: false,
+        error: errorMsg,
+        diagnosticCode: error?.code || error?.name || (isAuthErr ? 'UNAUTHORIZED' : 'FORBIDDEN'),
+      });
+    }
+
+    console.error('[TRIAL API FATAL]', {
+      name: error?.name,
+      code: error?.code,
+      message: error?.message,
+      stack: error?.stack,
+    });
+
+    return res.status(500).json({
       success: false,
-      error: error.message || 'Falha ao processar cadastro de avaliação.',
+      error: errorMsg || 'Falha interna no onboarding.',
+      diagnosticCode: error?.code || error?.name || 'UNKNOWN',
     });
   }
 }

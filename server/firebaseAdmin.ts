@@ -1,3 +1,8 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import { initializeApp, getApps, cert, App } from 'firebase-admin/app';
 import crypto from 'crypto';
 
@@ -12,25 +17,33 @@ export function hashEmail(email: string): string {
 
 /**
  * Retorna a instância inicializada do Firebase Admin SDK utilizando singleton
- * e inicialização tardia (lazy) para evitar travamentos em inicialização.
+ * e inicialização tardia (lazy) para evitar travamentos em inicialização de Serverless Functions.
  */
 export function getFirebaseAdmin(): App {
   if (adminApp) {
     return adminApp;
   }
 
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  // Corrige eventuais quebras de linha em chaves privadas vindas de variáveis de ambiente
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY
-    ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
-    : undefined;
+  const projectId = process.env.FIREBASE_PROJECT_ID?.trim();
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL?.trim();
+  
+  let rawPrivateKey = process.env.FIREBASE_PRIVATE_KEY?.trim();
+  if (rawPrivateKey) {
+    if ((rawPrivateKey.startsWith('"') && rawPrivateKey.endsWith('"')) ||
+        (rawPrivateKey.startsWith("'") && rawPrivateKey.endsWith("'"))) {
+      rawPrivateKey = rawPrivateKey.substring(1, rawPrivateKey.length - 1);
+    }
+    rawPrivateKey = rawPrivateKey.replace(/\\n/g, '\n');
+  }
 
-  if (!projectId || !clientEmail || !privateKey) {
-    console.warn(
-      '⚠️ Credenciais do Firebase Admin SDK não estão totalmente configuradas (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY).'
-    );
-    throw new Error('Credenciais do Firebase Admin ausentes nas variáveis de ambiente.');
+  if (!projectId || !clientEmail || !rawPrivateKey) {
+    const missing: string[] = [];
+    if (!projectId) missing.push('FIREBASE_PROJECT_ID');
+    if (!clientEmail) missing.push('FIREBASE_CLIENT_EMAIL');
+    if (!rawPrivateKey) missing.push('FIREBASE_PRIVATE_KEY');
+
+    console.error(`[FIREBASE ADMIN ERROR] Credenciais ausentes no ambiente: ${missing.join(', ')}`);
+    throw new Error(`Credenciais do Firebase Admin ausentes: ${missing.join(', ')}`);
   }
 
   try {
@@ -40,15 +53,20 @@ export function getFirebaseAdmin(): App {
         credential: cert({
           projectId,
           clientEmail,
-          privateKey,
+          privateKey: rawPrivateKey,
         }),
       });
+      console.log(`[FIREBASE ADMIN] SDK inicializado com sucesso para o projeto: ${projectId}`);
     } else {
       adminApp = apps[0]!;
     }
     return adminApp;
-  } catch (error) {
-    console.error('Falha ao inicializar o Firebase Admin SDK:', error);
+  } catch (error: any) {
+    console.error('[FIREBASE ADMIN ERROR] Falha ao inicializar o Firebase Admin SDK:', {
+      name: error?.name,
+      code: error?.code,
+      message: error?.message,
+    });
     throw error;
   }
 }
