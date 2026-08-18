@@ -34,7 +34,7 @@ import { getFriendlyErrorMessage } from '../utils/errorUtils';
 interface TrialRegistrationScreenProps {
   onBack: () => void;
   onOpenLogin?: () => void;
-  onAccessGranted?: (empresaId: string) => void;
+  onAccessGranted?: (empresaId: string, usuario?: any) => void;
   onTrialExpired?: () => void;
   usuarioPendenteVerificacao?: any;
 }
@@ -170,7 +170,7 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
     setErro('');
 
     try {
-      const { empresaId } = await TrialService.confirmarEmailEAtivarTrial(
+      const { empresaId, usuario } = await TrialService.confirmarEmailEAtivarTrial(
         registroPendente.user,
         {
           nomeResponsavel: registroPendente.nomeResponsavel,
@@ -181,7 +181,7 @@ export const TrialRegistrationScreen: React.FC<TrialRegistrationScreenProps> = (
       );
 
       if (onAccessGranted) {
-        onAccessGranted(empresaId);
+        onAccessGranted(empresaId, usuario);
       } else {
         window.location.reload();
       }

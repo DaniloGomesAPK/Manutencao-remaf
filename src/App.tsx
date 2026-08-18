@@ -43,6 +43,7 @@ import { CheckoutModal } from './components/CheckoutModal';
 import { InitialSetupWizard } from './components/InitialSetupWizard';
 import { LogService } from './services/LogService';
 import { LicenseService } from './services/LicenseService';
+import { AuthService } from './services/AuthService';
 import { getFriendlyErrorMessage } from './utils/errorUtils';
 import { safeStorage } from './utils/safeStorage';
 
@@ -807,9 +808,18 @@ export default function App() {
             setAuthMode('login');
             setSaasView('login');
           }}
-          onAccessGranted={() => {
+          onAccessGranted={async (grantedEmpresaId?: string, grantedUsuario?: any) => {
             setUsuarioPendenteVerificacao(null);
-            window.location.reload();
+            if (grantedUsuario && grantedUsuario.empresaId) {
+              await auth?.updateUser(grantedUsuario);
+            } else {
+              const u = await AuthService.getCurrentUser();
+              if (u && u.empresaId) {
+                await auth?.updateUser(u);
+              } else {
+                window.location.reload();
+              }
+            }
           }}
           onTrialExpired={() => {
             setUsuarioPendenteVerificacao(null);
