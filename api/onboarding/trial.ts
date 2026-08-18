@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { handleTrialOnboarding } from '../../server/onboardingService';
+
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
@@ -30,10 +32,6 @@ export default async function handler(req: any, res: any) {
 
   try {
     console.log('[TRIAL API] handler iniciado');
-
-    const { handleTrialOnboarding } = await import('../../server/onboardingService');
-
-    console.log('[TRIAL API] onboardingService carregado');
 
     const result = await handleTrialOnboarding(idToken, req.body);
 
