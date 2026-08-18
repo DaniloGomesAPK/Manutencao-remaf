@@ -105,6 +105,29 @@ export function getTenantCollectionPath(colecao: string, empresaId: string, oper
 }
 
 /**
+ * Sanitiza recursivamente objetos removendo propriedades undefined para evitar rejeição do Firestore.
+ */
+export function sanitizeForFirestore(obj: any): any {
+  if (obj === null || obj === undefined) return null;
+  if (typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) {
+    return obj.map(item => sanitizeForFirestore(item));
+  }
+  const clean: any = {};
+  for (const key of Object.keys(obj)) {
+    const val = obj[key];
+    if (val !== undefined) {
+      if (val !== null && typeof val === 'object' && !(val instanceof Date)) {
+        clean[key] = sanitizeForFirestore(val);
+      } else {
+        clean[key] = val;
+      }
+    }
+  }
+  return clean;
+}
+
+/**
  * Remove campos binários/base64 de grande porte (fotos, assinaturas, PDFs) do payload
  * enviado para a nuvem para economizar banda e otimizar limites do Firestore.
  */
@@ -121,7 +144,7 @@ export function stripHeavyFields(item: any): DocumentData {
   delete clone.logomarca;
   delete clone.anexos;
 
-  return clone;
+  return sanitizeForFirestore(clone);
 }
 
 /**
@@ -184,10 +207,15 @@ export const FirestoreRepository = {
 
         LogService.logOperation(userEmail || 'usuario', colecao, docId, 'add', performance.now() - startTime);
       } catch (error) {
+        recordWithMeta.sincronizado = false;
+        recordWithMeta.ultimaSincronizacao = null;
+        await saveLocalStoreItem(colecao, recordWithMeta);
         LogService.logOperation(userEmail || 'usuario', colecao, docId, 'add', performance.now() - startTime, error);
-        console.warn(`[FirestoreRepository] Falha ao adicionar doc no Firestore (${colecao}/${docId}), salvo localmente:`, error);
+        console.warn(`[FirestoreRepository] Falha ao adicionar doc no Firestore (${colecao}/${docId}), mantido localmente como pendente:`, error);
       }
     } else {
+      recordWithMeta.sincronizado = false;
+      recordWithMeta.ultimaSincronizacao = null;
       LogService.logOperation(userEmail || 'usuario', colecao, docId, 'add', performance.now() - startTime, 'Offline mode - saved locally');
     }
 
@@ -551,6 +579,15 @@ export const FirestoreRepository = {
 
     const remainingCount = await this.getPendingCount(validTenantId);
     notifySyncStatusChange();
+
+    if (syncedCount > 0 && typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('ordens_servico_updated', {
+          detail: { empresaId: validTenantId, syncedCount },
+        })
+      );
+    }
+
     return { syncedCount, remainingCount };
   },
 

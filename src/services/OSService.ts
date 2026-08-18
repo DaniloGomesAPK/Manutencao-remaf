@@ -11,10 +11,13 @@ import { LogService } from './LogService';
 
 export const OrdemServicoService = {
   /**
-   * Obtém todas as ordens de serviço do inquilino
+   * Obtém todas as ordens de serviço do inquilino (Firestore como fonte oficial + sincronização de cache local).
    */
   async getOrdensServico(empresaId: string, userEmail?: string): Promise<OrdemDeServico[]> {
-    return FirestoreRepository.getAll<OrdemDeServico>('ordensServico', empresaId, userEmail);
+    if (!empresaId || typeof empresaId !== 'string' || !empresaId.trim()) {
+      return [];
+    }
+    return FirestoreRepository.getAll<OrdemDeServico>('ordensServico', empresaId.trim(), userEmail);
   },
 
   /**
@@ -40,6 +43,7 @@ export const OrdemServicoService = {
 
   /**
    * Salva ou atualiza uma OS em nuvem (Firestore) e localmente (IndexedDB / Cache)
+   * Fluxo: OS -> OrdemServicoService -> FirestoreRepository -> Firestore -> Cache Local
    */
   async saveOrdemServico(osData: OrdemDeServico, userEmail?: string): Promise<OrdemDeServico> {
     const cleanEmpresaId = osData.empresaId?.trim();
@@ -47,16 +51,31 @@ export const OrdemServicoService = {
       throw new Error('empresaId é obrigatório para salvar a Ordem de Serviço.');
     }
 
-    // 1. Salva no IndexedDB local para manter compatibilidade
-    const savedLocal = await saveOrdemDeServico(osData);
+    const docId = osData.id || `os_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const preparedOS: OrdemDeServico = {
+      ...osData,
+      id: docId,
+      empresaId: cleanEmpresaId,
+      dataAbertura: osData.dataAbertura || new Date().toISOString(),
+      horaAbertura: osData.horaAbertura || new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      status: osData.status || 'Pendente',
+      updatedAt: new Date().toISOString(),
+    };
 
-    // 2. Salva no FirestoreRepository (sincroniza Firestore + cache)
+    // 1. Salva no FirestoreRepository (salva no cache local + grava no Firestore 'empresas/{empresaId}/ordensServico/{id}')
     const savedRemote = await FirestoreRepository.add<OrdemDeServico>(
       'ordensServico',
-      savedLocal,
+      preparedOS,
       cleanEmpresaId,
       userEmail
     );
+
+    // 2. Mantém sincronizado o IndexedDB legado para compatibilidade total offline
+    try {
+      await saveOrdemDeServico(savedRemote);
+    } catch (idbErr) {
+      console.warn('[OSService] Aviso ao atualizar IndexedDB legado:', idbErr);
+    }
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
@@ -67,6 +86,49 @@ export const OrdemServicoService = {
     }
 
     return savedRemote;
+  },
+
+  /**
+   * Atualiza o status de uma Ordem de Serviço de forma atômica e sincronizada.
+   */
+  async updateStatus(
+    id: string,
+    empresaId: string,
+    status: OrdemDeServico['status'],
+    userEmail?: string
+  ): Promise<OrdemDeServico | null> {
+    if (!id || !empresaId) return null;
+    const existing = await this.getOrdemServicoById(id, empresaId, userEmail);
+    if (!existing) return null;
+
+    const updated: OrdemDeServico = {
+      ...existing,
+      status,
+      updatedAt: new Date().toISOString(),
+      dataConclusao: status === 'Concluído' ? (existing.dataConclusao || new Date().toISOString()) : existing.dataConclusao,
+      horaConclusao: status === 'Concluído' ? (existing.horaConclusao || new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })) : existing.horaConclusao,
+    };
+
+    return await this.saveOrdemServico(updated, userEmail);
+  },
+
+  /**
+   * Gera o próximo número sequencial de OS considerando todas as OS da empresa.
+   */
+  async generateNextOSNumber(
+    empresaId: string,
+    customOrdersList?: OrdemDeServico[],
+    userEmail?: string
+  ): Promise<string> {
+    const cleanEmpresaId = empresaId?.trim();
+    if (!cleanEmpresaId) {
+      throw new Error('empresaId é obrigatório para gerar o número da OS.');
+    }
+    const orders = customOrdersList && Array.isArray(customOrdersList)
+      ? customOrdersList.filter(o => o.empresaId === cleanEmpresaId)
+      : await this.getOrdensServico(cleanEmpresaId, userEmail);
+    const nextNum = orders.length + 1;
+    return `OS-${String(nextNum).padStart(4, '0')}`;
   },
 
   /**
