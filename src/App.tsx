@@ -9,8 +9,6 @@ import { ClipboardCheck, Sparkles, BookOpen, Layers, Check, Calendar, HardHat, F
 
 import { OrdemDeServico, OSStep } from './types';
 import { 
-  saveOrdemDeServico, 
-  fetchAllServiceOrders, 
   uploadPDFReport,
   isLocalSandbox,
   generateNewDocumentId
@@ -175,7 +173,7 @@ export default function App() {
     const handleOrdersUpdated = async () => {
       if (activeUser?.empresaId && activeUser.empresaId.trim() !== '') {
         try {
-          const list = await fetchAllServiceOrders(activeUser.empresaId);
+          const list = await OrdemServicoService.getOrdensServico(activeUser.empresaId, activeUser.email);
           setServiceOrders(list);
         } catch (err) {
           console.error("Erro ao atualizar ordens de serviço via evento:", err);
@@ -187,7 +185,7 @@ export default function App() {
     return () => {
       window.removeEventListener('ordens_servico_updated', handleOrdersUpdated);
     };
-  }, [activeUser?.empresaId]);
+  }, [activeUser?.empresaId, activeUser?.email]);
 
   // 1. Persist the draft when viewingForm, currentStep or formData changes
   useEffect(() => {
@@ -247,10 +245,10 @@ export default function App() {
       setLoading(true);
     }
     try {
-      const list = await fetchAllServiceOrders(activeUser.empresaId);
+      const list = await OrdemServicoService.getOrdensServico(activeUser.empresaId, activeUser.email);
       setServiceOrders(list);
     } catch (err) {
-      console.error("Error reading database orders:", err);
+      console.error("Error reading database orders from Firestore:", err);
     } finally {
       setLoading(false);
     }
@@ -367,20 +365,22 @@ export default function App() {
       // Retain latest id and fields in local form state
       setFormData(updatedOS);
 
-      // Save using existing persistence architecture
-      await saveOrdemDeServico(updatedOS);
+      // Save using OrdemServicoService (Firestore official + cache local)
+      const saved = await OrdemServicoService.saveOrdemServico(updatedOS, activeUser?.email);
+      setFormData(saved);
 
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('ordens_servico_updated', { detail: { empresaId, osId: docId } }));
-      }
-
-      // Refresh service orders list silently
-      const updatedList = await fetchAllServiceOrders(empresaId);
+      // Refresh service orders list from official store
+      const updatedList = await OrdemServicoService.getOrdensServico(empresaId, activeUser?.email);
       setServiceOrders(updatedList);
 
       // Toast feedback notification
-      setToastMessage("Orçamento salvo com sucesso.");
-      setTimeout(() => setToastMessage(null), 3000);
+      if (saved.sincronizado === false) {
+        setToastMessage("OS salva neste dispositivo, mas ainda não sincronizada com a nuvem.");
+        setTimeout(() => setToastMessage(null), 5000);
+      } else {
+        setToastMessage("Orçamento salvo com sucesso.");
+        setTimeout(() => setToastMessage(null), 3000);
+      }
     } catch (err) {
       console.error("Erro ao salvar orçamento:", err);
       alert("Erro ao salvar orçamento: " + (err instanceof Error ? err.message : String(err)));
@@ -511,10 +511,11 @@ export default function App() {
     // Asynchronously synchronize step progression to the database for robust auto-saving
     (async () => {
       try {
-        await saveOrdemDeServico(updated);
+        const saved = await OrdemServicoService.saveOrdemServico(updated, activeUser?.email);
+        setFormData(saved);
 
-        // Silently update list so the dashboard list has the correct local list
-        const updatedList = await fetchAllServiceOrders(empresaId);
+        // Silently update list so the dashboard list has the correct synced list
+        const updatedList = await OrdemServicoService.getOrdensServico(empresaId, activeUser?.email);
         setServiceOrders(updatedList);
       } catch (err) {
         console.error("Failed to silently sync Step 1 transition:", err);
@@ -545,10 +546,11 @@ export default function App() {
     // Asynchronously synchronize step progression to the database for robust auto-saving
     (async () => {
       try {
-        await saveOrdemDeServico(updated);
+        const saved = await OrdemServicoService.saveOrdemServico(updated, activeUser?.email);
+        setFormData(saved);
 
-        // Silently update list so the dashboard list has the correct local list
-        const updatedList = await fetchAllServiceOrders(empresaId);
+        // Silently update list so the dashboard list has the correct synced list
+        const updatedList = await OrdemServicoService.getOrdensServico(empresaId, activeUser?.email);
         setServiceOrders(updatedList);
       } catch (err) {
         console.error("Failed to silently sync Step 2 transition:", err);
@@ -578,8 +580,9 @@ export default function App() {
 
     (async () => {
       try {
-        await saveOrdemDeServico(updated);
-        const updatedList = await fetchAllServiceOrders(empresaId);
+        const saved = await OrdemServicoService.saveOrdemServico(updated, activeUser?.email);
+        setFormData(saved);
+        const updatedList = await OrdemServicoService.getOrdensServico(empresaId, activeUser?.email);
         setServiceOrders(updatedList);
       } catch (err) {
         console.error("Failed to silently sync Step 3 transition:", err);
@@ -609,8 +612,9 @@ export default function App() {
 
     (async () => {
       try {
-        await saveOrdemDeServico(updated);
-        const updatedList = await fetchAllServiceOrders(empresaId);
+        const saved = await OrdemServicoService.saveOrdemServico(updated, activeUser?.email);
+        setFormData(saved);
+        const updatedList = await OrdemServicoService.getOrdensServico(empresaId, activeUser?.email);
         setServiceOrders(updatedList);
       } catch (err) {
         console.error("Failed to silently sync Step 4 transition:", err);
@@ -638,38 +642,44 @@ export default function App() {
         empresaId,
       } as OrdemDeServico;
 
-      // Update local state so if we proceed, the id and new inputs are preserved
-      setFormData(draftDetails);
-
-      // Generate PDF
+      // 1. Gera PDF
       const pdfUriString = await generateOSReportPDF(draftDetails);
 
-      // Show PDF Preview modal for download & share IMMEDIATELY
-      setActiveReport(draftDetails);
+      // 2. Aguarda salvamento no OrdemServicoService (Firestore oficial + cache local)
+      let savedDraft = await OrdemServicoService.saveOrdemServico(draftDetails, activeUser?.email);
+
+      // 3. Tenta salvar hosted PDF se aplicável
+      try {
+        const hostedPdfUrl = await uploadPDFReport(pdfUriString, draftDetails.numeroOS);
+        if (hostedPdfUrl && hostedPdfUrl !== pdfUriString) {
+          savedDraft.pdfGerado = hostedPdfUrl;
+          savedDraft = await OrdemServicoService.saveOrdemServico(savedDraft, activeUser?.email);
+        }
+      } catch (uploadErr) {
+        console.warn("Background Storage PDF upload bypassed:", uploadErr);
+      }
+
+      setFormData(savedDraft);
+      const updatedList = await OrdemServicoService.getOrdensServico(empresaId, activeUser?.email);
+      setServiceOrders(updatedList);
+
+      // 4. Feedback conforme confirmação de sincronização
+      if (savedDraft.sincronizado === false) {
+        setToastMessage("OS salva neste dispositivo, mas ainda não sincronizada com a nuvem.");
+        setTimeout(() => setToastMessage(null), 5000);
+      } else {
+        setToastMessage("Rascunho salvo e sincronizado na nuvem com sucesso!");
+        setTimeout(() => setToastMessage(null), 3000);
+      }
+
+      // 5. Exibe pré-visualização do PDF
+      setActiveReport(savedDraft);
       setActivePDFDataURI(pdfUriString);
       setShowPDFPreview(true);
-      
-      // Stop saving animation immediately
-      setIsSaving(false);
-
-      // Save database and upload report in the background asynchronously!
-      (async () => {
-        try {
-          await saveOrdemDeServico(draftDetails);
-          const hostedPdfUrl = await uploadPDFReport(pdfUriString, draftDetails.numeroOS);
-          draftDetails.pdfGerado = hostedPdfUrl;
-          await saveOrdemDeServico(draftDetails);
-          
-          // Silently refresh the list in the background
-          const updatedList = await fetchAllServiceOrders(empresaId);
-          setServiceOrders(updatedList);
-        } catch (uploadErr) {
-          console.warn("Background Storage PDF upload bypassed or failed, falling back to local inline:", uploadErr);
-        }
-      })();
     } catch (err) {
       console.error("Failed to save draft: ", err);
-      alert("Falha ao salvar rascunho em nuvem: " + err);
+      alert("Falha ao salvar rascunho: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
       setIsSaving(false);
     }
   };
@@ -694,39 +704,46 @@ export default function App() {
         status: step3Data.status || formData.status || 'Concluído',
       } as OrdemDeServico;
 
-      // Update local state is instantaneous
-      setFormData(fullDetails);
-
-      // Generate PDF
+      // 1. Gera PDF
       const pdfUriString = await generateOSReportPDF(fullDetails);
 
-      // Show preview and close wizard immediately
-      setActiveReport(fullDetails);
+      // 2. Aguarda salvamento no OrdemServicoService (Firestore oficial + cache local)
+      let savedFull = await OrdemServicoService.saveOrdemServico(fullDetails, activeUser?.email);
+
+      // 3. Tenta persistir link do PDF se upload retornar URL
+      try {
+        const hostedPdfUrl = await uploadPDFReport(pdfUriString, fullDetails.numeroOS);
+        if (hostedPdfUrl && hostedPdfUrl !== pdfUriString) {
+          savedFull.pdfGerado = hostedPdfUrl;
+          savedFull = await OrdemServicoService.saveOrdemServico(savedFull, activeUser?.email);
+        }
+      } catch (uploadErr) {
+        console.warn("Background full transaction assets sync bypassed:", uploadErr);
+      }
+
+      // 4. Atualiza estado e lista de OS da empresa
+      setFormData(savedFull);
+      const updatedList = await OrdemServicoService.getOrdensServico(empresaId, activeUser?.email);
+      setServiceOrders(updatedList);
+
+      // 5. Notificação de status real de sincronização
+      if (savedFull.sincronizado === false) {
+        setToastMessage("OS salva neste dispositivo, mas ainda não sincronizada com a nuvem.");
+        setTimeout(() => setToastMessage(null), 5000);
+      } else {
+        setToastMessage("OS concluída e sincronizada com a nuvem com sucesso!");
+        setTimeout(() => setToastMessage(null), 3000);
+      }
+
+      // 6. Exibe prévia e encerra formulário
+      setActiveReport(savedFull);
       setActivePDFDataURI(pdfUriString);
       setShowPDFPreview(true);
       setViewingForm(false);
-      
-      // Stop saving animation immediately
-      setIsSaving(false);
-
-      // Upload PDF and save full details asynchronously in the background!
-      (async () => {
-        try {
-          await saveOrdemDeServico(fullDetails);
-          const hostedPdfUrl = await uploadPDFReport(pdfUriString, fullDetails.numeroOS);
-          fullDetails.pdfGerado = hostedPdfUrl;
-          await saveOrdemDeServico(fullDetails);
-          
-          // Refetch latest silently
-          const updatedList = await fetchAllServiceOrders(empresaId);
-          setServiceOrders(updatedList);
-        } catch (uploadErr) {
-          console.warn("Background full transaction assets sync bypassed:", uploadErr);
-        }
-      })();
     } catch (err) {
       console.error("Failed to complete OS transaction:", err);
-      alert("Falha ao salvar Protocolo em nuvem: " + err);
+      alert("Falha ao salvar Protocolo: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
       setIsSaving(false);
     }
   };

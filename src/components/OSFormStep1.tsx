@@ -24,8 +24,8 @@ import {
   Save,
   ArrowRight
 } from 'lucide-react';
-import { generateNextOSNumber } from '../db';
 import { OrdemDeServico, Cliente } from '../types';
+import { OrdemServicoService } from '../services/OSService';
 import { AuthContext } from '../contexts/AuthContext';
 import { ClienteContext } from '../contexts/ClienteContext';
 import { EquipamentoContext } from '../contexts/EquipamentoContext';
@@ -148,13 +148,13 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
   useEffect(() => {
     if (!numeroOS && serviceOrders && empresaId) {
       setLoading(true);
-      generateNextOSNumber(empresaId, serviceOrders)
+      OrdemServicoService.generateNextOSNumber(empresaId, serviceOrders, auth?.currentUser?.email)
         .then(num => {
           setNumeroOS(num);
         })
         .finally(() => setLoading(false));
     }
-  }, [numeroOS, serviceOrders, empresaId]);
+  }, [numeroOS, serviceOrders, empresaId, auth?.currentUser?.email]);
 
   // Sync search input if client changes
   useEffect(() => {
