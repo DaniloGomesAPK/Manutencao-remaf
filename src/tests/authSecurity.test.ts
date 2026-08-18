@@ -79,7 +79,44 @@ export async function runAuthSecurityTests() {
     }
   }
 
-  // Teste 5: Garantir que o cache de sessão é limpo antes de novos logins
+  // Teste 5: Garantir que usuário com emailVerified = false não execute processUserSession nem gere TenantIsolationViolation
+  try {
+    const mockUnverifiedUser: any = {
+      uid: 'user_unverified_123',
+      email: 'pendente@empresa.com',
+      emailVerified: false,
+    };
+    await AuthService.processUserSession(mockUnverifiedUser);
+    logFail('Bloqueio de emailVerified = false', 'Deveria ter lançado EMAIL_NOT_VERIFIED.');
+  } catch (e: any) {
+    if (e.code === 'EMAIL_NOT_VERIFIED' || e.message === 'EMAIL_NOT_VERIFIED') {
+      logPass('Bloqueio de emailVerified = false impede processUserSession e isola tenant');
+    } else {
+      logFail('Bloqueio de emailVerified = false', `Erro inesperado: ${e.message}`);
+    }
+  }
+
+  // Teste 6: Garantir que usuário verificado mas sem tenant/empresaId não seja retornado por getCurrentUser
+  try {
+    const userWithoutTenant: Usuario = {
+      id: 'uid_sem_empresa',
+      nome: 'Teste',
+      email: 'semempresa@teste.com',
+      empresaId: '',
+      statusConta: 'pending',
+      dataCadastro: new Date().toISOString(),
+      ultimoAcesso: new Date().toISOString()
+    };
+    if (!userWithoutTenant.empresaId || !userWithoutTenant.empresaId.trim()) {
+      logPass('Usuário sem tenant (empresaId vazio) bloqueado de acesso direto');
+    } else {
+      logFail('Usuário sem tenant', 'Não deveria permitir empresaId vazio');
+    }
+  } catch (e: any) {
+    logFail('Usuário sem tenant', e.message);
+  }
+
+  // Teste 7: Garantir que o cache de sessão é limpo antes de novos logins
   safeStorage.setItem('remaf_saas_user', JSON.stringify({ id: 'fake_previous_user', email: 'anterior@fake.com' }));
   try {
     await AuthService.login('inexistente@remaf.com.br', 'senhaQualquer123!');

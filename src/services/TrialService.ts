@@ -15,6 +15,7 @@ import {
   getDoc 
 } from 'firebase/firestore';
 import { Usuario } from '../models/Usuario';
+import { AuthService } from './AuthService';
 
 export interface DadosCadastroTrial {
   nome?: string;
@@ -200,23 +201,33 @@ export async function confirmarEmailEAtivarTrial(
     throw new Error('Resposta incompleta do servidor de cadastro. Operação abortada.');
   }
 
-  const empresaId: string = serverResult.empresaId;
+  // 4. Executa processUserSession() após o sucesso do endpoint e confirma que empresaId existe
+  let usuario: Usuario;
+  try {
+    usuario = await AuthService.processUserSession(fbUser, dadosCadastro.nomeResponsavel);
+  } catch (sessErr: any) {
+    console.warn('[TrialService] Aviso ao sincronizar processUserSession após onboarding:', sessErr);
+    usuario = {
+      id: uid,
+      nome: serverResult.usuario.nome || dadosCadastro.nomeResponsavel,
+      email: emailClean,
+      empresaId: serverResult.empresaId,
+      statusConta: serverResult.usuario.statusConta as any,
+      dataCadastro: new Date().toISOString(),
+      ultimoAcesso: new Date().toISOString()
+    };
+  }
+
+  const empresaId: string = usuario.empresaId || serverResult.empresaId;
+  if (!empresaId || !empresaId.trim()) {
+    throw new Error('Erro ao validar vínculo da empresa com o usuário.');
+  }
+
   const dataExpiracaoTrial: string = serverResult.dataExpiracaoTrial;
   const userRole: string = serverResult.usuario.role;
-  const statusConta: string = serverResult.usuario.statusConta;
   const trialAtivo: boolean = serverResult.trialAtivo;
 
-  const usuario: Usuario = {
-    id: uid,
-    nome: serverResult.usuario.nome || dadosCadastro.nomeResponsavel,
-    email: emailClean,
-    empresaId: empresaId,
-    statusConta: statusConta as any,
-    dataCadastro: new Date().toISOString(),
-    ultimoAcesso: new Date().toISOString()
-  };
-
-  // 4. Atualiza o armazenamento local para persistência de sessão e cache não privilegiado de UI
+  // 5. Atualiza o armazenamento local para persistência de sessão e cache não privilegiado de UI
   localStorage.setItem('empresaId', empresaId);
   localStorage.setItem('userEmail', emailClean);
   localStorage.setItem('userName', usuario.nome);

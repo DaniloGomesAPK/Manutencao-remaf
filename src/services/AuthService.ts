@@ -43,8 +43,37 @@ export const AuthService = {
   async getCurrentUser(): Promise<Usuario | null> {
     const fbUser = auth.currentUser;
     if (fbUser) {
+      // Se o e-mail não estiver confirmado, não consulta coleções do Firestore nem executa processUserSession
+      if (!fbUser.emailVerified) {
+        return null;
+      }
       try {
-        return await this.processUserSession(fbUser);
+        // Verifica vínculo de empresa antes de processar a sessão
+        let hasEmpresa = false;
+        try {
+          const userDocRef = doc(db, 'users', fbUser.uid);
+          const userSnap = await getDoc(userDocRef);
+          if (userSnap.exists() && userSnap.data()?.empresaId && typeof userSnap.data()?.empresaId === 'string' && userSnap.data().empresaId.trim() !== '') {
+            hasEmpresa = true;
+          } else if (fbUser.email) {
+            const emailDocRef = doc(db, 'emailsAutorizados', fbUser.email.trim().toLowerCase());
+            const emailSnap = await getDoc(emailDocRef);
+            if (emailSnap.exists() && emailSnap.data()?.empresaId && typeof emailSnap.data()?.empresaId === 'string' && emailSnap.data().empresaId.trim() !== '') {
+              hasEmpresa = true;
+            }
+          }
+        } catch (_) {}
+
+        if (!hasEmpresa) {
+          return null;
+        }
+
+        const user = await this.processUserSession(fbUser);
+        // Um usuário só pode ser considerado autenticado quando emailVerified === true E possuir empresaId válido
+        if (!user || !user.empresaId || !user.empresaId.trim()) {
+          return null;
+        }
+        return user;
       } catch (e) {
         console.warn('[AuthService] Falha ao processar sessão de auth.currentUser:', e);
       }
@@ -73,6 +102,14 @@ export const AuthService = {
    * O estado nativo do Firebase Auth é a autoridade central.
    */
   async processUserSession(fbUser: User, nomeCompleto?: string): Promise<Usuario> {
+    // 0. Se o e-mail não estiver verificado, não executa processUserSession nem acessa Firestore
+    if (!fbUser.emailVerified) {
+      const unverifiedError: any = new Error('EMAIL_NOT_VERIFIED');
+      unverifiedError.code = 'EMAIL_NOT_VERIFIED';
+      unverifiedError.user = fbUser;
+      throw unverifiedError;
+    }
+
     // 1. Forçar atualização do token com getIdToken(true) para garantir claims atualizadas
     if (typeof fbUser.getIdToken === 'function') {
       try {
@@ -196,6 +233,11 @@ export const AuthService = {
       }
     }
 
+    // 3. Validação central rigorosa: Interrompe na origem ANTES de qualquer gravação ou criação de sessão
+    if (!empresaId || !empresaId.trim()) {
+      throw new Error('TENANT_NOT_READY');
+    }
+
     const finalNome = nomeCompleto || fbUser.displayName || nomeExistente || fbUser.email?.split('@')[0] || 'Usuário';
 
     const usuario: Usuario = {
@@ -227,8 +269,10 @@ export const AuthService = {
     safeStorage.setItem(SESSION_UI_KEY, JSON.stringify(uiCache));
     safeStorage.removeItem(LEGACY_SESSION_KEY);
 
-    // Garante que a empresa exista
-    await EmpresaService.ensureEmpresaExists(usuario.empresaId, usuario);
+    // Garante que a empresa exista SOMENTE quando houver empresaId válido associado
+    if (usuario.empresaId && usuario.empresaId.trim()) {
+      await EmpresaService.ensureEmpresaExists(usuario.empresaId, usuario);
+    }
 
     return usuario;
   },
@@ -307,52 +351,51 @@ export const AuthService = {
 
         if (needsRecovery) {
           console.log('[AuthService] Onboarding incompleto detectado para usuário com e-mail verificado. Recuperando via backend seguro...');
-          try {
-            const idToken = await fbUser.getIdToken(true);
-            const response = await fetch('/api/onboarding/trial', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${idToken}`
-              },
-              body: JSON.stringify({
-                nomeResponsavel: fbUser.displayName || emailNormalizado.split('@')[0],
-                nomeEmpresa: 'Minha Empresa',
-                perfilEmpresa: 'mecanica_pesada'
-              })
-            });
+          const idToken = await fbUser.getIdToken(true);
+          const response = await fetch('/api/onboarding/trial', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${idToken}`
+            },
+            body: JSON.stringify({
+              nomeResponsavel: fbUser.displayName || emailNormalizado.split('@')[0],
+              nomeEmpresa: 'Minha Empresa',
+              perfilEmpresa: 'mecanica_pesada'
+            })
+          });
 
-            if (!response.ok) {
-              const errJson = await response.json().catch(() => ({}));
-              const errMsg = errJson?.error || '';
-              if (errMsg.includes('expirado') || errMsg.includes('TRIAL_EXPIRED')) {
-                throw new Error('TRIAL_EXPIRADO');
-              }
-              if (errMsg.includes('bloqueada') || errMsg.includes('bloqueado')) {
-                throw new Error('CONTA_BLOQUEADA');
-              }
-              if (errMsg.includes('EMAIL_NAO_VERIFICADO')) {
-                const unverifiedError: any = new Error('EMAIL_NOT_VERIFIED');
-                unverifiedError.code = 'EMAIL_NOT_VERIFIED';
-                unverifiedError.user = fbUser;
-                throw unverifiedError;
-              }
+          if (!response.ok) {
+            const errJson = await response.json().catch(() => ({}));
+            const errMsg = errJson?.error || '';
+            if (errMsg.includes('expirado') || errMsg.includes('TRIAL_EXPIRED')) {
+              throw new Error('TRIAL_EXPIRADO');
             }
-          } catch (recErr: any) {
-            if (
-              recErr?.code === 'EMAIL_NOT_VERIFIED' ||
-              recErr?.message === 'EMAIL_NOT_VERIFIED' ||
-              recErr?.message === 'TRIAL_EXPIRADO' ||
-              recErr?.message === 'CONTA_BLOQUEADA'
-            ) {
-              throw recErr;
+            if (errMsg.includes('bloqueada') || errMsg.includes('bloqueado')) {
+              throw new Error('CONTA_BLOQUEADA');
             }
-            console.warn('[AuthService] Aviso na recuperação de onboarding:', recErr);
+            if (errMsg.includes('EMAIL_NAO_VERIFICADO') || errMsg.includes('não verificado')) {
+              const unverifiedError: any = new Error('EMAIL_NOT_VERIFIED');
+              unverifiedError.code = 'EMAIL_NOT_VERIFIED';
+              unverifiedError.user = fbUser;
+              throw unverifiedError;
+            }
+            // Qualquer erro retornado pela API (400, 401, 403, 409, 500) INTERROMPE IMEDIATAMENTE o login
+            throw new Error(errMsg || 'Falha ao concluir o onboarding da conta. Tente novamente mais tarde.');
+          }
+
+          const recoverResult = await response.json().catch(() => ({}));
+          if (!recoverResult?.empresaId) {
+            throw new Error('Vínculo empresarial não retornado pelo servidor de onboarding.');
           }
         }
       }
 
-      return await this.processUserSession(fbUser);
+      const usuario = await this.processUserSession(fbUser);
+      if (!usuario.empresaId || !usuario.empresaId.trim()) {
+        throw new Error('Conta sem empresa vinculada. Conclua o cadastro antes de acessar o sistema.');
+      }
+      return usuario;
     } catch (err: any) {
       if (err?.code === 'EMAIL_NOT_VERIFIED' || err?.message === 'EMAIL_NOT_VERIFIED') {
         throw err;
@@ -528,11 +571,18 @@ export const AuthService = {
     }
 
     try {
-      return await this.processUserSession(fbUser);
+      const usuario = await this.processUserSession(fbUser);
+      if (!usuario?.empresaId?.trim()) {
+        throw new Error('Conta sem empresa vinculada.');
+      }
+      return usuario;
     } catch (err: any) {
       await signOut(auth);
       safeStorage.removeItem(SESSION_UI_KEY);
       safeStorage.removeItem(LEGACY_SESSION_KEY);
+      if (err?.message === 'TENANT_NOT_READY' || err?.message === 'Conta sem empresa vinculada.') {
+        throw new Error('Conta sem empresa vinculada. Conclua o cadastro antes de acessar o sistema.');
+      }
       throw new Error(getFriendlyErrorMessage(err, 'Falha ao processar login com o Google.'));
     }
   },
@@ -720,14 +770,54 @@ export const AuthService = {
   subscribeToAuthState(onUserChanged: (user: Usuario | null) => void) {
     return onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser) {
+        // Se o e-mail ainda não foi verificado, NÃO executa processUserSession, NÃO chama ensureEmpresaExists,
+        // NÃO acessa Firestore e NÃO faz signOut. O usuário permanece aguardando a confirmação do e-mail.
+        if (!fbUser.emailVerified) {
+          onUserChanged(null);
+          return;
+        }
+
+        // Antes de chamar processUserSession, verifica se já existe vínculo/tenant válido
+        let hasEmpresa = false;
+        try {
+          const userDocRef = doc(db, 'users', fbUser.uid);
+          const userSnap = await getDoc(userDocRef);
+          if (userSnap.exists() && userSnap.data()?.empresaId && typeof userSnap.data()?.empresaId === 'string' && userSnap.data().empresaId.trim() !== '') {
+            hasEmpresa = true;
+          } else if (fbUser.email) {
+            const emailDocRef = doc(db, 'emailsAutorizados', fbUser.email.trim().toLowerCase());
+            const emailSnap = await getDoc(emailDocRef);
+            if (emailSnap.exists() && emailSnap.data()?.empresaId && typeof emailSnap.data()?.empresaId === 'string' && emailSnap.data().empresaId.trim() !== '') {
+              hasEmpresa = true;
+            }
+          }
+        } catch (checkErr) {
+          console.warn('[AuthService] Verificação de vínculo de tenant no subscribeToAuthState:', checkErr);
+          hasEmpresa = false;
+        }
+
+        // Se o usuário estiver verificado mas ainda sem tenant:
+        // NÃO faz signOut, NÃO abre Dashboard, NÃO processa sessão, NÃO grava users/{uid} e mantém no fluxo de onboarding.
+        if (!hasEmpresa) {
+          onUserChanged(null);
+          return;
+        }
+
         try {
           const validatedUser = await this.processUserSession(fbUser);
+          if (!validatedUser.empresaId || !validatedUser.empresaId.trim()) {
+            onUserChanged(null);
+            return;
+          }
           onUserChanged(validatedUser);
-        } catch (error) {
+        } catch (error: any) {
           console.error('[AuthService] Acesso negado ou erro ao sincronizar estado de autenticação:', error);
-          await signOut(auth);
-          safeStorage.removeItem(SESSION_UI_KEY);
-          safeStorage.removeItem(LEGACY_SESSION_KEY);
+          const isUnverified = error?.code === 'EMAIL_NOT_VERIFIED' || error?.message === 'EMAIL_NOT_VERIFIED';
+          if (!isUnverified) {
+            await signOut(auth);
+            safeStorage.removeItem(SESSION_UI_KEY);
+            safeStorage.removeItem(LEGACY_SESSION_KEY);
+          }
           onUserChanged(null);
         }
       } else {

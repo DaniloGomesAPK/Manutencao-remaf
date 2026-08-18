@@ -53,7 +53,10 @@ export const EmpresaService = {
   /**
    * Garante que uma empresa exista para o empresaId fornecido.
    */
-  async ensureEmpresaExists(empresaId: string, usuario: Usuario): Promise<Empresa> {
+  async ensureEmpresaExists(empresaId: string, usuario: Usuario): Promise<Empresa | null> {
+    if (!empresaId || !empresaId.trim()) {
+      return null;
+    }
     const existing = await this.getEmpresa(empresaId, usuario?.email);
     if (existing) {
       return existing;
