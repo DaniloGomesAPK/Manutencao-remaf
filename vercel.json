@@ -1,4 +1,5 @@
 {
+  "installCommand": "bun install --frozen-lockfile",
   "cleanUrls": true,
   "rewrites": [
     {
