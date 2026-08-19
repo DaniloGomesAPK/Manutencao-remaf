@@ -7,7 +7,8 @@ import {
   doc, 
   setDoc, 
   getDoc, 
-  getDocs, 
+  getDocs,
+  getDocsFromServer, 
   deleteDoc, 
   collection, 
   query, 
@@ -401,18 +402,33 @@ export const FirestoreRepository = {
         });
 
         const localDocs = (await getLocalStoreItems<T>(colecao, validTenantId)).filter(l => !deletedIds.includes(l.id));
+        const localPendingMap = new Map<string, T>();
+        localDocs.forEach(l => {
+          if ((l as any).sincronizado === false) {
+            localPendingMap.set(l.id, l);
+          }
+        });
+
         const mergedMap = new Map<string, T>();
 
-        localDocs.forEach((lDoc) => mergedMap.set(lDoc.id, lDoc));
-
+        // 1. Adiciona documentos remotos do Firestore, preservando pendências locais não enviadas
         remoteDocs.forEach((rDoc) => {
           if (deletedIds.includes(rDoc.id)) return;
-          const lDoc = mergedMap.get(rDoc.id);
-          if (lDoc && lDoc.sincronizado === false) {
-            return;
+          const pendingLocal = localPendingMap.get(rDoc.id);
+          if (pendingLocal) {
+            mergedMap.set(rDoc.id, pendingLocal);
+          } else {
+            const localDoc = localDocs.find(l => l.id === rDoc.id);
+            const mergedDoc = { ...localDoc, ...rDoc, sincronizado: true };
+            mergedMap.set(rDoc.id, mergedDoc);
           }
-          const mergedDoc = { ...lDoc, ...rDoc, sincronizado: true };
-          mergedMap.set(rDoc.id, mergedDoc);
+        });
+
+        // 2. Adiciona registros locais pendentes que ainda não existem no Firestore
+        localPendingMap.forEach((pendingDoc, id) => {
+          if (!mergedMap.has(id) && !deletedIds.includes(id)) {
+            mergedMap.set(id, pendingDoc);
+          }
         });
 
         const mergedList = Array.from(mergedMap.values()).filter(doc => !deletedIds.includes(doc.id));
@@ -502,49 +518,173 @@ export const FirestoreRepository = {
           });
 
           const localDocs = (await getLocalStoreItems<T>(colecao, validTenantId)).filter(l => !deletedIds.includes(l.id));
+          const localPendingMap = new Map<string, T>();
+          localDocs.forEach(l => {
+            if ((l as any).sincronizado === false) {
+              localPendingMap.set(l.id, l);
+            }
+          });
+
           const mergedMap = new Map<string, T>();
 
-          localDocs.forEach((l) => mergedMap.set(l.id, l));
-          remoteDocs.forEach((r) => {
-            if (deletedIds.includes(r.id)) return;
-            const lDoc = mergedMap.get(r.id);
-            if (lDoc && (lDoc as any).sincronizado === false) return;
-            mergedMap.set(r.id, { ...lDoc, ...r, sincronizado: true });
+          // 1. Adiciona registros remotos do Firestore, preservando edições locais pendentes de envio
+          remoteDocs.forEach((rDoc) => {
+            if (deletedIds.includes(rDoc.id)) return;
+            const pendingLocal = localPendingMap.get(rDoc.id);
+            if (pendingLocal) {
+              mergedMap.set(rDoc.id, pendingLocal);
+            } else {
+              const localDoc = localDocs.find(l => l.id === rDoc.id);
+              mergedMap.set(rDoc.id, { ...localDoc, ...rDoc, sincronizado: true });
+            }
+          });
+
+          // 2. Adiciona registros locais criados offline que ainda não existem no Firestore
+          localPendingMap.forEach((pendingDoc, id) => {
+            if (!mergedMap.has(id) && !deletedIds.includes(id)) {
+              mergedMap.set(id, pendingDoc);
+            }
           });
 
           const finalList = Array.from(mergedMap.values()).filter(doc => !deletedIds.includes(doc.id));
-          await saveLocalStoreBatch(colecao, finalList, validTenantId);
+          try {
+            await saveLocalStoreBatch(colecao, finalList, validTenantId);
+          } catch (cacheErr) {
+            console.warn(`[FirestoreRepository] Erro ao salvar lote de ${colecao} no snapshot:`, cacheErr);
+          }
 
           LogService.logOperation(userEmail || 'usuario', colecao, 'realtime_snapshot', 'listen', performance.now() - startTime);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('firestore_snapshot_status', {
+              detail: {
+                healthy: true,
+                fromCache: querySnapshot.metadata.fromCache,
+                colecao
+              }
+            }));
+          }
           callback(finalList);
         },
         (error) => {
           LogService.logOperation(userEmail || 'usuario', colecao, 'realtime_snapshot', 'listen', performance.now() - startTime, error);
           console.warn(`[FirestoreRepository] Erro no listener real-time de ${colecao}:`, error);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('firestore_snapshot_status', {
+              detail: {
+                healthy: false,
+                error: error?.message || `Falha na conexão com o Firestore (${colecao})`,
+                colecao
+              }
+            }));
+          }
           getLocalStoreItems<T>(colecao, validTenantId).then((localDocs) => callback(localDocs.filter(doc => !deletedIds.includes(doc.id))));
         }
       );
 
       return unsubscribe;
-    } catch (err) {
+    } catch (err: any) {
       LogService.logOperation(userEmail || 'usuario', colecao, 'listen_fail', 'listen', performance.now() - startTime, err);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('firestore_snapshot_status', {
+          detail: {
+            healthy: false,
+            error: err?.message || `Falha ao iniciar listener de ${colecao}`,
+            colecao
+          }
+        }));
+      }
       getLocalStoreItems<T>(colecao, validTenantId).then((localDocs) => callback(localDocs.filter(doc => !deletedIds.includes(doc.id))));
       return () => {};
     }
   },
 
   /**
+   * Busca documentos remotos diretamente do servidor Firestore e reconcilia com o cache local,
+   * preservando estritamente pendências locais não sincronizadas (sincronizado === false).
+   * Usa getDocsFromServer para que qualquer falha de rede/servidor gere erro e nunca
+   * seja considerada sincronização bem-sucedida a partir de cache local.
+   */
+  async fetchRemoteAndReconcile<T extends { id: string; empresaId?: string; sincronizado?: boolean }>(
+    colecao: MappedCollectionName | string,
+    empresaId: string,
+    userEmail?: string
+  ): Promise<T[]> {
+    const startTime = performance.now();
+    const validTenantId = validateEmpresaId(empresaId, 'fetchRemoteAndReconcile', colecao, userEmail);
+    const deletedIds = getDeletedLocallyIds(colecao, validTenantId);
+
+    if (!this.isOnline()) {
+      throw new Error('Sem conexão com a internet para consultar o Firestore.');
+    }
+
+    const collectionPath = getTenantCollectionPath(colecao, validTenantId, 'fetchRemoteAndReconcile');
+    const querySnapshot = await getDocsFromServer(collection(db, collectionPath));
+    const remoteDocs: T[] = [];
+
+    querySnapshot.forEach((docSnap) => {
+      if (!deletedIds.includes(docSnap.id)) {
+        remoteDocs.push({ id: docSnap.id, ...docSnap.data() } as T);
+      }
+    });
+
+    const localDocs = (await getLocalStoreItems<T>(colecao, validTenantId)).filter(l => !deletedIds.includes(l.id));
+    const localPendingMap = new Map<string, T>();
+    localDocs.forEach(l => {
+      if ((l as any).sincronizado === false) {
+        localPendingMap.set(l.id, l);
+      }
+    });
+
+    const mergedMap = new Map<string, T>();
+
+    // 1. Adiciona documentos remotos do Firestore, preservando pendências locais não enviadas
+    remoteDocs.forEach((rDoc) => {
+      if (deletedIds.includes(rDoc.id)) return;
+      const pendingLocal = localPendingMap.get(rDoc.id);
+      if (pendingLocal) {
+        mergedMap.set(rDoc.id, pendingLocal);
+      } else {
+        const localDoc = localDocs.find(l => l.id === rDoc.id);
+        const mergedDoc = { ...localDoc, ...rDoc, sincronizado: true };
+        mergedMap.set(rDoc.id, mergedDoc);
+      }
+    });
+
+    // 2. Adiciona registros locais pendentes que ainda não existem no Firestore
+    localPendingMap.forEach((pendingDoc, id) => {
+      if (!mergedMap.has(id) && !deletedIds.includes(id)) {
+        mergedMap.set(id, pendingDoc);
+      }
+    });
+
+    const mergedList = Array.from(mergedMap.values()).filter(doc => !deletedIds.includes(doc.id));
+    try {
+      await saveLocalStoreBatch(colecao, mergedList, validTenantId);
+    } catch (cacheErr) {
+      console.warn(`[FirestoreRepository] Não foi possível salvar o cache de ${colecao}:`, cacheErr);
+    }
+
+    LogService.logOperation(userEmail || 'usuario', colecao, 'all', 'getAll', performance.now() - startTime);
+    return mergedList;
+  },
+
+  /**
    * Sincroniza todos os registros pendentes (sincronizado === false) de todas as coleções
    */
-  async syncPendingRecords(empresaId: string, userEmail?: string): Promise<{ syncedCount: number; remainingCount: number }> {
+  async syncPendingRecords(
+    empresaId: string,
+    userEmail?: string
+  ): Promise<{ syncedCount: number; remainingCount: number; success: boolean; error?: string }> {
     const validTenantId = validateEmpresaId(empresaId, 'syncPendingRecords', 'all_stores', userEmail);
 
     if (!this.isOnline()) {
       const remaining = await this.getPendingCount(validTenantId);
-      return { syncedCount: 0, remainingCount: remaining };
+      return { syncedCount: 0, remainingCount: remaining, success: false, error: 'Aparelho sem conexão com a internet.' };
     }
 
     let syncedCount = 0;
+    let hasError = false;
+    let lastErrorMsg = '';
     const now = new Date().toISOString();
 
     for (const storeName of ALL_STORES) {
@@ -568,11 +708,15 @@ export const FirestoreRepository = {
             item.ultimaSincronizacao = now;
             await saveLocalStoreItem(storeName, item);
             syncedCount++;
-          } catch (itemErr) {
+          } catch (itemErr: any) {
+            hasError = true;
+            lastErrorMsg = itemErr?.message || 'Falha ao gravar registro no Firestore.';
             console.error(`[FirestoreRepository] Erro ao sincronizar item pendente em ${storeName}/${item.id}:`, itemErr);
           }
         }
-      } catch (colErr) {
+      } catch (colErr: any) {
+        hasError = true;
+        lastErrorMsg = colErr?.message || 'Erro ao carregar armazenamento local.';
         console.error(`[FirestoreRepository] Erro na coleção ${storeName} durante sync:`, colErr);
       }
     }
@@ -588,7 +732,77 @@ export const FirestoreRepository = {
       );
     }
 
-    return { syncedCount, remainingCount };
+    const isSuccess = !hasError && remainingCount === 0;
+
+    return {
+      syncedCount,
+      remainingCount,
+      success: isSuccess,
+      error: !isSuccess ? (lastErrorMsg || (remainingCount > 0 ? `${remainingCount} registro(s) pendente(s) não sincronizado(s)` : undefined)) : undefined
+    };
+  },
+
+  /**
+   * Sincronização completa bidirecional ("Sincronizar Agora" / Inicial / Reconexão):
+   * 1. Envia registros locais pendentes para o Firestore
+   * 2. Baixa todos os registros remotos atualizados do Firestore para todas as coleções
+   * 3. Atualiza o banco local (IndexedDB e cache)
+   * 4. Notifica a interface para atualização imediata
+   * 5. Retorna sucesso somente se o Firestore responder sem erros
+   */
+  async syncBidirectional(
+    empresaId: string,
+    userEmail?: string
+  ): Promise<{ syncedCount: number; remainingCount: number; fetchedCount: number; success: boolean; error?: string }> {
+    const validTenantId = validateEmpresaId(empresaId, 'syncBidirectional', 'all_stores', userEmail);
+
+    if (!this.isOnline()) {
+      const remaining = await this.getPendingCount(validTenantId);
+      return { syncedCount: 0, remainingCount: remaining, fetchedCount: 0, success: false, error: 'Aparelho sem conexão com a internet.' };
+    }
+
+    // 1. Envia pendências locais para o Firestore
+    const pendingResult = await this.syncPendingRecords(validTenantId, userEmail);
+
+    // 2. Busca e sincroniza do Firestore para o banco local para todas as coleções
+    let fetchedCount = 0;
+    let fetchErrors = 0;
+    let lastFetchError = '';
+
+    for (const store of ALL_STORES) {
+      try {
+        const items = await this.fetchRemoteAndReconcile(store, validTenantId, userEmail);
+        fetchedCount += items.length;
+      } catch (e: any) {
+        fetchErrors++;
+        lastFetchError = e?.message || `Erro ao consultar ${store} no Firestore`;
+        console.warn(`[FirestoreRepository] Erro ao sincronizar coleção ${store} da nuvem:`, e);
+      }
+    }
+
+    const remainingCount = await this.getPendingCount(validTenantId);
+    notifySyncStatusChange();
+
+    // 3. Notifica todos os listeners locais para atualizar a interface imediatamente
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ordens_servico_updated', { detail: { empresaId: validTenantId, syncedCount: pendingResult.syncedCount } }));
+      window.dispatchEvent(new CustomEvent('clientes_updated', { detail: { empresaId: validTenantId } }));
+      window.dispatchEvent(new CustomEvent('equipamentos_updated', { detail: { empresaId: validTenantId } }));
+      window.dispatchEvent(new CustomEvent('precificacoes_updated', { detail: { empresaId: validTenantId } }));
+      window.dispatchEvent(new CustomEvent('servicos_updated', { detail: { empresaId: validTenantId } }));
+      window.dispatchEvent(new CustomEvent('remaf_company_updated', { detail: { empresaId: validTenantId } }));
+      window.dispatchEvent(new CustomEvent('lixeira_updated', { detail: { empresaId: validTenantId } }));
+    }
+
+    const isSuccess = pendingResult.success && fetchErrors === 0 && remainingCount === 0;
+
+    return {
+      syncedCount: pendingResult.syncedCount,
+      remainingCount,
+      fetchedCount,
+      success: isSuccess,
+      error: !isSuccess ? (pendingResult.error || lastFetchError || (remainingCount > 0 ? `${remainingCount} registro(s) pendente(s)` : undefined)) : undefined
+    };
   },
 
   /**

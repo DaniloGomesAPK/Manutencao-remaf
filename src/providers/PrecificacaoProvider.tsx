@@ -7,6 +7,7 @@ import React, { useState, useEffect, useContext, ReactNode } from 'react';
 import { PrecificacaoContext, PrecificacaoContextType } from '../contexts/PrecificacaoContext';
 import { Precificacao, Insumo } from '../types';
 import { PrecificacaoService } from '../services/PrecificacaoService';
+import { FirestoreRepository } from '../services/FirestoreRepository';
 import { AuthContext } from '../contexts/AuthContext';
 
 interface PrecificacaoProviderProps {
@@ -38,7 +39,26 @@ export const PrecificacaoProvider: React.FC<PrecificacaoProviderProps> = ({ chil
   };
 
   useEffect(() => {
+    const empresaId = auth?.currentUser?.empresaId?.trim();
+    if (!empresaId) {
+      setPrecificacoes([]);
+      setIsLoadingPrecificacoes(false);
+      return;
+    }
+
     loadPrecificacoesForUser();
+
+    // Listener em tempo real do Firestore para sincronização entre dispositivos
+    const unsubscribe = FirestoreRepository.listen<Precificacao>(
+      'precificacao',
+      empresaId,
+      (updatedList) => {
+        setPrecificacoes(updatedList);
+        setIsLoadingPrecificacoes(false);
+      },
+      [],
+      auth?.currentUser?.email
+    );
 
     // Escuta por atualizações de precificações para sincronizar estados
     const handleUpdate = (e: Event) => {
@@ -51,10 +71,12 @@ export const PrecificacaoProvider: React.FC<PrecificacaoProviderProps> = ({ chil
       }
     };
     window.addEventListener('precificacoes_updated', handleUpdate);
+
     return () => {
+      unsubscribe();
       window.removeEventListener('precificacoes_updated', handleUpdate);
     };
-  }, [auth?.currentUser?.empresaId]);
+  }, [auth?.currentUser?.empresaId, auth?.currentUser?.email]);
 
   const savePrecificacao = async (data: Precificacao): Promise<Precificacao> => {
     const empresaId = auth?.currentUser?.empresaId?.trim();

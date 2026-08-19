@@ -7,6 +7,7 @@ import React, { useState, useEffect, useContext, ReactNode } from 'react';
 import { ServicoContext, ServicoContextType } from '../contexts/ServicoContext';
 import { Servico } from '../types';
 import { ServicoInteligenteService } from '../services/ServicoInteligenteService';
+import { FirestoreRepository } from '../services/FirestoreRepository';
 import { AuthContext } from '../contexts/AuthContext';
 
 interface ServicoProviderProps {
@@ -38,7 +39,26 @@ export const ServicoProvider: React.FC<ServicoProviderProps> = ({ children }) =>
   };
 
   useEffect(() => {
+    const empresaId = auth?.currentUser?.empresaId?.trim();
+    if (!empresaId) {
+      setServicos([]);
+      setIsLoadingServicos(false);
+      return;
+    }
+
     loadServicosForUser();
+
+    // Listener em tempo real do Firestore para sincronização entre dispositivos
+    const unsubscribe = FirestoreRepository.listen<Servico>(
+      'servicos_inteligentes',
+      empresaId,
+      (updatedList) => {
+        setServicos(updatedList);
+        setIsLoadingServicos(false);
+      },
+      [],
+      auth?.currentUser?.email
+    );
 
     // Escuta por atualizações de serviços para sincronizar estados
     const handleUpdate = (e: Event) => {
@@ -51,10 +71,12 @@ export const ServicoProvider: React.FC<ServicoProviderProps> = ({ children }) =>
       }
     };
     window.addEventListener('servicos_updated', handleUpdate);
+
     return () => {
+      unsubscribe();
       window.removeEventListener('servicos_updated', handleUpdate);
     };
-  }, [auth?.currentUser?.empresaId]);
+  }, [auth?.currentUser?.empresaId, auth?.currentUser?.email]);
 
   const saveServico = async (data: Servico): Promise<Servico> => {
     const empresaId = auth?.currentUser?.empresaId?.trim();

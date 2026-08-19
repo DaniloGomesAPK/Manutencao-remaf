@@ -7,6 +7,7 @@ import React, { useState, useEffect, useContext, ReactNode } from 'react';
 import { EquipamentoContext, EquipamentoContextType } from '../contexts/EquipamentoContext';
 import { Equipamento } from '../types';
 import { EquipamentoService } from '../services/EquipamentoService';
+import { FirestoreRepository } from '../services/FirestoreRepository';
 import { AuthContext } from '../contexts/AuthContext';
 
 interface EquipamentoProviderProps {
@@ -38,7 +39,26 @@ export const EquipamentoProvider: React.FC<EquipamentoProviderProps> = ({ childr
   };
 
   useEffect(() => {
+    const empresaId = auth?.currentUser?.empresaId?.trim();
+    if (!empresaId) {
+      setEquipamentos([]);
+      setIsLoadingEquipamentos(false);
+      return;
+    }
+
     loadEquipamentosForUser();
+
+    // Listener em tempo real do Firestore para sincronização entre dispositivos
+    const unsubscribe = FirestoreRepository.listen<Equipamento>(
+      'equipamentos',
+      empresaId,
+      (updatedList) => {
+        setEquipamentos(updatedList);
+        setIsLoadingEquipamentos(false);
+      },
+      [],
+      auth?.currentUser?.email
+    );
     
     // Escuta por atualizações de equipamentos ou de clientes (para atualizar o nome do cliente no cache)
     const handleUpdate = (e: Event) => {
@@ -55,10 +75,11 @@ export const EquipamentoProvider: React.FC<EquipamentoProviderProps> = ({ childr
     window.addEventListener('clientes_updated', handleUpdate);
     
     return () => {
+      unsubscribe();
       window.removeEventListener('equipamentos_updated', handleUpdate);
       window.removeEventListener('clientes_updated', handleUpdate);
     };
-  }, [auth?.currentUser?.empresaId]);
+  }, [auth?.currentUser?.empresaId, auth?.currentUser?.email]);
 
   const saveEquipamento = async (data: Equipamento): Promise<Equipamento> => {
     const empresaId = auth?.currentUser?.empresaId?.trim();

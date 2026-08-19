@@ -36,9 +36,14 @@ export const FirestoreSyncEngine = {
     return FirestoreRepository.delete(storeName, id, empresaId);
   },
 
-  async syncAllPending(empresaId: string): Promise<{ success: boolean; syncedCount: number; remainingCount: number }> {
-    const res = await FirestoreRepository.syncPendingRecords(empresaId);
-    return { success: true, ...res };
+  async syncAllPending(empresaId: string, userEmail?: string): Promise<{ success: boolean; syncedCount: number; remainingCount: number; error?: string }> {
+    const res = await FirestoreRepository.syncPendingRecords(empresaId, userEmail);
+    return res;
+  },
+
+  async syncBidirectional(empresaId: string, userEmail?: string): Promise<{ success: boolean; syncedCount: number; remainingCount: number; fetchedCount: number; error?: string }> {
+    const res = await FirestoreRepository.syncBidirectional(empresaId, userEmail);
+    return res;
   },
 
   async getPendingCount(empresaId: string): Promise<number> {

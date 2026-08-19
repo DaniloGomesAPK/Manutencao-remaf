@@ -7,6 +7,7 @@ import React, { useState, useEffect, useContext, ReactNode } from 'react';
 import { ClienteContext, ClienteContextType } from '../contexts/ClienteContext';
 import { Cliente } from '../types';
 import { ClienteService } from '../services/ClienteService';
+import { FirestoreRepository } from '../services/FirestoreRepository';
 import { AuthContext } from '../contexts/AuthContext';
 
 interface ClienteProviderProps {
@@ -38,9 +39,28 @@ export const ClienteProvider: React.FC<ClienteProviderProps> = ({ children }) =>
   };
 
   useEffect(() => {
+    const empresaId = auth?.currentUser?.empresaId?.trim();
+    if (!empresaId) {
+      setClientes([]);
+      setIsLoadingClientes(false);
+      return;
+    }
+
     loadClientesForUser();
+
+    // Listener em tempo real do Firestore para sincronização entre dispositivos
+    const unsubscribe = FirestoreRepository.listen<Cliente>(
+      'clientes',
+      empresaId,
+      (updatedList) => {
+        setClientes(updatedList);
+        setIsLoadingClientes(false);
+      },
+      [],
+      auth?.currentUser?.email
+    );
     
-    // Escuta por atualizações de clientes para sincronizar estados entre abas/componentes
+    // Escuta por atualizações locais de clientes para sincronizar abas
     const handleUpdate = (e: Event) => {
       const customEvent = e as CustomEvent;
       const currentEmpresaId = auth?.currentUser?.empresaId?.trim();
@@ -51,10 +71,12 @@ export const ClienteProvider: React.FC<ClienteProviderProps> = ({ children }) =>
       }
     };
     window.addEventListener('clientes_updated', handleUpdate);
+
     return () => {
+      unsubscribe();
       window.removeEventListener('clientes_updated', handleUpdate);
     };
-  }, [auth?.currentUser?.empresaId]);
+  }, [auth?.currentUser?.empresaId, auth?.currentUser?.email]);
 
   const saveCliente = async (data: Cliente): Promise<Cliente> => {
     const empresaId = auth?.currentUser?.empresaId?.trim();

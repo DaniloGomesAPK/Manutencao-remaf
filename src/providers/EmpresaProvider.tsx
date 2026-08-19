@@ -7,6 +7,7 @@ import React, { useState, useEffect, useContext, ReactNode } from 'react';
 import { EmpresaContext, EmpresaContextType } from '../contexts/EmpresaContext';
 import { Empresa } from '../models/Empresa';
 import { EmpresaService } from '../services/EmpresaService';
+import { FirestoreRepository } from '../services/FirestoreRepository';
 import { AuthContext } from '../contexts/AuthContext';
 import { getPerfilConfig } from '../config/perfis';
 
@@ -40,17 +41,40 @@ export const EmpresaProvider: React.FC<EmpresaProviderProps> = ({ children }) =>
   };
 
   useEffect(() => {
+    const empresaId = auth?.currentUser?.empresaId?.trim();
+    if (!empresaId) {
+      setEmpresa(null);
+      setIsLoadingEmpresa(false);
+      return;
+    }
+
     loadEmpresaForUser();
+
+    // Listener em tempo real do Firestore para dados da empresa
+    const unsubscribe = FirestoreRepository.listen<Empresa>(
+      'company_profile',
+      empresaId,
+      (list) => {
+        if (list.length > 0) {
+          setEmpresa(list[0]);
+          setIsLoadingEmpresa(false);
+        }
+      },
+      [],
+      auth?.currentUser?.email
+    );
     
     // Escuta por atualizações da empresa para sincronizar estados entre componentes
     const handleUpdate = () => {
       loadEmpresaForUser();
     };
     window.addEventListener('remaf_company_updated', handleUpdate);
+
     return () => {
+      unsubscribe();
       window.removeEventListener('remaf_company_updated', handleUpdate);
     };
-  }, [auth?.currentUser?.empresaId]);
+  }, [auth?.currentUser?.empresaId, auth?.currentUser?.email]);
 
   const saveEmpresa = async (data: Empresa): Promise<Empresa> => {
     setIsLoadingEmpresa(true);

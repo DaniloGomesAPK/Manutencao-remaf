@@ -146,6 +146,43 @@ export async function runTrialOnboardingFlowTests() {
     '6. Plano pago existente -> mantido como pago ativo e válido'
   );
 
+  // 7. Teste: API Handler - GET deve retornar 405
+  let mockGetStatusCode = 0;
+  let mockGetResponse: any = null;
+  const mockGetRes = {
+    setHeader: () => {},
+    status: (code: number) => {
+      mockGetStatusCode = code;
+      return {
+        json: (data: any) => { mockGetResponse = data; return mockGetResponse; }
+      };
+    }
+  };
+  const trialHandler = (await import('../../api/onboarding/trial')).default;
+  await trialHandler({ method: 'GET', headers: {} }, mockGetRes);
+  assert(
+    mockGetStatusCode === 405 && mockGetResponse?.success === false,
+    '7. GET /api/onboarding/trial -> 405 Method Not Allowed (nunca 500)'
+  );
+
+  // 8. Teste: API Handler - POST sem token deve retornar 401
+  let mockPostNoTokenCode = 0;
+  let mockPostNoTokenResponse: any = null;
+  const mockPostNoTokenRes = {
+    setHeader: () => {},
+    status: (code: number) => {
+      mockPostNoTokenCode = code;
+      return {
+        json: (data: any) => { mockPostNoTokenResponse = data; return mockPostNoTokenResponse; }
+      };
+    }
+  };
+  await trialHandler({ method: 'POST', headers: {} }, mockPostNoTokenRes);
+  assert(
+    mockPostNoTokenCode === 401 && mockPostNoTokenResponse?.success === false,
+    '8. POST /api/onboarding/trial sem Bearer Token -> 401 Unauthorized (nunca 500)'
+  );
+
   console.log(`=== RESUMO: ${passed} passaram, ${failed} falharam ===\n`);
   if (failed > 0) {
     throw new Error(`${failed} testes falharam.`);
