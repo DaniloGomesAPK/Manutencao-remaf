@@ -532,7 +532,7 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
                       key={eq.id}
                       type="button"
                       onClick={() => {
-                        setEquipamento(`${eq.tipo} - ${eq.fabricante} ${eq.modelo}`.trim());
+                        setEquipamento(eq.tipo);
                         if (eq.placa) setPlaca(eq.placa);
                         if (eq.chassi) setChassi(eq.chassi);
                         if (eq.modelo) setModelo(eq.modelo);

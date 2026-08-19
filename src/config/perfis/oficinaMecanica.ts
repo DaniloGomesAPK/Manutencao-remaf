@@ -19,6 +19,7 @@ const oficinaMecanica: PerfilConfig = {
     placa: "Placa do Veículo",
     chassi: "Chassi",
     quilometragem: "Quilometragem (KM)",
+    horimetro: "Horímetro (Horas)",
     modelo: "Modelo",
     fabricante: "Fabricante / Marca",
     ano: "Ano de Fabricação"
@@ -32,7 +33,7 @@ const oficinaMecanica: PerfilConfig = {
     modelo: true,
     fabricante: true,
     ano: true,
-    horimetro: false,
+    horimetro: true,
     numeroSerie: false,
     patrimonio: false,
     localObra: false,
@@ -57,12 +58,23 @@ const oficinaMecanica: PerfilConfig = {
     setor: false,
     linhaProducao: false
   },
-  layout: ['cliente', 'equipamento', 'placa', 'chassi', 'quilometragem', 'fabricante', 'modelo', 'ano'],
+  layout: [
+    'cliente',
+    'equipamento',
+    'placa',
+    'chassi',
+    'quilometragem',
+    'horimetro',
+    'fabricante',
+    'modelo',
+    'ano'
+  ],
   placeholders: {
     equipamento: "Ex: Fiat Uno Mille 1.0",
     placa: "Ex: ABC-1234 / ABC1D23",
     chassi: "Ex: 9BWZZZ377...",
     quilometragem: "Ex: 85000",
+    horimetro: "Ex: 1200",
     modelo: "Ex: Mille Way",
     fabricante: "Ex: Fiat"
   }
