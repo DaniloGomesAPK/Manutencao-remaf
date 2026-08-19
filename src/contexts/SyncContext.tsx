@@ -9,8 +9,10 @@ export interface SyncContextType {
   isSyncing: boolean;
   isOnline: boolean;
   lastSyncedAt: string | null;
+  lastSuccessfulSync: string | null;
+  syncError: string | null;
   pendingCount: number;
-  syncStatus: 'synced' | 'syncing' | 'offline';
+  syncStatus: 'synced' | 'syncing' | 'error' | 'offline';
   syncAll: () => Promise<void>;
   syncEmpresa: () => Promise<void>;
   syncDadosTecnicos: () => Promise<void>;

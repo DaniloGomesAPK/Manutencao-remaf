@@ -14,6 +14,7 @@ import {
   generateNewDocumentId
 } from './db';
 import { OrdemServicoService } from './services/OSService';
+import { FirestoreRepository } from './services/FirestoreRepository';
 
 import { AuthContext } from './contexts/AuthContext';
 import { EmpresaContext } from './contexts/EmpresaContext';
@@ -159,31 +160,43 @@ export default function App() {
   const [activePDFDataURI, setActivePDFDataURI] = useState<string>('');
   const [showPDFPreview, setShowPDFPreview] = useState(false);
 
-  // Multi-tenant database fetch trigger
+  // Multi-tenant database fetch and realtime Firestore synchronization (between PC and Mobile)
   useEffect(() => {
-    if (activeUser?.empresaId && activeUser.empresaId.trim() !== '') {
-      loadServiceOrders();
-    } else {
+    const empresaId = activeUser?.empresaId?.trim();
+    if (!empresaId) {
       setServiceOrders([]);
       setLoading(false);
+      return;
     }
-  }, [activeUser?.empresaId]);
 
-  // Ouvinte global do evento "ordens_servico_updated" para recarregar imediatamente as ordens de serviço
-  useEffect(() => {
+    loadServiceOrders();
+
+    // Listener em tempo real do Firestore: qualquer OS criada/alterada no celular atualiza o computador e vice-versa
+    const unsubscribe = FirestoreRepository.listen<OrdemDeServico>(
+      'ordensServico',
+      empresaId,
+      (updatedOrders) => {
+        setServiceOrders(updatedOrders);
+        setLoading(false);
+      },
+      [],
+      activeUser?.email
+    );
+
+    // Ouvinte global do evento "ordens_servico_updated" para recarregar imediatamente as ordens de serviço localmente
     const handleOrdersUpdated = async () => {
-      if (activeUser?.empresaId && activeUser.empresaId.trim() !== '') {
-        try {
-          const list = await OrdemServicoService.getOrdensServico(activeUser.empresaId, activeUser.email);
-          setServiceOrders(list);
-        } catch (err) {
-          console.error("Erro ao atualizar ordens de serviço via evento:", err);
-        }
+      try {
+        const list = await OrdemServicoService.getOrdensServico(empresaId, activeUser?.email);
+        setServiceOrders(list);
+      } catch (err) {
+        console.error("Erro ao atualizar ordens de serviço via evento:", err);
       }
     };
 
     window.addEventListener('ordens_servico_updated', handleOrdersUpdated);
+
     return () => {
+      unsubscribe();
       window.removeEventListener('ordens_servico_updated', handleOrdersUpdated);
     };
   }, [activeUser?.empresaId, activeUser?.email]);
