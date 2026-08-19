@@ -24,16 +24,16 @@ export function getFirebaseAdmin(): App {
     return adminApp;
   }
 
-  const projectId = process.env.FIREBASE_PROJECT_ID?.trim();
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL?.trim();
+  const projectId = (process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT)?.trim();
+  const clientEmail = (process.env.FIREBASE_CLIENT_EMAIL || process.env.FIREBASE_ADMIN_CLIENT_EMAIL)?.trim();
   
-  let rawPrivateKey = process.env.FIREBASE_PRIVATE_KEY?.trim();
+  let rawPrivateKey = (process.env.FIREBASE_PRIVATE_KEY || process.env.FIREBASE_ADMIN_PRIVATE_KEY)?.trim();
   if (rawPrivateKey) {
     if ((rawPrivateKey.startsWith('"') && rawPrivateKey.endsWith('"')) ||
         (rawPrivateKey.startsWith("'") && rawPrivateKey.endsWith("'"))) {
       rawPrivateKey = rawPrivateKey.substring(1, rawPrivateKey.length - 1);
     }
-    rawPrivateKey = rawPrivateKey.replace(/\\n/g, '\n');
+    rawPrivateKey = rawPrivateKey.replace(/\\r/g, '').replace(/\\n/g, '\n');
   }
 
   if (!projectId || !clientEmail || !rawPrivateKey) {

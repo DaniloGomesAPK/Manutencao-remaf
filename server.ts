@@ -21,6 +21,17 @@ async function startServer() {
   });
 
   // NOVO ENDPOINT DE ONBOARDING TRIAL SERVER-AUTHORITATIVE (ETAPA 01B)
+  app.all('/api/onboarding/trial', async (req, res, next) => {
+    if (req.method !== 'POST') {
+      res.setHeader('Allow', ['POST']);
+      return res.status(405).json({
+        success: false,
+        error: `Método ${req.method} não permitido. Utilize POST.`,
+      });
+    }
+    next();
+  });
+
   app.post('/api/onboarding/trial', async (req, res) => {
     const authHeader = req.headers.authorization || '';
     if (!authHeader.startsWith('Bearer ')) {
