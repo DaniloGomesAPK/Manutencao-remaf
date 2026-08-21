@@ -8,6 +8,13 @@ import { getFirebaseAdmin } from './server/firebaseAdmin';
 import { handleTrialOnboarding } from './server/onboardingService';
 import { handleAdminLicenseOperation } from './server/adminLicenseService';
 import { handleCaktoWebhook } from './server/caktoWebhookService';
+import { requireAdminAuth } from './server/authMiddleware';
+import {
+  createRateLimiterMiddleware,
+  trialRateLimiter,
+  adminRateLimiter,
+  caktoWebhookRateLimiter,
+} from './server/rateLimiter';
 
 async function startServer() {
   const app = express();
@@ -20,7 +27,7 @@ async function startServer() {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  // NOVO ENDPOINT DE ONBOARDING TRIAL SERVER-AUTHORITATIVE (ETAPA 01B)
+  // ENDPOINT DE ONBOARDING TRIAL SERVER-AUTHORITATIVE
   app.all('/api/onboarding/trial', async (req, res, next) => {
     if (req.method !== 'POST') {
       res.setHeader('Allow', ['POST']);
@@ -32,114 +39,114 @@ async function startServer() {
     next();
   });
 
-  app.post('/api/onboarding/trial', async (req, res) => {
-    const authHeader = req.headers.authorization || '';
-    if (!authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        error: 'Cabeçalho de autorização ausente ou inválido. Bearer <Firebase ID Token> é obrigatório.',
-      });
+  app.post(
+    '/api/onboarding/trial',
+    createRateLimiterMiddleware(trialRateLimiter),
+    async (req, res) => {
+      const authHeader = req.headers.authorization || '';
+      if (!authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({
+          success: false,
+          error: 'Cabeçalho de autorização ausente ou inválido. Bearer <Firebase ID Token> é obrigatório.',
+        });
+      }
+
+      const idToken = authHeader.substring(7).trim();
+      if (!idToken) {
+        return res.status(401).json({
+          success: false,
+          error: 'Token de autenticação não fornecido no cabeçalho Bearer.',
+        });
+      }
+
+      try {
+        const result = await handleTrialOnboarding(idToken, req.body);
+        return res.json(result);
+      } catch (error: any) {
+        console.error('[API Onboarding Trial] Erro:', error.message || error);
+        const isAuthErr =
+          error.message?.includes('não autorizado') ||
+          error.message?.includes('Token') ||
+          error.message?.includes('expirada') ||
+          error.message?.includes('autenticação');
+        const isForbidden =
+          error.message?.includes('EMAIL_NAO_VERIFICADO') ||
+          error.message?.includes('não verificado') ||
+          error.message?.includes('negada') ||
+          error.message?.includes('integridade') ||
+          error.message?.includes('Conflito') ||
+          error.message?.includes('bloqueada') ||
+          error.message?.includes('bloqueado') ||
+          error.message?.includes('revogado') ||
+          error.message?.includes('expirado') ||
+          error.message?.includes('utilizado');
+        const status = isAuthErr ? 401 : isForbidden ? 403 : 400;
+
+        return res.status(status).json({
+          success: false,
+          error: error.message || 'Falha ao processar o cadastro de avaliação.',
+        });
+      }
     }
+  );
 
-    const idToken = authHeader.substring(7).trim();
-    if (!idToken) {
-      return res.status(401).json({
-        success: false,
-        error: 'Token de autenticação não fornecido no cabeçalho Bearer.',
-      });
+  // ENDPOINT DE GESTÃO MANUAL DE LICENÇA (PIX / SUPORTE / ADMIN)
+  // Protegido com Rate Limiting e requireAdminAuth (validação server-side de token e SYSTEM_ADMIN_EMAILS)
+  app.post(
+    '/api/admin/license',
+    createRateLimiterMiddleware(adminRateLimiter),
+    requireAdminAuth,
+    async (req, res) => {
+      const authHeader = req.headers.authorization || '';
+      const idToken = authHeader.substring(7).trim();
+
+      try {
+        const result = await handleAdminLicenseOperation(idToken, req.body);
+        return res.json(result);
+      } catch (error: any) {
+        console.error('[API Admin License] Erro:', error?.message || error);
+        const msg = error?.message || '';
+        const isAuthErr =
+          msg.includes('Sessão expirada') ||
+          msg.includes('token de autenticação') ||
+          msg.includes('Token');
+        const isForbidden =
+          msg.includes('negado') ||
+          msg.includes('negada') ||
+          msg.includes('não possui privilégios') ||
+          msg.includes('não configurado');
+        const isNotFound =
+          msg.includes('não encontrado') ||
+          msg.includes('inexistente');
+
+        const status = isAuthErr ? 401 : isForbidden ? 403 : isNotFound ? 404 : 400;
+
+        return res.status(status).json({
+          success: false,
+          error: msg || 'Falha ao processar operação administrativa de licença.',
+        });
+      }
     }
-
-    try {
-      const result = await handleTrialOnboarding(idToken, req.body);
-      return res.json(result);
-    } catch (error: any) {
-      console.error('[API Onboarding Trial] Erro:', error.message || error);
-      const isAuthErr =
-        error.message?.includes('não autorizado') ||
-        error.message?.includes('Token') ||
-        error.message?.includes('expirada') ||
-        error.message?.includes('autenticação');
-      const isForbidden =
-        error.message?.includes('EMAIL_NAO_VERIFICADO') ||
-        error.message?.includes('não verificado') ||
-        error.message?.includes('negada') ||
-        error.message?.includes('integridade') ||
-        error.message?.includes('Conflito') ||
-        error.message?.includes('bloqueada') ||
-        error.message?.includes('bloqueado') ||
-        error.message?.includes('revogado') ||
-        error.message?.includes('expirado') ||
-        error.message?.includes('utilizado');
-      const status = isAuthErr ? 401 : isForbidden ? 403 : 400;
-
-      return res.status(status).json({
-        success: false,
-        error: error.message || 'Falha ao processar o cadastro de avaliação.',
-      });
-    }
-  });
-
-  // NOVO ENDPOINT DE GESTÃO MANUAL DE LICENÇA (PIX / SUPORTE)
-  app.post('/api/admin/license', async (req, res) => {
-    const authHeader = req.headers.authorization || '';
-    if (!authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        error: 'Cabeçalho de autorização ausente ou inválido. Bearer <Firebase ID Token> é obrigatório.',
-      });
-    }
-
-    const idToken = authHeader.substring(7).trim();
-    if (!idToken) {
-      return res.status(401).json({
-        success: false,
-        error: 'Token de autenticação não fornecido no cabeçalho Bearer.',
-      });
-    }
-
-    try {
-      const result = await handleAdminLicenseOperation(idToken, req.body);
-      return res.json(result);
-    } catch (error: any) {
-      console.error('[API Admin License] Erro:', error?.message || error);
-      const msg = error?.message || '';
-      const isAuthErr =
-        msg.includes('Sessão expirada') ||
-        msg.includes('token de autenticação') ||
-        msg.includes('Token');
-      const isForbidden =
-        msg.includes('negado') ||
-        msg.includes('negada') ||
-        msg.includes('não possui privilégios') ||
-        msg.includes('não configurado');
-      const isNotFound =
-        msg.includes('não encontrado') ||
-        msg.includes('inexistente');
-
-      const status = isAuthErr ? 401 : isForbidden ? 403 : isNotFound ? 404 : 400;
-
-      return res.status(status).json({
-        success: false,
-        error: msg || 'Falha ao processar operação administrativa de licença.',
-      });
-    }
-  });
+  );
 
   // ENDPOINT DE WEBHOOK CAKTO (PAGAMENTOS / ASSINATURAS)
-  // Desativado por padrão via CAKTO_WEBHOOK_ENABLED=false
-  // Validação estrita por header (req.query.secret é rejeitado)
-  app.post(['/api/webhooks/cakto', '/api/webhook/cakto'], async (req, res) => {
-    try {
-      const result = await handleCaktoWebhook(req.headers, req.body);
-      return res.status(result.statusCode).json(result.body);
-    } catch (error: any) {
-      console.error('[API Cakto Webhook] Erro não tratado:', error?.message || error);
-      return res.status(500).json({
-        success: false,
-        error: 'Erro interno ao processar notificação da Cakto.',
-      });
+  // Protegido com Rate Limiting
+  app.post(
+    ['/api/webhooks/cakto', '/api/webhook/cakto'],
+    createRateLimiterMiddleware(caktoWebhookRateLimiter),
+    async (req, res) => {
+      try {
+        const result = await handleCaktoWebhook(req.headers, req.body);
+        return res.status(result.statusCode).json(result.body);
+      } catch (error: any) {
+        console.error('[API Cakto Webhook] Erro não tratado:', error?.message || error);
+        return res.status(500).json({
+          success: false,
+          error: 'Erro interno ao processar notificação da Cakto.',
+        });
+      }
     }
-  });
+  );
 
   // Rota de Verificação de Identidade do ID Token do Firebase (Apenas leitura/verificação sem criação de dados)
   app.post('/api/auth/verify', async (req, res) => {

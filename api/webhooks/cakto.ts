@@ -1,4 +1,5 @@
 import { handleCaktoWebhook } from '../../server/caktoWebhookService';
+import { applyRateLimit, caktoWebhookRateLimiter } from '../../server/rateLimiter';
 
 /**
  * Vercel Serverless Function: Webhook Cakto
@@ -13,6 +14,11 @@ export default async function handler(req: any, res: any) {
       success: false,
       error: `Método ${req.method} não permitido. Utilize POST.`,
     });
+  }
+
+  // Camada de proteção contra abuso / Rate Limiting (HTTP 429)
+  if (!applyRateLimit(req, res, caktoWebhookRateLimiter)) {
+    return;
   }
 
   try {

@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { applyRateLimit, trialRateLimiter } from '../../server/rateLimiter';
+
 export default async function handler(req: any, res: any) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -24,6 +26,11 @@ export default async function handler(req: any, res: any) {
       success: false,
       error: `Método ${req.method} não permitido. Utilize POST.`,
     });
+  }
+
+  // Camada de proteção contra abuso / Rate Limiting (HTTP 429)
+  if (!applyRateLimit(req, res, trialRateLimiter)) {
+    return;
   }
 
   // Validação de cabeçalho de autorização: sem Bearer token retorna 401
