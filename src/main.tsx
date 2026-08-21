@@ -2,6 +2,8 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { isFirebaseConfigured, missingFirebaseEnvKeys } from './config/firebase.ts';
+import { FirebaseConfigError } from './components/FirebaseConfigError.tsx';
 import { AuthProvider } from './providers/AuthProvider.tsx';
 import { EmpresaProvider } from './providers/EmpresaProvider.tsx';
 import { LicenseProvider } from './providers/LicenseProvider.tsx';
@@ -27,24 +29,28 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AuthProvider>
-      <EmpresaProvider>
-        <LicenseProvider>
-          <SyncProvider>
-            <ClienteProvider>
-              <EquipamentoProvider>
-                <ServicoProvider>
-                  <PrecificacaoProvider>
-                    <ErrorBoundary modulo="Inicialização" componente="App">
-                      <App />
-                    </ErrorBoundary>
-                  </PrecificacaoProvider>
-                </ServicoProvider>
-              </EquipamentoProvider>
-            </ClienteProvider>
-          </SyncProvider>
-        </LicenseProvider>
-      </EmpresaProvider>
-    </AuthProvider>
+    {!isFirebaseConfigured ? (
+      <FirebaseConfigError missingKeys={missingFirebaseEnvKeys} />
+    ) : (
+      <AuthProvider>
+        <EmpresaProvider>
+          <LicenseProvider>
+            <SyncProvider>
+              <ClienteProvider>
+                <EquipamentoProvider>
+                  <ServicoProvider>
+                    <PrecificacaoProvider>
+                      <ErrorBoundary modulo="Inicialização" componente="App">
+                        <App />
+                      </ErrorBoundary>
+                    </PrecificacaoProvider>
+                  </ServicoProvider>
+                </EquipamentoProvider>
+              </ClienteProvider>
+            </SyncProvider>
+          </LicenseProvider>
+        </EmpresaProvider>
+      </AuthProvider>
+    )}
   </StrictMode>,
 );
