@@ -23,7 +23,9 @@ import {
   Coins,
   Briefcase,
   ChevronDown,
-  RotateCcw
+  RotateCcw,
+  Sliders,
+  Camera
 } from 'lucide-react';
 import { Empresa } from '../models/Empresa';
 import { EmpresaService } from '../services/EmpresaService';
@@ -70,6 +72,9 @@ export default function MinhaEmpresa({ onBack }: MinhaEmpresaProps) {
   const [regimeTributario, setRegimeTributario] = useState('Simples Nacional');
   const [aliquotaImposto, setAliquotaImposto] = useState('6.00');
 
+  // Recursos da Empresa
+  const [fotosAntesDepois, setFotosAntesDepois] = useState(false);
+
   // Form Fields State (Dados Financeiros)
   const [tipoChavePix, setTipoChavePix] = useState('Chave Aleatória');
   const [chavePix, setChavePix] = useState('');
@@ -108,6 +113,7 @@ export default function MinhaEmpresa({ onBack }: MinhaEmpresaProps) {
       setLogomarca(company.logomarca);
       setRegimeTributario(company.regimeTributario || 'Simples Nacional');
       setAliquotaImposto(company.aliquotaImposto !== undefined ? company.aliquotaImposto.toString() : '6.00');
+      setFotosAntesDepois(company.configuracoes?.recursos?.fotosAntesDepois ?? false);
       
       // Load Dados Financeiros
       setTipoChavePix(company.tipoChavePix || 'Chave Aleatória');
@@ -199,6 +205,13 @@ export default function MinhaEmpresa({ onBack }: MinhaEmpresaProps) {
       logomarca: logomarca,
       regimeTributario: regimeTributario,
       aliquotaImposto: Number(aliquotaImposto) || 0,
+      configuracoes: {
+        ...(company.configuracoes || {}),
+        recursos: {
+          ...(company.configuracoes?.recursos || {}),
+          fotosAntesDepois: fotosAntesDepois,
+        },
+      },
       
       // Dados Financeiros
       tipoChavePix: tipoChavePix,
@@ -698,6 +711,70 @@ export default function MinhaEmpresa({ onBack }: MinhaEmpresaProps) {
                     onChange={(e) => setSite(e.target.value)}
                     className="w-full bg-white text-slate-800 border border-slate-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] transition duration-200"
                   />
+                </div>
+              </div>
+            </div>
+
+            {/* RECURSOS DA EMPRESA CARD */}
+            <div id="company-features-card" className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-xs">
+              <div className="flex items-center gap-2 pb-3 border-b border-slate-100 mb-5">
+                <Sliders className="w-5 h-5 text-[#003366]" />
+                <h3 className="text-xs font-black uppercase tracking-widest text-slate-700">Recursos da Empresa</h3>
+              </div>
+
+              <div className="space-y-4">
+                <div className="p-4 sm:p-5 bg-slate-50/80 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3.5">
+                    <div className={`p-3 rounded-xl shrink-0 transition-colors ${fotosAntesDepois ? 'bg-[#FF6600]/10 text-[#FF6600]' : 'bg-slate-200/70 text-slate-500'}`}>
+                      <Camera className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="text-sm font-bold text-slate-800">
+                          Registro Fotográfico Antes e Depois
+                        </h4>
+                        <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
+                          fotosAntesDepois 
+                            ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' 
+                            : 'bg-slate-200 text-slate-600 border border-slate-300'
+                        }`}>
+                          {fotosAntesDepois ? 'Ativado' : 'Desativado'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                        Permite adicionar fotos do serviço antes e depois da execução.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                    <div className="inline-flex p-1 bg-slate-200/80 rounded-xl">
+                      <button
+                        type="button"
+                        id="btn-toggle-fotos-desativado"
+                        onClick={() => setFotosAntesDepois(false)}
+                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          !fotosAntesDepois
+                            ? 'bg-white text-slate-800 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        Desativado
+                      </button>
+                      <button
+                        type="button"
+                        id="btn-toggle-fotos-ativado"
+                        onClick={() => setFotosAntesDepois(true)}
+                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          fotosAntesDepois
+                            ? 'bg-[#003366] text-white shadow-sm'
+                            : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        Ativado
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

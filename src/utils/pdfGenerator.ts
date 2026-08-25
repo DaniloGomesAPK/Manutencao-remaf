@@ -69,6 +69,7 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
 
   const company = await EmpresaService.getEmpresa(targetEmpresaId);
   const perfilConfig = getPerfilConfig(company?.perfilEmpresa);
+  const fotosAtivo = Boolean(company?.configuracoes?.recursos?.fotosAntesDepois);
   const docTitleLabel = perfilConfig.labels.ordemServico || 'Ordem de Serviço';
   const { jsPDF } = await import('jspdf');
   const doc = new jsPDF({
@@ -606,7 +607,7 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
   }
 
   // Obversations under photos standard before
-  if (os.observacoesFotosAntes) {
+  if (fotosAtivo && os.observacoesFotosAntes) {
     ensureSpace(12);
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(8);
@@ -616,7 +617,7 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
   }
 
   // --- FOTOS ANTES (Gallery grid) ---
-  if (os.fotosAntes && os.fotosAntes.length > 0) {
+  if (fotosAtivo && os.fotosAntes && os.fotosAntes.length > 0) {
     drawSectionHeader('Fotos Antes');
     
     const photoWidth = 55; // fits 3 photos across easily (3x55 = 165mm, fits 180mm content)
@@ -849,7 +850,7 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
   }
 
   // --- FOTOS DEPOIS (Gallery grid) ---
-  if (os.fotosDepois && os.fotosDepois.length > 0) {
+  if (fotosAtivo && os.fotosDepois && os.fotosDepois.length > 0) {
     drawSectionHeader('Fotos Depois');
     
     const photoWidth = 55;

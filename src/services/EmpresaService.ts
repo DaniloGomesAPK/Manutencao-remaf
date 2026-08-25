@@ -96,6 +96,11 @@ export const EmpresaService = {
       email: usuario?.email || 'contato@empresa.com.br',
       perfilEmpresa: perfilEmpresa,
       configuracaoInicialConcluida: false,
+      configuracoes: {
+        recursos: {
+          fotosAntesDepois: false,
+        },
+      },
       usuarioProprietario: usuario,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
