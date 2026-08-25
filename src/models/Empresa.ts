@@ -5,6 +5,18 @@
 
 import { Usuario } from './Usuario';
 
+export interface EmpresaRecursos {
+  fotosAntesDepois?: boolean; // 'Registro Fotográfico Antes e Depois' - Padrão: false
+  [key: string]: any;
+}
+
+export interface EmpresaConfiguracoes {
+  customTheme?: string;
+  pdfHeaderTemplate?: string;
+  recursos?: EmpresaRecursos;
+  [key: string]: any;
+}
+
 export interface Empresa {
   id: string;               // EmpresaID (identificador único UUID)
   nomeFantasia: string;
@@ -30,11 +42,7 @@ export interface Empresa {
   regimeTributario?: string; // 'Simples Nacional' | 'Lucro Presumido' | 'Lucro Real' | 'Isento' | 'Outro'
   aliquotaImposto?: number;  // Alíquota efetiva de imposto em porcentagem (ex: 6.00 para 6%)
   
-  configuracoes?: {         // Configurações da empresa
-    customTheme?: string;
-    pdfHeaderTemplate?: string;
-    [key: string]: any;
-  };
+  configuracoes?: EmpresaConfiguracoes; // Configurações da empresa
   
   // Dados Financeiros
   tipoChavePix?: string;      // 'CPF' | 'CNPJ' | 'E-mail' | 'Celular' | 'Chave Aleatória'

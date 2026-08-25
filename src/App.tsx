@@ -69,6 +69,7 @@ export default function App() {
   const licenseCtx = useContext(LicenseContext);
   const syncCtx = useContext(SyncContext);
   const activeUser = auth?.currentUser;
+  const fotosAtivo = Boolean(empresaCtx?.empresa?.configuracoes?.recursos?.fotosAntesDepois);
 
   // SaaS Login States
   const [saasView, setSaasView] = useState<'welcome' | 'plans' | 'login' | 'trial'>('welcome');
@@ -342,8 +343,15 @@ export default function App() {
   // Continue a draft OS in Progress
   const handleEditOS = (os: OrdemDeServico) => {
     setFormData(os);
+    const fotosAtivo = Boolean(empresaCtx?.empresa?.configuracoes?.recursos?.fotosAntesDepois);
     if (os.faseAtual && os.faseAtual >= 1 && os.faseAtual <= 5) {
-      setCurrentStep(os.faseAtual);
+      if (!fotosAtivo) {
+        if (os.faseAtual === 2) setCurrentStep(3);
+        else if (os.faseAtual === 4) setCurrentStep(5);
+        else setCurrentStep(os.faseAtual);
+      } else {
+        setCurrentStep(os.faseAtual);
+      }
     } else {
       setCurrentStep(1);
     }
@@ -509,18 +517,20 @@ export default function App() {
       return;
     }
     const docId = formData.id || generateNewDocumentId();
+    const fotosAtivo = Boolean(empresaCtx?.empresa?.configuracoes?.recursos?.fotosAntesDepois);
+    const nextStep: OSStep = fotosAtivo ? 2 : 3;
     
     const updated = {
       ...formData,
       ...step1Data,
       id: docId,
       empresaId,
-      faseAtual: 2,
+      faseAtual: nextStep,
       status: formData.status || 'Pendente',
     } as OrdemDeServico;
 
     setFormData(updated);
-    setCurrentStep(2);
+    setCurrentStep(nextStep);
 
     // Asynchronously synchronize step progression to the database for robust auto-saving
     (async () => {
@@ -579,18 +589,20 @@ export default function App() {
       return;
     }
     const docId = formData.id || generateNewDocumentId();
+    const fotosAtivo = Boolean(empresaCtx?.empresa?.configuracoes?.recursos?.fotosAntesDepois);
+    const nextStep: OSStep = fotosAtivo ? 4 : 5;
 
     const updated = {
       ...formData,
       ...step3Data,
       id: docId,
       empresaId,
-      faseAtual: 4,
+      faseAtual: nextStep,
       status: formData.status || 'Pendente',
     } as OrdemDeServico;
 
     setFormData(updated);
-    setCurrentStep(4);
+    setCurrentStep(nextStep);
 
     (async () => {
       try {
@@ -1390,7 +1402,11 @@ export default function App() {
                   <div className="absolute top-1/2 left-0 w-full h-0.5 bg-slate-100 -translate-y-1/2 -z-0"></div>
                   <div 
                     className="absolute top-1/2 left-0 h-0.5 bg-[#FF6600] -translate-y-1/2 transition-all duration-305 -z-0"
-                    style={{ width: currentStep === 1 ? '0%' : currentStep === 2 ? '25%' : currentStep === 3 ? '50%' : currentStep === 4 ? '75%' : '100%' }}
+                    style={{ 
+                      width: fotosAtivo
+                        ? (currentStep === 1 ? '0%' : currentStep === 2 ? '25%' : currentStep === 3 ? '50%' : currentStep === 4 ? '75%' : '100%')
+                        : (currentStep === 1 ? '0%' : currentStep === 3 ? '50%' : '100%')
+                    }}
                   ></div>
                   
                   {(() => {
@@ -1399,6 +1415,67 @@ export default function App() {
                       if (formData.id) return true;
                       return false;
                     };
+
+                    if (!fotosAtivo) {
+                      return (
+                        <>
+                          {/* Step 1: Identificação (Internal 1) */}
+                          <button
+                            type="button"
+                            disabled={!isStepClickable(1)}
+                            onClick={() => setCurrentStep(1)}
+                            className={`relative z-10 flex flex-col items-center gap-2 focus:outline-none transition ${isStepClickable(1) ? 'cursor-pointer hover:opacity-90' : 'cursor-not-allowed opacity-50'}`}
+                          >
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center shadow-md transition duration-200 font-bold ${
+                              currentStep > 1 
+                                ? 'bg-[#003366] text-white border-none' 
+                                : currentStep === 1
+                                  ? 'bg-[#FF6600] text-white ring-4 ring-[#FF6600]/25'
+                                  : 'bg-white border-2 border-slate-200 text-slate-400'
+                            }`}>
+                              {currentStep > 1 ? <Check className="w-5 h-5 text-white stroke-[3.5]" /> : '1'}
+                            </div>
+                            <span className={`text-[11px] font-bold uppercase tracking-wider ${currentStep === 1 ? 'text-[#FF6600]' : currentStep > 1 ? 'text-[#003366]' : 'text-slate-400'}`}>Identificação</span>
+                          </button>
+                          
+                          {/* Step 2: Orçamento (Internal 3) */}
+                          <button
+                            type="button"
+                            disabled={!isStepClickable(3)}
+                            onClick={() => setCurrentStep(3)}
+                            className={`relative z-10 flex flex-col items-center gap-2 focus:outline-none transition ${isStepClickable(3) ? 'cursor-pointer hover:opacity-90' : 'cursor-not-allowed opacity-50'}`}
+                          >
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center shadow-md transition duration-200 font-bold ${
+                              currentStep > 3
+                                ? 'bg-[#003366] text-white border-none'
+                                : currentStep === 3
+                                  ? 'bg-[#FF6600] text-white ring-4 ring-[#FF6600]/25'
+                                  : 'bg-white border-2 border-slate-200 text-slate-400'
+                            }`}>
+                              {currentStep > 3 ? <Check className="w-5 h-5 text-white stroke-[3.5]" /> : '2'}
+                            </div>
+                            <span className={`text-[11px] font-bold uppercase tracking-wider ${currentStep === 3 ? 'text-[#FF6600]' : currentStep > 3 ? 'text-[#003366]' : 'text-slate-400'}`}>Orçamento</span>
+                          </button>
+
+                          {/* Step 3: Conclusão (Internal 5) */}
+                          <button
+                            type="button"
+                            disabled={!isStepClickable(5)}
+                            onClick={() => setCurrentStep(5)}
+                            className={`relative z-10 flex flex-col items-center gap-2 focus:outline-none transition ${isStepClickable(5) ? 'cursor-pointer hover:opacity-90' : 'cursor-not-allowed opacity-50'}`}
+                          >
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center shadow-md transition duration-200 font-bold ${
+                              currentStep === 5
+                                ? 'bg-[#FF6600] text-white ring-4 ring-[#FF6600]/25'
+                                : 'bg-white border-2 border-slate-200 text-slate-400'
+                            }`}>
+                              3
+                            </div>
+                            <span className={`text-[11px] font-bold uppercase tracking-wider ${currentStep === 5 ? 'text-[#FF6600]' : 'text-slate-400'}`}>Conclusão</span>
+                          </button>
+                        </>
+                      );
+                    }
 
                     return (
                       <>
@@ -1542,9 +1619,10 @@ export default function App() {
                   <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                     <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-3">Dicas de Atendimento</p>
                     <ul className="text-xs space-y-2 text-slate-600 italic">
-                      <li>• Registre fotos em locais iluminados</li>
+                      {fotosAtivo && <li>• Registre fotos em locais iluminados</li>}
                       <li>• Detalhe itens e serviços prestados</li>
                       <li>• Valide as informações com o cliente</li>
+                      {!fotosAtivo && <li>• Adicione condições comerciais claras</li>}
                     </ul>
                   </div>
                 </div>
@@ -1556,12 +1634,19 @@ export default function App() {
                     <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-[#FF6600]"></span>
                       <span className="text-xs font-bold text-[#003366] uppercase tracking-wider">
-                        Fase {currentStep} de 5: {
-                          currentStep === 1 ? `Identificação e ${getProtocoloLabel(empresaCtx?.perfilConfig, 'Protocolo')}` :
-                          currentStep === 2 ? 'Registro Fotográfico (Antes)' :
-                          currentStep === 3 ? 'Itens do Orçamento e Mão de Obra' :
-                          currentStep === 4 ? 'Registro Fotográfico (Depois)' : 'Conclusão e Relatório Final'
-                        }
+                        {fotosAtivo ? (
+                          `Fase ${currentStep} de 5: ${
+                            currentStep === 1 ? `Identificação e ${getProtocoloLabel(empresaCtx?.perfilConfig, 'Protocolo')}` :
+                            currentStep === 2 ? 'Registro Fotográfico (Antes)' :
+                            currentStep === 3 ? 'Itens do Orçamento e Mão de Obra' :
+                            currentStep === 4 ? 'Registro Fotográfico (Depois)' : 'Conclusão e Relatório Final'
+                          }`
+                        ) : (
+                          `Fase ${currentStep === 1 ? 1 : currentStep === 3 ? 2 : 3} de 3: ${
+                            currentStep === 1 ? `Identificação e ${getProtocoloLabel(empresaCtx?.perfilConfig, 'Protocolo')}` :
+                            currentStep === 3 ? 'Itens do Orçamento e Mão de Obra' : 'Conclusão e Relatório Final'
+                          }`
+                        )}
                       </span>
                     </div>
 
@@ -1612,7 +1697,7 @@ export default function App() {
                           isSaving={isSaving}
                         />
                       )}
-                      {currentStep === 2 && (
+                      {fotosAtivo && currentStep === 2 && (
                         <OSFormStep2
                           key={`step2_${formData.id || 'new'}`}
                           initialData={formData}
@@ -1629,13 +1714,13 @@ export default function App() {
                           key={`step3_${formData.id || 'new'}`}
                           initialData={formData}
                           onNext={handleStep3Submit}
-                          onBack={() => setCurrentStep(2)}
+                          onBack={() => setCurrentStep(fotosAtivo ? 2 : 1)}
                           onCancel={handleCancelForm}
                           onSaveProgress={(data) => handleSaveProgress(data, 3)}
                           isSaving={isSaving}
                         />
                       )}
-                      {currentStep === 4 && (
+                      {fotosAtivo && currentStep === 4 && (
                         <OSFormStep4
                           key={`step4_${formData.id || 'new'}`}
                           initialData={formData}
@@ -1652,7 +1737,7 @@ export default function App() {
                           key={`step5_${formData.id || 'new'}`}
                           initialData={formData}
                           onSave={handleFullOSSave}
-                          onBack={() => setCurrentStep(4)}
+                          onBack={() => setCurrentStep(fotosAtivo ? 4 : 3)}
                           onCancel={handleCancelForm}
                           onSaveDraftAndPDF={handleSaveDraftAndPDF}
                           isSaving={isSaving}
