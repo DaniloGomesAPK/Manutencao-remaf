@@ -17,11 +17,12 @@ interface CompressionResult {
  */
 export const compressImage = (
   fileOrBase64: File | string,
-  quality: number = 0.75
+  quality: number = 0.75,
+  maxDimension: number = 1000
 ): Promise<CompressionResult> => {
   return new Promise((resolve, reject) => {
-    // Determine quality within user mandated 70-80% threshold for WebP
-    const webpQuality = Math.min(Math.max(quality, 0.70), 0.80);
+    // Configured quality for WebP
+    const webpQuality = typeof quality === 'number' ? quality : 0.75;
     
     // Calculate initial size
     let originalSizeKB = 0;
@@ -40,7 +41,7 @@ export const compressImage = (
     img.onload = () => {
       let width = img.width;
       let height = img.height;
-      const maxDim = 1000;
+      const maxDim = typeof maxDimension === 'number' && maxDimension > 0 ? maxDimension : 1000;
 
       // Handle aspect-balanced scaling
       if (width > maxDim || height > maxDim) {
@@ -67,7 +68,7 @@ export const compressImage = (
       // Perform drawing
       ctx.drawImage(img, 0, 0, width, height);
 
-      // Perform compression using webp format and configured quality
+      // Perform compression using webp format and configured quality (0.65)
       const compressedDataUrl = canvas.toDataURL("image/webp", webpQuality);
       
       // Calculate output size

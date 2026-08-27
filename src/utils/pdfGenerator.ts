@@ -9,23 +9,104 @@ import { EmpresaService } from '../services/EmpresaService';
 import { getPerfilConfig, isCampoVisivel, getCampoLabel, getProtocoloLabel } from '../config/perfis';
 
 /**
- * Loads a base64 image (or URL) into an HTMLImageElement asynchronously
- * to read its real natural width and height.
+ * Loads an image sequentially, draws it into a single temporary Canvas,
+ * converts to JPEG Blob (~0.68 quality), produces a Uint8Array, and
+ * immediately disposes of Image and Canvas elements to minimize peak memory.
  */
-const getImageDimensions = (base64Str: string): Promise<{ width: number; height: number }> => {
+const loadAndPrepareJpeg = async (
+  src: string,
+  quality: number = 0.68
+): Promise<{ data: Uint8Array; width: number; height: number } | null> => {
+  if (!src) return null;
+
   return new Promise((resolve) => {
-    if (!base64Str) {
-      resolve({ width: 0, height: 0 });
-      return;
-    }
-    const img = new Image();
-    img.onload = () => {
-      resolve({ width: img.naturalWidth || img.width || 0, height: img.naturalHeight || img.height || 0 });
+    let img: HTMLImageElement | null = new Image();
+
+    const cleanup = () => {
+      if (img) {
+        img.onload = null;
+        img.onerror = null;
+        img.src = '';
+        img = null;
+      }
     };
+
+    img.onload = async () => {
+      let canvas: HTMLCanvasElement | null = null;
+      try {
+        const w = img?.naturalWidth || img?.width || 0;
+        const h = img?.naturalHeight || img?.height || 0;
+
+        if (!img || w <= 0 || h <= 0) {
+          cleanup();
+          resolve(null);
+          return;
+        }
+
+        canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+
+        if (!ctx) {
+          cleanup();
+          if (canvas) {
+            canvas.width = 1;
+            canvas.height = 1;
+            canvas = null;
+          }
+          resolve(null);
+          return;
+        }
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        // Convert canvas to JPEG Blob with controlled quality (~0.68)
+        const blob = await new Promise<Blob | null>((resolveBlob) => {
+          if (canvas && typeof canvas.toBlob === 'function') {
+            canvas.toBlob((b) => resolveBlob(b), 'image/jpeg', quality);
+          } else {
+            resolveBlob(null);
+          }
+        });
+
+        // Release Image object immediately
+        cleanup();
+
+        // Release Canvas surface immediately
+        if (canvas) {
+          canvas.width = 1;
+          canvas.height = 1;
+          canvas = null;
+        }
+
+        if (blob) {
+          const arrayBuffer = await blob.arrayBuffer();
+          const uint8Array = new Uint8Array(arrayBuffer);
+          resolve({ data: uint8Array, width: w, height: h });
+        } else {
+          resolve(null);
+        }
+      } catch (err) {
+        console.warn('Failed in loadAndPrepareJpeg:', err);
+        cleanup();
+        if (canvas) {
+          canvas.width = 1;
+          canvas.height = 1;
+          canvas = null;
+        }
+        resolve(null);
+      }
+    };
+
     img.onerror = () => {
-      resolve({ width: 0, height: 0 });
+      cleanup();
+      resolve(null);
     };
-    img.src = base64Str;
+
+    img.src = src;
   });
 };
 
@@ -61,7 +142,7 @@ const getFitDimensions = (
  * Generates a beautiful professional PDF report using jsPDF with proper page flow
  * and custom corporate brand colors (#003366 Deep Blue, #FF6600 Orange, and clean spacing).
  */
-export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> => {
+export const generateOSReportPDF = async (os: OrdemDeServico): Promise<Blob> => {
   const targetEmpresaId = os.empresaId?.trim();
   if (!targetEmpresaId) {
     throw new Error('Erro de geração de PDF: vínculo empresarial ausente na Ordem de Serviço.');
@@ -196,23 +277,7 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
   // Priority: 1. Logomarca | 2. Nome Fantasia | 3. Razão Social (fallback if Nome Fantasia is empty)
   const companyName = (company?.nomeFantasia || company?.razaoSocial || '').trim();
 
-  // 1. Calculate dynamic heights first
-  let logoHeight = 0;
-  let fitLogo: { width: number; height: number } | null = null;
-  if (company && company.logomarca) {
-    try {
-      const logoUrl = company.logomarca;
-      const dims = await getImageDimensions(logoUrl);
-      const maxW = 90; // Large logo width to occupy a major part of the header
-      const maxH = 32; // Large logo height
-      fitLogo = getFitDimensions(dims.width, dims.height, maxW, maxH);
-      logoHeight = fitLogo.height;
-    } catch (e) {
-      console.warn("Failed to calculate logo dimensions:", e);
-    }
-  }
-
-  // Calculate Company Title Height (Priority: Nome Fantasia -> Razão Social)
+  // 1. Calculate Company Title Height (Priority: Nome Fantasia -> Razão Social)
   let nameHeight = 0;
   let nameLines: string[] = [];
   if (companyName && companyName !== 'Sua Empresa') {
@@ -246,10 +311,42 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
     }
   }
 
-  // Calculate required ending Y of the logo block
-  // Top Colored Banner is 6mm. We start drawing inside the white block at y=10.
+  // 2. Process Logo once: compute dimensions, layout header background, render logo, and free memory
+  let logoHeight = 0;
+  if (company && company.logomarca) {
+    const logoResult = await loadAndPrepareJpeg(company.logomarca, 0.75);
+    if (logoResult) {
+      const maxW = 90; // Large logo width to occupy a major part of the header
+      const maxH = 32; // Large logo height
+      const fitLogo = getFitDimensions(logoResult.width, logoResult.height, maxW, maxH);
+      logoHeight = fitLogo.height;
+
+      // Calculate required ending Y of the logo block
+      let leftColY = 10 + logoHeight + 4;
+      if (nameLines.length > 0) leftColY += nameHeight + 2.5;
+      if (sloganLines.length > 0) leftColY += sloganHeight + 1.5;
+      const headerEndY = Math.max(38, leftColY + 2);
+
+      // Top Colored Banner Bar
+      doc.setFillColor(primaryColor.r, primaryColor.g, primaryColor.b);
+      doc.rect(0, 0, pageWidth, 6, 'F');
+
+      // Main logo area background is pure white
+      doc.setFillColor(255, 255, 255);
+      doc.rect(0, 6, pageWidth, headerEndY - 6, 'F');
+
+      // Draw Logo using the prepared JPEG Uint8Array
+      try {
+        doc.addImage(logoResult.data, 'JPEG', 15, 10, fitLogo.width, fitLogo.height, undefined, 'FAST');
+      } catch (e) {
+        console.warn("Failed to render logo in PDF:", e);
+      }
+    }
+  }
+
+  // Calculate required ending Y of the logo block if no logo was rendered
   let leftColY = 10;
-  if (fitLogo) {
+  if (logoHeight > 0) {
     leftColY += logoHeight + 4; // Logo height + spacing
   }
   if (nameLines.length > 0) {
@@ -262,21 +359,18 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
   // The end height of the white area must be at least 38mm, but can grow if needed
   const headerEndY = Math.max(38, leftColY + 2);
 
-  // Top Colored Banner Bar
-  doc.setFillColor(primaryColor.r, primaryColor.g, primaryColor.b);
-  doc.rect(0, 0, pageWidth, 6, 'F');
+  // If there was no logo, draw top bars and background
+  if (!logoHeight) {
+    doc.setFillColor(primaryColor.r, primaryColor.g, primaryColor.b);
+    doc.rect(0, 0, pageWidth, 6, 'F');
+    doc.setFillColor(255, 255, 255);
+    doc.rect(0, 6, pageWidth, headerEndY - 6, 'F');
+  }
 
-  // Main logo area background is pure white
-  doc.setFillColor(255, 255, 255);
-  doc.rect(0, 6, pageWidth, headerEndY - 6, 'F');
-
-  // Draw Left Column Contents (Logo, Name, Slogan)
+  // Draw Left Column Contents (Name, Slogan)
   let drawY = 10;
-  if (company && company.logomarca && fitLogo) {
-    try {
-      doc.addImage(company.logomarca, 'JPEG', 15, drawY, fitLogo.width, fitLogo.height, undefined, 'FAST');
-      drawY += logoHeight + 4;
-    } catch (_) {}
+  if (logoHeight > 0) {
+    drawY += logoHeight + 4;
   }
 
   // Draw Title (Nome Fantasia or Razão Social)
@@ -647,12 +741,19 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
 
       try {
         const imgUrl = os.fotosAntes[i];
-        if (imgUrl.startsWith('data:image')) {
-          const dims = await getImageDimensions(imgUrl);
-          const fit = getFitDimensions(dims.width, dims.height, photoWidth - 2, photoHeight - 2);
-          const centeredX = px + 1 + (photoWidth - 2 - fit.width) / 2;
-          const centeredY = y + 1 + (photoHeight - 2 - fit.height) / 2;
-          doc.addImage(imgUrl, 'JPEG', centeredX, centeredY, fit.width, fit.height, undefined, 'FAST');
+        if (imgUrl && imgUrl.startsWith('data:image')) {
+          const prepared = await loadAndPrepareJpeg(imgUrl, 0.68);
+          if (prepared) {
+            const fit = getFitDimensions(prepared.width, prepared.height, photoWidth - 2, photoHeight - 2);
+            const centeredX = px + 1 + (photoWidth - 2 - fit.width) / 2;
+            const centeredY = y + 1 + (photoHeight - 2 - fit.height) / 2;
+            doc.addImage(prepared.data, 'JPEG', centeredX, centeredY, fit.width, fit.height, undefined, 'FAST');
+          } else {
+            doc.setFillColor(lightGrey.r, lightGrey.g, lightGrey.b);
+            doc.rect(px + 1, y + 1, photoWidth - 2, photoHeight - 2, 'F');
+            doc.setFontSize(8);
+            doc.text('Erro ao carregar', px + photoWidth / 2, y + photoHeight / 2, { align: 'center' });
+          }
         } else {
           // Fallback box for plain URL images that cannot be base64 embedded directly in clients
           doc.setFillColor(lightGrey.r, lightGrey.g, lightGrey.b);
@@ -878,12 +979,19 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
 
       try {
         const imgUrl = os.fotosDepois[i];
-        if (imgUrl.startsWith('data:image')) {
-          const dims = await getImageDimensions(imgUrl);
-          const fit = getFitDimensions(dims.width, dims.height, photoWidth - 2, photoHeight - 2);
-          const centeredX = px + 1 + (photoWidth - 2 - fit.width) / 2;
-          const centeredY = y + 1 + (photoHeight - 2 - fit.height) / 2;
-          doc.addImage(imgUrl, 'JPEG', centeredX, centeredY, fit.width, fit.height, undefined, 'FAST');
+        if (imgUrl && imgUrl.startsWith('data:image')) {
+          const prepared = await loadAndPrepareJpeg(imgUrl, 0.68);
+          if (prepared) {
+            const fit = getFitDimensions(prepared.width, prepared.height, photoWidth - 2, photoHeight - 2);
+            const centeredX = px + 1 + (photoWidth - 2 - fit.width) / 2;
+            const centeredY = y + 1 + (photoHeight - 2 - fit.height) / 2;
+            doc.addImage(prepared.data, 'JPEG', centeredX, centeredY, fit.width, fit.height, undefined, 'FAST');
+          } else {
+            doc.setFillColor(lightGrey.r, lightGrey.g, lightGrey.b);
+            doc.rect(px + 1, y + 1, photoWidth - 2, photoHeight - 2, 'F');
+            doc.setFontSize(8);
+            doc.text('Erro ao carregar', px + photoWidth / 2, y + photoHeight / 2, { align: 'center' });
+          }
         } else {
           doc.setFillColor(lightGrey.r, lightGrey.g, lightGrey.b);
           doc.rect(px + 1, y + 1, photoWidth - 2, photoHeight - 2, 'F');
@@ -1039,6 +1147,6 @@ export const generateOSReportPDF = async (os: OrdemDeServico): Promise<string> =
   // Finalize document footers
   drawPageFooter();
 
-  // Return base64 URI for PDF frame embedding/downloading
-  return doc.output('datauristring');
+  // Return pure Blob for low-memory URL.createObjectURL preview/download
+  return doc.output('blob');
 };
