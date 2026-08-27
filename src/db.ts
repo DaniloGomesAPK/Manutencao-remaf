@@ -228,6 +228,6 @@ export const updateServiceOrderStatus = async (
   return await saveOrdemDeServico(updated);
 };
 
-export const uploadPDFReport = async (pdfUri: string, _numeroOS?: string): Promise<string> => {
-  return pdfUri;
+export const uploadPDFReport = async (pdfBlobOrUri: Blob | string, _numeroOS?: string): Promise<string> => {
+  return typeof pdfBlobOrUri === 'string' ? pdfBlobOrUri : '';
 };

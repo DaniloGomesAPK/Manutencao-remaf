@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, Suspense, lazy, useContext } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy, useContext } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ClipboardCheck, Sparkles, BookOpen, Layers, Check, Calendar, HardHat, FileText, Settings, Car, Building2, Users, Calculator, Menu, Wifi, WifiOff, Cloud, CloudOff, RefreshCw, ArrowLeft, Eye, EyeOff, KeyRound, Mail, CheckCircle2, AlertCircle, Save } from 'lucide-react';
 
@@ -160,6 +160,32 @@ export default function App() {
   const [activeReport, setActiveReport] = useState<OrdemDeServico | null>(null);
   const [activePDFDataURI, setActivePDFDataURI] = useState<string>('');
   const [showPDFPreview, setShowPDFPreview] = useState(false);
+  const activePdfUrlRef = useRef<string>('');
+
+  const setPdfPreviewUrl = (blobUrl: string) => {
+    if (activePdfUrlRef.current && activePdfUrlRef.current !== blobUrl) {
+      URL.revokeObjectURL(activePdfUrlRef.current);
+    }
+    activePdfUrlRef.current = blobUrl;
+    setActivePDFDataURI(blobUrl);
+  };
+
+  const handleClosePDFPreview = () => {
+    setShowPDFPreview(false);
+    if (activePdfUrlRef.current) {
+      URL.revokeObjectURL(activePdfUrlRef.current);
+      activePdfUrlRef.current = '';
+    }
+    setActivePDFDataURI('');
+  };
+
+  useEffect(() => {
+    return () => {
+      if (activePdfUrlRef.current) {
+        URL.revokeObjectURL(activePdfUrlRef.current);
+      }
+    };
+  }, []);
 
   // Multi-tenant database fetch and realtime Firestore synchronization (between PC and Mobile)
   useEffect(() => {
@@ -499,9 +525,10 @@ export default function App() {
 
   const handleViewPDF = async (os: OrdemDeServico) => {
     try {
-      const dataUri = await generateOSReportPDF(os);
+      const pdfBlob = await generateOSReportPDF(os);
+      const blobUrl = URL.createObjectURL(pdfBlob);
       setActiveReport(os);
-      setActivePDFDataURI(dataUri);
+      setPdfPreviewUrl(blobUrl);
       setShowPDFPreview(true);
     } catch (err) {
       console.error("Failed to compile pdf preview:", err);
@@ -668,28 +695,14 @@ export default function App() {
         empresaId,
       } as OrdemDeServico;
 
-      // 1. Gera PDF
-      const pdfUriString = await generateOSReportPDF(draftDetails);
-
-      // 2. Aguarda salvamento no OrdemServicoService (Firestore oficial + cache local)
+      // 1. Salva primeiro no OrdemServicoService (Firestore oficial + cache local)
       let savedDraft = await OrdemServicoService.saveOrdemServico(draftDetails, activeUser?.email);
-
-      // 3. Tenta salvar hosted PDF se aplicável
-      try {
-        const hostedPdfUrl = await uploadPDFReport(pdfUriString, draftDetails.numeroOS);
-        if (hostedPdfUrl && hostedPdfUrl !== pdfUriString) {
-          savedDraft.pdfGerado = hostedPdfUrl;
-          savedDraft = await OrdemServicoService.saveOrdemServico(savedDraft, activeUser?.email);
-        }
-      } catch (uploadErr) {
-        console.warn("Background Storage PDF upload bypassed:", uploadErr);
-      }
 
       setFormData(savedDraft);
       const updatedList = await OrdemServicoService.getOrdensServico(empresaId, activeUser?.email);
       setServiceOrders(updatedList);
 
-      // 4. Feedback conforme confirmação de sincronização
+      // 2. Feedback conforme confirmação de sincronização
       if (savedDraft.sincronizado === false) {
         setToastMessage("OS salva neste dispositivo, mas ainda não sincronizada com a nuvem.");
         setTimeout(() => setToastMessage(null), 5000);
@@ -698,10 +711,31 @@ export default function App() {
         setTimeout(() => setToastMessage(null), 3000);
       }
 
-      // 5. Exibe pré-visualização do PDF
-      setActiveReport(savedDraft);
-      setActivePDFDataURI(pdfUriString);
-      setShowPDFPreview(true);
+      // 3. Somente após o salvamento confirmado, gerar o PDF
+      try {
+        const pdfBlob = await generateOSReportPDF(savedDraft);
+        const blobUrl = URL.createObjectURL(pdfBlob);
+
+        // Tenta salvar hosted PDF se aplicável
+        try {
+          const hostedPdfUrl = await uploadPDFReport(pdfBlob, savedDraft.numeroOS);
+          if (hostedPdfUrl && hostedPdfUrl.startsWith('http')) {
+            savedDraft.pdfGerado = hostedPdfUrl;
+            savedDraft = await OrdemServicoService.saveOrdemServico(savedDraft, activeUser?.email);
+            setFormData(savedDraft);
+          }
+        } catch (uploadErr) {
+          console.warn("Background Storage PDF upload bypassed:", uploadErr);
+        }
+
+        // Exibe pré-visualização do PDF
+        setActiveReport(savedDraft);
+        setPdfPreviewUrl(blobUrl);
+        setShowPDFPreview(true);
+      } catch (pdfErr) {
+        console.error("Failed to generate draft PDF after saving:", pdfErr);
+        alert("OS salva com sucesso, porém não foi possível gerar o PDF.");
+      }
     } catch (err) {
       console.error("Failed to save draft: ", err);
       alert("Falha ao salvar rascunho: " + (err instanceof Error ? err.message : String(err)));
@@ -730,29 +764,15 @@ export default function App() {
         status: step3Data.status || formData.status || 'Concluído',
       } as OrdemDeServico;
 
-      // 1. Gera PDF
-      const pdfUriString = await generateOSReportPDF(fullDetails);
-
-      // 2. Aguarda salvamento no OrdemServicoService (Firestore oficial + cache local)
+      // 1. Executa primeiro o salvamento no OrdemServicoService (Firestore oficial + cache local)
       let savedFull = await OrdemServicoService.saveOrdemServico(fullDetails, activeUser?.email);
 
-      // 3. Tenta persistir link do PDF se upload retornar URL
-      try {
-        const hostedPdfUrl = await uploadPDFReport(pdfUriString, fullDetails.numeroOS);
-        if (hostedPdfUrl && hostedPdfUrl !== pdfUriString) {
-          savedFull.pdfGerado = hostedPdfUrl;
-          savedFull = await OrdemServicoService.saveOrdemServico(savedFull, activeUser?.email);
-        }
-      } catch (uploadErr) {
-        console.warn("Background full transaction assets sync bypassed:", uploadErr);
-      }
-
-      // 4. Atualiza estado e lista de OS da empresa
+      // 2. Atualiza estado e lista de OS da empresa
       setFormData(savedFull);
       const updatedList = await OrdemServicoService.getOrdensServico(empresaId, activeUser?.email);
       setServiceOrders(updatedList);
 
-      // 5. Notificação de status real de sincronização
+      // 3. Notificação de status real de sincronização
       if (savedFull.sincronizado === false) {
         setToastMessage("OS salva neste dispositivo, mas ainda não sincronizada com a nuvem.");
         setTimeout(() => setToastMessage(null), 5000);
@@ -761,11 +781,34 @@ export default function App() {
         setTimeout(() => setToastMessage(null), 3000);
       }
 
-      // 6. Exibe prévia e encerra formulário
-      setActiveReport(savedFull);
-      setActivePDFDataURI(pdfUriString);
-      setShowPDFPreview(true);
+      // Encerra formulário após confirmação do salvamento
       setViewingForm(false);
+
+      // 4. Somente após o salvamento retornar com sucesso, gerar o PDF usando preferencialmente o objeto retornado pelo salvamento
+      try {
+        const pdfBlob = await generateOSReportPDF(savedFull);
+        const blobUrl = URL.createObjectURL(pdfBlob);
+
+        // Tenta persistir link do PDF se upload retornar URL
+        try {
+          const hostedPdfUrl = await uploadPDFReport(pdfBlob, savedFull.numeroOS);
+          if (hostedPdfUrl && hostedPdfUrl.startsWith('http')) {
+            savedFull.pdfGerado = hostedPdfUrl;
+            savedFull = await OrdemServicoService.saveOrdemServico(savedFull, activeUser?.email);
+            setFormData(savedFull);
+          }
+        } catch (uploadErr) {
+          console.warn("Background full transaction assets sync bypassed:", uploadErr);
+        }
+
+        // Exibe prévia do PDF
+        setActiveReport(savedFull);
+        setPdfPreviewUrl(blobUrl);
+        setShowPDFPreview(true);
+      } catch (pdfErr) {
+        console.error("Failed to generate PDF after saving OS:", pdfErr);
+        alert("OS salva com sucesso, porém não foi possível gerar o PDF.");
+      }
     } catch (err) {
       console.error("Failed to complete OS transaction:", err);
       alert("Falha ao salvar Protocolo: " + (err instanceof Error ? err.message : String(err)));
@@ -1897,7 +1940,7 @@ export default function App() {
                   onBack={() => setActiveSubView('dashboard')}
                   onViewCustomPDF={(pseudoOS, pdfUriString) => {
                     setActiveReport(pseudoOS);
-                    setActivePDFDataURI(pdfUriString);
+                    setPdfPreviewUrl(pdfUriString);
                     setShowPDFPreview(true);
                   }}
                 />
@@ -2001,7 +2044,7 @@ export default function App() {
           <PDFPreviewModal
             os={activeReport}
             pdfDataUri={activePDFDataURI}
-            onClose={() => setShowPDFPreview(false)}
+            onClose={handleClosePDFPreview}
           />
         </Suspense>
       )}

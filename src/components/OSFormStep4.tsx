@@ -105,6 +105,7 @@ export default function OSFormStep4({ initialData, onNext, onBack, onCancel, onS
           onChange={setFotosDepois}
           descriptions={fotosDepoisDescricoes}
           onChangeDescriptions={setFotosDepoisDescricoes}
+          totalFotosOS={fotosDepois.length + (initialData.fotosAntes?.length || 0)}
         />
       </div>
 

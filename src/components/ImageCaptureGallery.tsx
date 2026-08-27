@@ -19,6 +19,7 @@ interface ImageCaptureGalleryProps {
   onChange: (photos: string[]) => void;
   descriptions?: string[];
   onChangeDescriptions?: (descriptions: string[]) => void;
+  totalFotosOS?: number; // Total photos in the OS (fotosAntes + fotosDepois)
 }
 
 export default function ImageCaptureGallery({ 
@@ -26,7 +27,8 @@ export default function ImageCaptureGallery({
   photos, 
   onChange,
   descriptions = [],
-  onChangeDescriptions
+  onChangeDescriptions,
+  totalFotosOS
 }: ImageCaptureGalleryProps) {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
@@ -35,6 +37,11 @@ export default function ImageCaptureGallery({
   const [compressing, setCompressing] = useState(false);
   const [sizes, setSizes] = useState<Record<string, { original: number; compressed: number }>>({});
   const [replacingIndex, setReplacingIndex] = useState<number | null>(null);
+
+  const MAX_PHOTOS = 20;
+  const currentTotal = totalFotosOS !== undefined ? totalFotosOS : photos.length;
+  const remainingSlots = Math.max(0, MAX_PHOTOS - currentTotal);
+  const isLimitReached = currentTotal >= MAX_PHOTOS;
 
   // Parse photos that might already exist and set dummy metadata sizes just in case
   const getSavings = (orig?: number, comp?: number) => {
@@ -46,68 +53,114 @@ export default function ImageCaptureGallery({
 
   const handleFileProcess = async (files: FileList | null, isReplacement: boolean = false) => {
     if (!files || files.length === 0) return;
+
+    if (isReplacement && replacingIndex !== null) {
+      setCompressing(true);
+      try {
+        const file = files[0];
+        const result = await compressImage(file, 0.65, 800);
+        const photoId = result.dataUrl.substring(20, 50);
+        setSizes(prev => ({
+          ...prev,
+          [photoId]: {
+            original: result.originalSizeKB,
+            compressed: result.compressedSizeKB
+          }
+        }));
+
+        const processedList = [...photos];
+        processedList[replacingIndex] = result.dataUrl;
+        onChange(processedList);
+      } catch (err) {
+        console.error("Could not compress or process uploaded image file: ", err);
+        alert("Falha no processamento: Certifique-se de escolher um arquivo de imagem válido.");
+      } finally {
+        setCompressing(false);
+        setReplacingIndex(null);
+        if (replaceInputRef.current) replaceInputRef.current.value = '';
+      }
+      return;
+    }
+
+    // Adding new images: check remaining slots before compression
+    if (remainingSlots <= 0) {
+      alert("Limite de 20 fotos no total por Ordem de Serviço atingido.");
+      if (cameraInputRef.current) cameraInputRef.current.value = '';
+      if (galleryInputRef.current) galleryInputRef.current.value = '';
+      return;
+    }
+
+    // Only process the files that fit within the remaining slots
+    const totalSelected = files.length;
+    const filesToProcess = Array.from(files).slice(0, remainingSlots);
+    if (filesToProcess.length === 0) return;
+
     setCompressing(true);
 
     try {
-      const processedList: string[] = [...photos];
+      const newlyAddedPhotos: string[] = [];
       const newSizes = { ...sizes };
 
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        // Compressing automatically before saving
-        const result = await compressImage(file, 0.75); // 75% JPEG compression quality for high performance is optimal
+      for (let i = 0; i < filesToProcess.length; i++) {
+        const file = filesToProcess[i];
+        // Compressing with 800px, WebP and 0.65 quality
+        const result = await compressImage(file, 0.65, 800);
         
         const photoId = result.dataUrl.substring(20, 50); // unique substring identifier
         newSizes[photoId] = {
           original: result.originalSizeKB,
           compressed: result.compressedSizeKB
         };
-
-        if (isReplacement && replacingIndex !== null) {
-          processedList[replacingIndex] = result.dataUrl;
-          break; // replacement only does one file
-        } else {
-          processedList.push(result.dataUrl);
-        }
+        newlyAddedPhotos.push(result.dataUrl);
       }
 
       setSizes(newSizes);
-      onChange(processedList);
+      const updatedPhotos = [...photos, ...newlyAddedPhotos];
+      onChange(updatedPhotos);
 
       if (onChangeDescriptions) {
         const updatedDescriptions = [...descriptions];
-        if (isReplacement && replacingIndex !== null) {
-          // Keep existing description for replaced item position
-        } else {
-          for (let i = 0; i < files.length; i++) {
-            updatedDescriptions.push('');
-          }
+        for (let i = 0; i < newlyAddedPhotos.length; i++) {
+          updatedDescriptions.push('');
         }
         onChangeDescriptions(updatedDescriptions);
+      }
+
+      if (totalSelected > newlyAddedPhotos.length) {
+        const addedCount = newlyAddedPhotos.length;
+        const msg = addedCount === 1
+          ? `Somente 1 foto foi adicionada. O limite máximo por OS é de 20 fotos.`
+          : `Somente ${addedCount} fotos foram adicionadas. O limite máximo por OS é de 20 fotos.`;
+        alert(msg);
       }
     } catch (err) {
       console.error("Could not compress or process uploaded image files: ", err);
       alert("Falha no processamento: Certifique-se de escolher um arquivo de imagem válido.");
     } finally {
       setCompressing(false);
-      setReplacingIndex(null);
+      if (cameraInputRef.current) cameraInputRef.current.value = '';
+      if (galleryInputRef.current) galleryInputRef.current.value = '';
     }
   };
 
   const triggerCamera = () => {
+    if (compressing || isLimitReached) return;
     cameraInputRef.current?.click();
   };
 
   const triggerGallery = () => {
+    if (compressing || isLimitReached) return;
     galleryInputRef.current?.click();
   };
 
   const triggerReplacement = (index: number) => {
+    if (compressing) return;
     setReplacingIndex(index);
     replaceInputRef.current?.click();
   };
 
   const removePhoto = (index: number) => {
+    if (compressing) return;
     const updated = photos.filter((_, idx) => idx !== index);
     onChange(updated);
     if (onChangeDescriptions) {
@@ -125,6 +178,7 @@ export default function ImageCaptureGallery({
         type="file"
         accept="image/*"
         capture="environment" /* Mandated: Direct mobile camera launch */
+        disabled={compressing || isLimitReached}
         onChange={(e) => handleFileProcess(e.target.files, false)}
         className="hidden"
       />
@@ -134,6 +188,7 @@ export default function ImageCaptureGallery({
         type="file"
         accept="image/*"
         multiple
+        disabled={compressing || isLimitReached}
         onChange={(e) => handleFileProcess(e.target.files, false)}
         className="hidden"
       />
@@ -142,17 +197,27 @@ export default function ImageCaptureGallery({
         id={`replace-input-${label.replace(/\s+/g, '-').toLowerCase()}`}
         type="file"
         accept="image/*"
+        disabled={compressing}
         onChange={(e) => handleFileProcess(e.target.files, true)}
         className="hidden"
       />
 
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
-          <h3 className="text-sm font-bold text-slate-800 tracking-wide uppercase flex items-center gap-1.5">
-            <Layers className="w-4 h-4 text-[#003366]" />
-            {label}
-          </h3>
-          <p className="text-xs text-slate-500">Múltiplas capturas suportadas. Resolução otimizada 1000px (JPEG ~75%)</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-bold text-slate-800 tracking-wide uppercase flex items-center gap-1.5">
+              <Layers className="w-4 h-4 text-[#003366]" />
+              {label}
+            </h3>
+            <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
+              isLimitReached 
+                ? 'bg-amber-100 text-amber-800 border-amber-300' 
+                : 'bg-slate-100 text-slate-700 border-slate-200'
+            }`}>
+              Fotos da OS: {currentTotal}/20
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 mt-0.5">Imagens otimizadas: até 800px • WebP ~65%</p>
         </div>
 
         {/* Compression Spinner */}
@@ -169,18 +234,28 @@ export default function ImageCaptureGallery({
         <button
           id={`btn-camera-${label.replace(/\s+/g, '-').toLowerCase()}`}
           type="button"
+          disabled={compressing || isLimitReached}
           onClick={triggerCamera}
-          className="flex items-center justify-center gap-1.5 bg-[#FF6600] text-white py-3.5 px-5 rounded-full font-bold tracking-widest text-[10px] uppercase shadow-lg shadow-[#FF6600]/20 hover:bg-[#E05500] active:scale-98 transition duration-150 cursor-pointer"
+          className={`flex items-center justify-center gap-1.5 py-3.5 px-5 rounded-full font-bold tracking-widest text-[10px] uppercase transition duration-150 ${
+            compressing || isLimitReached
+              ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+              : 'bg-[#FF6600] text-white shadow-lg shadow-[#FF6600]/20 hover:bg-[#E05500] active:scale-98 cursor-pointer'
+          }`}
         >
-          <Camera className="w-4 h-4 text-white" />
+          <Camera className="w-4 h-4" />
           <span>Tirar Foto (Câmera)</span>
         </button>
 
         <button
           id={`btn-gallery-${label.replace(/\s+/g, '-').toLowerCase()}`}
           type="button"
+          disabled={compressing || isLimitReached}
           onClick={triggerGallery}
-          className="flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 py-3.5 px-5 rounded-full font-bold tracking-widest text-[10px] uppercase active:scale-98 transition duration-150 cursor-pointer border border-slate-250"
+          className={`flex items-center justify-center gap-1.5 py-3.5 px-5 rounded-full font-bold tracking-widest text-[10px] uppercase transition duration-150 border ${
+            compressing || isLimitReached
+              ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed shadow-none'
+              : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200 active:scale-98 cursor-pointer'
+          }`}
         >
           <ImageIcon className="w-4 h-4 text-slate-500" />
           <span>Escolher da Galeria</span>
@@ -239,9 +314,10 @@ export default function ImageCaptureGallery({
                     <button
                       id={`btn-replace-${label.replace(/\s+/g, '-').toLowerCase()}-${idx}`}
                       type="button"
+                      disabled={compressing}
                       onClick={() => triggerReplacement(idx)}
                       title="Substituir foto"
-                      className="p-1.5 bg-slate-100 hover:bg-[#FF6600]/10 hover:text-[#FF6600] rounded-md text-slate-500 transition duration-150 cursor-pointer"
+                      className="p-1.5 bg-slate-100 hover:bg-[#FF6600]/10 hover:text-[#FF6600] rounded-md text-slate-500 transition duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
                     </button>
@@ -249,9 +325,10 @@ export default function ImageCaptureGallery({
                     <button
                       id={`btn-delete-${label.replace(/\s+/g, '-').toLowerCase()}-${idx}`}
                       type="button"
+                      disabled={compressing}
                       onClick={() => removePhoto(idx)}
                       title="Excluir foto"
-                      className="p-1.5 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 rounded-md text-slate-500 transition duration-150 cursor-pointer"
+                      className="p-1.5 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 rounded-md text-slate-500 transition duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>

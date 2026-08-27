@@ -44,25 +44,34 @@ export default function PDFPreviewModal({ os, pdfDataUri, onClose }: PDFPreviewM
     }
   }, []);
 
-  // Convert the massive base64 DataURI into a lightweight browser Blob URL on mount
+  // Handle direct Blob URL or base64 DataURI on mount
   useEffect(() => {
     let activeUrl = '';
     if (pdfDataUri) {
-      try {
-        const parts = pdfDataUri.split(',');
-        const mimeString = parts[0].split(':')[1].split(';')[0];
-        const byteString = atob(parts[1]);
-        const ab = new ArrayBuffer(byteString.length);
-        const ia = new Uint8Array(ab);
-        for (let i = 0; i < byteString.length; i++) {
-          ia[i] = byteString.charCodeAt(i);
+      if (pdfDataUri.startsWith('blob:') || pdfDataUri.startsWith('http')) {
+        setBlobUrl(pdfDataUri);
+      } else {
+        try {
+          const parts = pdfDataUri.split(',');
+          if (parts.length > 1) {
+            const mimeString = parts[0].split(':')[1].split(';')[0];
+            const byteString = atob(parts[1]);
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            for (let i = 0; i < byteString.length; i++) {
+              ia[i] = byteString.charCodeAt(i);
+            }
+            const blob = new Blob([ab], { type: mimeString });
+            setPdfBlob(blob);
+            activeUrl = URL.createObjectURL(blob);
+            setBlobUrl(activeUrl);
+          } else {
+            setBlobUrl(pdfDataUri);
+          }
+        } catch (err) {
+          console.error("Failed to generate PDF blob URL:", err);
+          setBlobUrl(pdfDataUri);
         }
-        const blob = new Blob([ab], { type: mimeString });
-        setPdfBlob(blob);
-        activeUrl = URL.createObjectURL(blob);
-        setBlobUrl(activeUrl);
-      } catch (err) {
-        console.error("Failed to generate PDF blob URL:", err);
       }
     }
     return () => {
