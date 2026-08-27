@@ -45,7 +45,7 @@ export default function OfflineIndicator() {
 
   if (!sync) return null;
 
-  const { isOnline, isSyncing, lastSyncedAt, pendingCount, syncAll } = sync;
+  const { isOnline, isSyncing, lastSyncedAt, lastSuccessfulSync, syncError, pendingCount, syncAll } = sync;
 
   // Formatação amigável da data de sincronização
   const formatSyncTime = (isoString: string | null) => {
@@ -89,6 +89,10 @@ export default function OfflineIndicator() {
               ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
               : isSyncing || pendingCount > 0
               ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+              : syncError
+              ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+              : !lastSuccessfulSync
+              ? 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
               : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
           }`}
           title="Clique para ver detalhes da sincronização em nuvem"
@@ -121,6 +125,22 @@ export default function OfflineIndicator() {
               <span className="flex items-center gap-1">
                 <span>🟡</span>
                 <span>{pendingCount} Pendente{pendingCount > 1 ? 's' : ''}</span>
+              </span>
+            </>
+          ) : syncError ? (
+            <>
+              <span className="h-2.5 w-2.5 rounded-full bg-rose-500 inline-block"></span>
+              <span className="flex items-center gap-1">
+                <span>⚠️</span>
+                <span>Falha Nuvem</span>
+              </span>
+            </>
+          ) : !lastSuccessfulSync ? (
+            <>
+              <span className="h-2.5 w-2.5 rounded-full bg-slate-400 inline-block"></span>
+              <span className="flex items-center gap-1">
+                <span>⚪</span>
+                <span>Conectando...</span>
               </span>
             </>
           ) : (
@@ -170,14 +190,14 @@ export default function OfflineIndicator() {
               </span>
             </div>
 
-            {/* Última Sincronização */}
+            {/* Última Sincronização Bem-Sucedida */}
             <div className="flex items-start justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-100">
               <div className="flex items-center gap-1.5 text-slate-500">
                 <Clock className="w-3.5 h-3.5 text-slate-400" />
-                <span>Última sincronização:</span>
+                <span>Confirmado no Firestore:</span>
               </div>
               <span className="font-semibold text-slate-800 text-right ml-2">
-                {formatSyncTime(lastSyncedAt)}
+                {formatSyncTime(lastSuccessfulSync)}
               </span>
             </div>
 
@@ -192,9 +212,20 @@ export default function OfflineIndicator() {
               </span>
             </div>
 
+            {/* Mensagem de Erro do Firestore se houver */}
+            {syncError && (
+              <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 flex items-start gap-2 text-[11px]">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold">Aviso de sincronização:</span>
+                  <p className="mt-0.5 text-rose-700">{syncError}</p>
+                </div>
+              </div>
+            )}
+
             {/* Descrição Educativa de Arquitetura Híbrida */}
             <p className="text-[11px] text-slate-500 leading-relaxed bg-slate-50 p-2 rounded border border-slate-100">
-              💡 Os dados estruturados são salvos simultaneamente no Firestore e no dispositivo local. Fotos, assinaturas e PDFs são mantidos no banco local para economia de banda.
+              💡 Os dados estruturados são salvos no Firestore e reconciliados com o banco local. Fotos, assinaturas e PDFs são mantidos no dispositivo para otimização de banda.
             </p>
 
             {/* Botão Sincronizar Agora */}

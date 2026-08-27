@@ -13,13 +13,6 @@ export interface LicenseContextType {
   isValid: boolean;
   verificarStatus: () => Promise<boolean>;
   refreshLicenca: () => Promise<void>;
-  ativar: (plano?: string) => Promise<License>;
-  renovar: (dias?: number) => Promise<License>;
-  bloquear: () => Promise<License>;
-  liberar: () => Promise<License>;
-  iniciarTrial: (dias?: number) => Promise<License>;
-  encerrarTrial: () => Promise<License>;
 }
 
 export const LicenseContext = createContext<LicenseContextType | undefined>(undefined);
-

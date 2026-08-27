@@ -20,10 +20,13 @@ import {
   Cpu,
   Factory,
   Layers,
-  HelpCircle
+  HelpCircle,
+  Save,
+  ArrowRight
 } from 'lucide-react';
-import { generateNextOSNumber } from '../db';
 import { OrdemDeServico, Cliente } from '../types';
+import { OrdemServicoService } from '../services/OSService';
+import { AuthContext } from '../contexts/AuthContext';
 import { ClienteContext } from '../contexts/ClienteContext';
 import { EquipamentoContext } from '../contexts/EquipamentoContext';
 import { useEmpresa } from '../contexts/EmpresaContext';
@@ -33,19 +36,25 @@ import {
   getCampoLabel,
   getCampoPlaceholder,
   getCampoTooltip,
-  getCampoValidationMessage
+  getCampoValidationMessage,
+  getProtocoloLabel
 } from '../config/perfis';
 import { applySmartFocus } from '../utils/navigationState';
+import { UIButton } from './ui/UIComponents';
 
 interface OSFormStep1Props {
   initialData?: Partial<OrdemDeServico>;
   onNext: (data: Partial<OrdemDeServico>) => void;
   onCancel: () => void;
   serviceOrders?: OrdemDeServico[];
+  onSaveProgress?: (data: Partial<OrdemDeServico>) => void;
+  isSaving?: boolean;
 }
 
-export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrders }: OSFormStep1Props) {
+export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrders, onSaveProgress, isSaving = false }: OSFormStep1Props) {
   const { perfilConfig } = useEmpresa();
+  const auth = useContext(AuthContext);
+  const empresaId = auth?.currentUser?.empresaId?.trim() || initialData?.empresaId?.trim() || '';
 
   const clienteCtx = useContext(ClienteContext);
   const { clientes, saveCliente } = clienteCtx || { clientes: [], saveCliente: async () => ({} as Cliente) };
@@ -107,18 +116,45 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
     applySmartFocus(firstInputRef.current);
   }, []);
 
+  // Sync state when editing a different OS
+  useEffect(() => {
+    if (initialData) {
+      if (initialData.numeroOS) setNumeroOS(initialData.numeroOS);
+      if (initialData.dataAbertura) setDataAbertura(initialData.dataAbertura);
+      if (initialData.horaAbertura) setHoraAbertura(initialData.horaAbertura);
+      if (initialData.tecnico !== undefined) setTecnico(initialData.tecnico);
+      if (initialData.equipamento !== undefined) setEquipamento(initialData.equipamento);
+      if (initialData.placa !== undefined) setPlaca(initialData.placa);
+      if (initialData.chassi !== undefined) setChassi(initialData.chassi);
+      if (initialData.modelo !== undefined) setModelo(initialData.modelo);
+      if (initialData.fabricante !== undefined) setFabricante(initialData.fabricante);
+      if (initialData.numeroSerie !== undefined) setNumeroSerie(initialData.numeroSerie);
+      if (initialData.patrimonio !== undefined) setPatrimonio(initialData.patrimonio);
+      if (initialData.localObra !== undefined) setLocalObra(initialData.localObra);
+      if (initialData.responsavelObra !== undefined) setResponsavelObra(initialData.responsavelObra);
+      if (initialData.setor !== undefined) setSetor(initialData.setor);
+      if (initialData.linhaProducao !== undefined) setLinhaProducao(initialData.linhaProducao);
+      if (initialData.quilometragem !== undefined) setQuilometragem(String(initialData.quilometragem));
+      if (initialData.horimetro !== undefined) setHorimetro(String(initialData.horimetro));
+      if (initialData.clienteId !== undefined) setClienteId(initialData.clienteId);
+      if (initialData.clienteNome !== undefined) {
+        setClienteNome(initialData.clienteNome);
+        setSearchQuery(initialData.clienteNome);
+      }
+    }
+  }, [initialData?.id]);
+
   // Automatic protocol sequence calculation on load if empty
   useEffect(() => {
-    if (!numeroOS && serviceOrders) {
+    if (!numeroOS && serviceOrders && empresaId) {
       setLoading(true);
-      const activeTenant = initialData?.empresaId || 'emp_daniloempreendimentos';
-      generateNextOSNumber(activeTenant, serviceOrders)
+      OrdemServicoService.generateNextOSNumber(empresaId, serviceOrders, auth?.currentUser?.email)
         .then(num => {
           setNumeroOS(num);
         })
         .finally(() => setLoading(false));
     }
-  }, [numeroOS, serviceOrders]);
+  }, [numeroOS, serviceOrders, empresaId, auth?.currentUser?.email]);
 
   // Sync search input if client changes
   useEffect(() => {
@@ -147,12 +183,16 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
   const handleQuickAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!quickNome.trim()) return;
+    if (!empresaId) {
+      alert("Erro crítico: Impossível cadastrar cliente sem vínculo empresarial ativo.");
+      return;
+    }
 
     setQuickSaving(true);
     try {
       const saved = await saveCliente({
         id: '',
-        empresaId: initialData?.empresaId || 'default_tenant',
+        empresaId,
         nome: quickNome.trim(),
         documento: quickDoc.trim(),
         telefone: quickTel.trim(),
@@ -219,6 +259,7 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
     }
 
     onNext({
+      empresaId,
       numeroOS: numeroOS.trim(),
       dataAbertura,
       horaAbertura,
@@ -239,6 +280,39 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
       quilometragem: isCampoVisivel(perfilConfig, 'quilometragem') && quilometragem ? Number(quilometragem) : undefined,
       horimetro: isCampoVisivel(perfilConfig, 'horimetro') && horimetro ? Number(horimetro) : undefined,
     });
+  };
+
+  const getCurrentStep1Data = (): Partial<OrdemDeServico> => {
+    return {
+      empresaId,
+      numeroOS: numeroOS.trim(),
+      dataAbertura,
+      horaAbertura,
+      tecnico: tecnico.trim(),
+      clienteId: clienteId || undefined,
+      clienteNome: clienteNome || undefined,
+      equipamento: equipamento.trim(),
+      placa: isCampoVisivel(perfilConfig, 'placa') ? placa.trim().toUpperCase() : '',
+      chassi: isCampoVisivel(perfilConfig, 'chassi') ? chassi.trim() : '',
+      modelo: isCampoVisivel(perfilConfig, 'modelo') ? modelo.trim() : '',
+      fabricante: isCampoVisivel(perfilConfig, 'fabricante') ? fabricante.trim() : '',
+      numeroSerie: isCampoVisivel(perfilConfig, 'numeroSerie') ? numeroSerie.trim() : '',
+      patrimonio: isCampoVisivel(perfilConfig, 'patrimonio') ? patrimonio.trim() : '',
+      localObra: isCampoVisivel(perfilConfig, 'localObra') ? localObra.trim() : '',
+      responsavelObra: isCampoVisivel(perfilConfig, 'responsavelObra') ? responsavelObra.trim() : '',
+      setor: isCampoVisivel(perfilConfig, 'setor') ? setor.trim() : '',
+      linhaProducao: isCampoVisivel(perfilConfig, 'linhaProducao') ? linhaProducao.trim() : '',
+      quilometragem: isCampoVisivel(perfilConfig, 'quilometragem') && quilometragem ? Number(quilometragem) : undefined,
+      horimetro: isCampoVisivel(perfilConfig, 'horimetro') && horimetro ? Number(horimetro) : undefined,
+      faseAtual: 1,
+    };
+  };
+
+  const handleSaveClick = (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    if (onSaveProgress) {
+      onSaveProgress(getCurrentStep1Data());
+    }
   };
 
   // Filter clients based on search input
@@ -278,7 +352,11 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
             <span className="font-bold text-[#003366] block uppercase tracking-wider text-[11px] mb-0.5">
               Abertura de {perfilConfig.labels.ordemServico}
             </span>
-            Preencha as informações de atendimento referentes a {perfilConfig.labels.equipamento.toLowerCase()} e ao responsável técnico do serviço.
+            {isCampoVisivel(perfilConfig, 'equipamento') ? (
+              `Preencha as informações de atendimento referentes a ${perfilConfig.labels.equipamento.toLowerCase()} e ao ${perfilConfig.labels.tecnico.toLowerCase()} do serviço.`
+            ) : (
+              `Preencha as informações de atendimento referentes ao cliente e ao ${perfilConfig.labels.tecnico.toLowerCase()} do serviço.`
+            )}
           </div>
         </div>
 
@@ -288,13 +366,13 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
           <div className="space-y-1.5">
             <label className="text-[10px] font-black text-slate-500 tracking-wider flex items-center gap-1.5 uppercase">
               <Clipboard className="w-3.5 h-3.5 text-[#003366]" />
-              Nº de Protocolo <span className="text-[#FF6600] font-bold">*</span>
+              {getProtocoloLabel(perfilConfig, 'Nº de Protocolo')} <span className="text-[#FF6600] font-bold">*</span>
             </label>
             <input
               id="input-numero-os"
               type="text"
               required
-              placeholder="Ex: 1024, PR-550..."
+              placeholder="Ex: 0001, 1024, PR-550..."
               value={numeroOS}
               onChange={(e) => setNumeroOS(e.target.value)}
               className="w-full bg-white text-slate-800 border border-slate-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] font-mono transition duration-200"
@@ -454,7 +532,7 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
                       key={eq.id}
                       type="button"
                       onClick={() => {
-                        setEquipamento(`${eq.tipo} - ${eq.fabricante} ${eq.modelo}`.trim());
+                        setEquipamento(eq.tipo);
                         if (eq.placa) setPlaca(eq.placa);
                         if (eq.chassi) setChassi(eq.chassi);
                         if (eq.modelo) setModelo(eq.modelo);
@@ -749,22 +827,36 @@ export default function OSFormStep1({ initialData, onNext, onCancel, serviceOrde
         </div>
 
         {/* Buttons footer */}
-        <div className="flex items-center justify-between pt-6 border-t border-slate-200">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-6 border-t border-slate-200">
           <button
             type="button"
             onClick={onCancel}
-            className="px-5 py-2.5 rounded-lg text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition cursor-pointer"
+            disabled={isSaving}
+            className="w-full sm:w-auto px-5 py-2.5 rounded-lg text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition cursor-pointer disabled:opacity-50"
           >
             Cancelar
           </button>
-          <button
-            id="btn-next-step1"
-            type="submit"
-            className="bg-[#003366] hover:bg-[#002244] text-white px-7 py-3 rounded-lg text-xs font-bold flex items-center gap-2 shadow-md hover:shadow-lg transition duration-200 cursor-pointer"
-          >
-            Avançar para Registros
-            <X className="w-4 h-4 rotate-180" />
-          </button>
+          <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+            {onSaveProgress && (
+              <button
+                type="button"
+                id="btn-save-progress-step1"
+                onClick={handleSaveClick}
+                className="hidden"
+                aria-hidden="true"
+                tabIndex={-1}
+              />
+            )}
+            <button
+              id="btn-next-step1"
+              type="submit"
+              disabled={isSaving}
+              className="w-full sm:w-auto bg-[#003366] hover:bg-[#002244] text-white px-7 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition duration-200 cursor-pointer disabled:opacity-50"
+            >
+              <span>Avançar para Registros</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </form>
 

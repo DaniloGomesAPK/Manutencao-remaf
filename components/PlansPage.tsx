@@ -13,25 +13,16 @@ interface PlansPageProps {
 
 export const PlansPage: React.FC<PlansPageProps> = ({ onBack }) => {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between relative overflow-hidden font-sans">
+    <div className="min-h-screen min-h-[100dvh] bg-slate-950 text-slate-100 flex flex-col justify-between relative overflow-hidden font-sans pt-safe pb-safe pl-safe pr-safe">
       {/* Background Glow */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[400px] bg-[#003366]/30 rounded-full blur-[140px] pointer-events-none" />
 
       {/* Header Bar */}
-      <header className="w-full max-w-7xl mx-auto px-6 py-6 pt-safe-header flex items-center justify-between z-10">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#003366] text-white flex items-center justify-center font-black text-xl shadow-lg border border-sky-400/20">
-            dG
-          </div>
-          <span className="font-black text-lg tracking-tight text-white">
-            DG <span className="text-sky-400 font-normal">Orçamentos</span>
-          </span>
-        </div>
-
+      <header className="w-full max-w-7xl mx-auto px-6 pt-safe-header pb-2 flex items-center justify-end z-10">
         {onBack && (
           <button
             onClick={onBack}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-800 transition"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4 text-slate-400" />
             <span>Voltar</span>
@@ -40,9 +31,9 @@ export const PlansPage: React.FC<PlansPageProps> = ({ onBack }) => {
       </header>
 
       {/* Main Content */}
-      <main className="w-full max-w-5xl mx-auto px-6 py-12 flex-1 flex flex-col items-center z-10">
+      <main className="w-full max-w-5xl mx-auto px-6 pt-2 md:pt-4 pb-10 flex-1 flex flex-col items-center z-10">
         {/* Section Header */}
-        <div className="text-center max-w-2xl mb-12">
+        <div className="text-center max-w-2xl mb-8 md:mb-10">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-950/80 border border-sky-500/30 text-sky-300 text-xs font-bold mb-4">
             <Sparkles className="w-3.5 h-3.5 text-sky-400" />
             <span>Planos Transparentes e Sem Surpresas</span>
@@ -186,7 +177,7 @@ export const PlansPage: React.FC<PlansPageProps> = ({ onBack }) => {
       </main>
 
       {/* Footer */}
-      <footer className="w-full border-t border-slate-900 px-6 py-6 text-center text-xs text-slate-500 z-10">
+      <footer className="w-full border-t border-slate-900 px-6 py-6 pb-safe text-center text-xs text-slate-500 z-10">
         © {new Date().getFullYear()} DG Gestão em Orçamentos.
       </footer>
     </div>

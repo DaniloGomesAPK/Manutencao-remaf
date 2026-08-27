@@ -13,16 +13,15 @@ import {
   AlertTriangle, 
   X, 
   ArrowRight, 
-  RefreshCw, 
   Info,
-  Trash2,
   FileDown,
-  Sparkles
+  Sparkles,
+  AlertCircle
 } from 'lucide-react';
 import { AuthContext } from '../contexts/AuthContext';
 import { ClienteContext } from '../contexts/ClienteContext';
 import { EquipamentoContext } from '../contexts/EquipamentoContext';
-import { Equipamento, Cliente } from '../types';
+import { Equipamento } from '../types';
 import { ClienteService } from '../services/ClienteService';
 
 interface EquipamentoImportExportProps {
@@ -60,7 +59,7 @@ export default function EquipamentoImportExport({ onImportComplete, onClose, isO
   const clienteCtx = useContext(ClienteContext);
   const equipCtx = useContext(EquipamentoContext);
 
-  const empresaId = auth?.currentUser?.empresaId || 'default_tenant';
+  const empresaId = auth?.currentUser?.empresaId?.trim() || '';
   const { clientes, reloadClientes } = clienteCtx || { clientes: [], reloadClientes: async () => {} };
   const { equipamentos, saveEquipamento, reloadEquipamentos } = equipCtx || { equipamentos: [], saveEquipamento: async () => ({} as Equipamento), reloadEquipamentos: async () => {} };
 
@@ -87,6 +86,34 @@ export default function EquipamentoImportExport({ onImportComplete, onClose, isO
   // Auto-test / Simulation States
   const [testResultLog, setTestResultLog] = useState<string[]>([]);
   const [isTesting, setIsTesting] = useState(false);
+
+  if (!isOpen) return null;
+
+  // FAIL-FAST TENANT ISOLATION: Se a sessão autenticada não possuir empresaId válido
+  if (!empresaId) {
+    return (
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+        <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden border border-red-200 p-6 flex flex-col items-center text-center shadow-2xl space-y-4">
+          <div className="w-14 h-14 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center border border-red-100">
+            <AlertCircle className="w-7 h-7" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Isolamento Empresarial</h3>
+            <p className="text-xs text-slate-600 font-medium">
+              Erro crítico: sua sessão não possui vínculo empresarial. Faça login novamente.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs uppercase tracking-wider rounded-xl transition cursor-pointer"
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const runAutoTest = async () => {
     setIsTesting(true);
@@ -174,10 +201,12 @@ export default function EquipamentoImportExport({ onImportComplete, onClose, isO
     setStep('preview');
   };
 
-  if (!isOpen) return null;
-
   // --- DOWNLOAD TEMPLATE EXCEL ---
   const handleDownloadTemplate = () => {
+    if (!empresaId) {
+      alert("Erro crítico: sua sessão não possui vínculo empresarial. Faça login novamente.");
+      return;
+    }
     try {
       // Sheet 1: Model
       const templateData = [
@@ -239,6 +268,10 @@ export default function EquipamentoImportExport({ onImportComplete, onClose, isO
 
   // --- EXPORT CURRENT BASE ---
   const handleExportEquipamentos = () => {
+    if (!empresaId) {
+      alert("Erro crítico: sua sessão não possui vínculo empresarial. Faça login novamente.");
+      return;
+    }
     try {
       if (equipamentos.length === 0) {
         alert("Não há equipamentos cadastrados para exportar.");
@@ -300,6 +333,10 @@ export default function EquipamentoImportExport({ onImportComplete, onClose, isO
 
   // --- PROCESS UPLOADED EXCEL ---
   const processFile = (file: File) => {
+    if (!empresaId) {
+      alert("Erro crítico: sua sessão não possui vínculo empresarial. Faça login novamente.");
+      return;
+    }
     if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
       alert('Por favor, envie apenas arquivos de planilha Excel (.xlsx ou .xls).');
       return;
@@ -417,6 +454,10 @@ export default function EquipamentoImportExport({ onImportComplete, onClose, isO
 
   // --- DOWNLOAD ERROR SPREADSHEET ---
   const handleDownloadErrors = () => {
+    if (!empresaId) {
+      alert("Erro crítico: sua sessão não possui vínculo empresarial. Faça login novamente.");
+      return;
+    }
     try {
       const errorRows = parsedRows.filter(r => !r.isValid);
       if (errorRows.length === 0) return;
@@ -454,6 +495,11 @@ export default function EquipamentoImportExport({ onImportComplete, onClose, isO
 
   // --- TRIGGER ACTION AND PROGRESS UPDATE ---
   const handleExecuteImport = async () => {
+    if (!empresaId) {
+      alert("Erro crítico: sua sessão não possui vínculo empresarial. Faça login novamente.");
+      return;
+    }
+
     setStep('importing');
     setProgress(0);
 

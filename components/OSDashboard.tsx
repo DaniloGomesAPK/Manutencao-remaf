@@ -5,8 +5,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useEmpresa } from '../contexts/EmpresaContext';
-import { toPlural } from '../config/perfis';
-import { Search, Settings, FileText, ChevronRight, PenTool, CheckCircle, AlertTriangle, AlertCircle, Calendar, Plus, Clipboard, Smartphone, Copy, Check, QrCode, Calculator, Trash2, ArrowLeft, X } from 'lucide-react';
+import { toPlural, isCampoVisivel, getCampoLabel, getProtocoloLabel } from '../config/perfis';
+import { Search, Settings, FileText, ChevronRight, PenTool, CheckCircle, AlertTriangle, AlertCircle, Calendar, Plus, Clipboard, Smartphone, Copy, Check, QrCode, Calculator, Trash2, ArrowLeft, X, User } from 'lucide-react';
 import { OrdemDeServico } from '../types';
 import { formatToBrazilianDate } from '../utils/dateFormatter';
 import { saveModuleState, getModuleState, applySmartFocus } from '../utils/navigationState';
@@ -232,7 +232,7 @@ export default function OSDashboard({ orders, onNewOS, onEditOS, onViewPDF, onDe
               ref={searchInputRef}
               id="search-orders-input"
               type="text"
-              placeholder={`Buscar por Protocolo, ${labels.equipamento}, ${labels.identificacao} ou Técnico...`}
+              placeholder={`Buscar por ${getProtocoloLabel(perfilConfig, 'Protocolo')}, ${isCampoVisivel(perfilConfig, 'equipamento') ? labels.equipamento + ', ' : ''}Cliente ou ${labels.tecnico}...`}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-10 pr-9 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366]/40 transition duration-150"
@@ -291,12 +291,27 @@ export default function OSDashboard({ orders, onNewOS, onEditOS, onViewPDF, onDe
                     </div>
 
                     <div className="space-y-1">
-                      <h4 className="font-bold text-base text-slate-800 leading-tight">
-                        {os.equipamento}
-                      </h4>
-                      <p className="text-xs text-slate-500 font-medium">
-                        Placa: <span className="font-mono text-slate-700 font-bold tracking-wider">{os.placa}</span>
-                      </p>
+                      {isCampoVisivel(perfilConfig, 'equipamento') ? (
+                        <h4 className="font-bold text-base text-slate-800 leading-tight">
+                          {os.equipamento}
+                        </h4>
+                      ) : (
+                        <h4 className="font-bold text-base text-slate-800 leading-tight">
+                          {os.clienteNome || 'Cliente não informado'}
+                        </h4>
+                      )}
+
+                      {isCampoVisivel(perfilConfig, 'equipamento') && os.clienteNome && (
+                        <p className="text-xs text-slate-600 font-medium">
+                          Cliente: <span className="font-bold text-slate-800">{os.clienteNome}</span>
+                        </p>
+                      )}
+
+                      {isCampoVisivel(perfilConfig, 'placa') && os.placa && (
+                        <p className="text-xs text-slate-500 font-medium">
+                          {getCampoLabel(perfilConfig, 'placa', 'Placa')}: <span className="font-mono text-slate-700 font-bold tracking-wider">{os.placa}</span>
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400 font-semibold">

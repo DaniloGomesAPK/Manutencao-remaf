@@ -28,6 +28,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { RecuperacaoService, RegistroLixeira, TipoRegistroLixeira, DependencyCheckResult } from '../services/RecuperacaoService';
+import { FirestoreRepository } from '../services/FirestoreRepository';
 import { EmpresaContext } from '../contexts/EmpresaContext';
 import { UICard, UIButton, UIBadge, UIAlert, UIInput, UISelect } from './ui/UIComponents';
 
@@ -78,7 +79,33 @@ export default function CentralRecuperacaoSection() {
   };
 
   useEffect(() => {
+    if (!empresaId) {
+      setRegistros([]);
+      setLoading(false);
+      return;
+    }
+
     loadRegistros();
+
+    const unsubscribe = FirestoreRepository.listen<RegistroLixeira>(
+      'lixeira',
+      empresaId,
+      (items) => {
+        const sorted = [...items].sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime());
+        setRegistros(sorted);
+        setLoading(false);
+      }
+    );
+
+    const handleUpdate = () => {
+      loadRegistros();
+    };
+    window.addEventListener('lixeira_updated', handleUpdate);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('lixeira_updated', handleUpdate);
+    };
   }, [empresaId]);
 
   // Filtered records

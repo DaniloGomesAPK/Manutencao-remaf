@@ -3,19 +3,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, Suspense, lazy, useContext } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy, useContext } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ClipboardCheck, Sparkles, BookOpen, Layers, Check, Calendar, HardHat, FileText, Settings, Car, Building2, Users, Calculator, Menu, Wifi, WifiOff, Cloud, CloudOff, RefreshCw, ArrowLeft, Eye, EyeOff, KeyRound, Mail, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ClipboardCheck, Sparkles, BookOpen, Layers, Check, Calendar, HardHat, FileText, Settings, Car, Building2, Users, Calculator, Menu, Wifi, WifiOff, Cloud, CloudOff, RefreshCw, ArrowLeft, Eye, EyeOff, KeyRound, Mail, CheckCircle2, AlertCircle, Save } from 'lucide-react';
 
 import { OrdemDeServico, OSStep } from './types';
 import { 
-  saveOrdemDeServico, 
-  fetchAllServiceOrders, 
   uploadPDFReport,
   isLocalSandbox,
-  generateNewDocumentId,
-  deleteServiceOrder
+  generateNewDocumentId
 } from './db';
+import { OrdemServicoService } from './services/OSService';
+import { FirestoreRepository } from './services/FirestoreRepository';
 
 import { AuthContext } from './contexts/AuthContext';
 import { EmpresaContext } from './contexts/EmpresaContext';
@@ -24,8 +23,9 @@ import { SyncContext } from './contexts/SyncContext';
 
 import { generateOSReportPDF } from './utils/pdfGenerator';
 import { formatToBrazilianDate } from './utils/dateFormatter';
+import { isCampoVisivel, getCampoLabel, getProtocoloLabel } from './config/perfis';
 
-import officialAppBanner from './assets/images/official_app_banner_1784242870138.jpg';
+import officialAppBanner from './assets/images/image2.png';
 
 import OfflineIndicator from './components/OfflineIndicator';
 import PWAInstallBanner from './components/PWAInstallBanner';
@@ -36,21 +36,26 @@ import DashboardHome from './components/DashboardHome';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { PlansPage } from './components/PlansPage';
 import { TrialRegistrationScreen } from './components/TrialRegistrationScreen';
-import { TrialExpiradoScreen } from './components/TrialExpiradoScreen';
+import { TrialExpired } from './pages/TrialExpired';
 import { ActivationScreen } from './components/ActivationScreen';
 import { TrialBanner } from './components/TrialBanner';
 import { ExpiredLicenseScreen } from './components/ExpiredLicenseScreen';
 import { CheckoutModal } from './components/CheckoutModal';
 import { InitialSetupWizard } from './components/InitialSetupWizard';
 import { LogService } from './services/LogService';
+import { LicenseService } from './services/LicenseService';
+import { AuthService } from './services/AuthService';
+import { getFriendlyErrorMessage } from './utils/errorUtils';
+import { safeStorage } from './utils/safeStorage';
+
+import OSFormStep1 from './components/OSFormStep1';
+import OSFormStep2 from './components/OSFormStep2';
+import OSFormStep3 from './components/OSFormStep3';
+import OSFormStep4 from './components/OSFormStep4';
+import OSFormStep5 from './components/OSFormStep5';
+import PDFPreviewModal from './components/PDFPreviewModal';
 
 const OSDashboard = lazy(() => import('./components/OSDashboard'));
-const OSFormStep1 = lazy(() => import('./components/OSFormStep1'));
-const OSFormStep2 = lazy(() => import('./components/OSFormStep2'));
-const OSFormStep3 = lazy(() => import('./components/OSFormStep3'));
-const OSFormStep4 = lazy(() => import('./components/OSFormStep4'));
-const OSFormStep5 = lazy(() => import('./components/OSFormStep5'));
-const PDFPreviewModal = lazy(() => import('./components/PDFPreviewModal'));
 const MinhaEmpresa = lazy(() => import('./pages/MinhaEmpresa'));
 const CadastroClientes = lazy(() => import('./pages/CadastroClientes'));
 const CadastroEquipamentos = lazy(() => import('./pages/CadastroEquipamentos'));
@@ -65,6 +70,7 @@ export default function App() {
   const licenseCtx = useContext(LicenseContext);
   const syncCtx = useContext(SyncContext);
   const activeUser = auth?.currentUser;
+  const fotosAtivo = Boolean(empresaCtx?.empresa?.configuracoes?.recursos?.fotosAntesDepois);
 
   // SaaS Login States
   const [saasView, setSaasView] = useState<'welcome' | 'plans' | 'login' | 'trial'>('welcome');
@@ -77,6 +83,7 @@ export default function App() {
   const [loginError, setLoginError] = useState('');
   const [submittingLogin, setSubmittingLogin] = useState(false);
   const [showPlansInApp, setShowPlansInApp] = useState(false);
+  const [usuarioPendenteVerificacao, setUsuarioPendenteVerificacao] = useState<any>(null);
 
   // Esqueci a Senha States
   const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -132,6 +139,7 @@ export default function App() {
   });
 
   const [isSaving, setIsSaving] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [activeSubView, setActiveSubView] = useState<'dashboard' | 'list' | 'company' | 'clientes' | 'equipamentos' | 'banco_servicos' | 'precificacao' | 'licensing' | 'configuracoes' | 'relatorios'>(() => {
     try {
       const saved = sessionStorage.getItem('remaf_active_subview');
@@ -152,17 +160,76 @@ export default function App() {
   // PDF Modal states
   const [activeReport, setActiveReport] = useState<OrdemDeServico | null>(null);
   const [activePDFDataURI, setActivePDFDataURI] = useState<string>('');
+  const [activePDFBlob, setActivePDFBlob] = useState<Blob | null>(null);
   const [showPDFPreview, setShowPDFPreview] = useState(false);
+  const activePdfUrlRef = useRef<string>('');
 
-  // Multi-tenant database fetch trigger
+  const setPdfPreviewUrl = (blobUrl: string) => {
+    if (activePdfUrlRef.current && activePdfUrlRef.current !== blobUrl) {
+      URL.revokeObjectURL(activePdfUrlRef.current);
+    }
+    activePdfUrlRef.current = blobUrl;
+    setActivePDFDataURI(blobUrl);
+  };
+
+  const handleClosePDFPreview = () => {
+    setShowPDFPreview(false);
+    if (activePdfUrlRef.current) {
+      URL.revokeObjectURL(activePdfUrlRef.current);
+      activePdfUrlRef.current = '';
+    }
+    setActivePDFDataURI('');
+    setActivePDFBlob(null);
+  };
+
   useEffect(() => {
-    if (activeUser?.empresaId) {
-      loadServiceOrders();
-    } else {
+    return () => {
+      if (activePdfUrlRef.current) {
+        URL.revokeObjectURL(activePdfUrlRef.current);
+      }
+    };
+  }, []);
+
+  // Multi-tenant database fetch and realtime Firestore synchronization (between PC and Mobile)
+  useEffect(() => {
+    const empresaId = activeUser?.empresaId?.trim();
+    if (!empresaId) {
       setServiceOrders([]);
       setLoading(false);
+      return;
     }
-  }, [activeUser?.empresaId]);
+
+    loadServiceOrders();
+
+    // Listener em tempo real do Firestore: qualquer OS criada/alterada no celular atualiza o computador e vice-versa
+    const unsubscribe = FirestoreRepository.listen<OrdemDeServico>(
+      'ordensServico',
+      empresaId,
+      (updatedOrders) => {
+        setServiceOrders(updatedOrders);
+        setLoading(false);
+      },
+      [],
+      activeUser?.email
+    );
+
+    // Ouvinte global do evento "ordens_servico_updated" para recarregar imediatamente as ordens de serviço localmente
+    const handleOrdersUpdated = async () => {
+      try {
+        const list = await OrdemServicoService.getOrdensServico(empresaId, activeUser?.email);
+        setServiceOrders(list);
+      } catch (err) {
+        console.error("Erro ao atualizar ordens de serviço via evento:", err);
+      }
+    };
+
+    window.addEventListener('ordens_servico_updated', handleOrdersUpdated);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('ordens_servico_updated', handleOrdersUpdated);
+    };
+  }, [activeUser?.empresaId, activeUser?.email]);
 
   // 1. Persist the draft when viewingForm, currentStep or formData changes
   useEffect(() => {
@@ -173,12 +240,12 @@ export default function App() {
           currentStep,
           formData,
         };
-        localStorage.setItem('remaf_active_draft_v1', JSON.stringify(draft));
+        safeStorage.setItem('remaf_active_draft_v1', JSON.stringify(draft));
       } else {
-        localStorage.removeItem('remaf_active_draft_v1');
+        safeStorage.removeItem('remaf_active_draft_v1');
       }
     } catch (err) {
-      console.warn("Failed to persist active form draft to localStorage:", err);
+      console.warn("Failed to persist active form draft to safeStorage:", err);
     }
   }, [viewingForm, currentStep, formData]);
 
@@ -222,10 +289,10 @@ export default function App() {
       setLoading(true);
     }
     try {
-      const list = await fetchAllServiceOrders(activeUser.empresaId);
+      const list = await OrdemServicoService.getOrdensServico(activeUser.empresaId, activeUser.email);
       setServiceOrders(list);
     } catch (err) {
-      console.error("Error reading database orders:", err);
+      console.error("Error reading database orders from Firestore:", err);
     } finally {
       setLoading(false);
     }
@@ -246,7 +313,12 @@ export default function App() {
     try {
       await auth?.login(loginEmail.trim().toLowerCase(), loginPassword);
     } catch (err: any) {
-      setLoginError(err.message || 'Falha ao autenticar.');
+      if (err?.code === 'EMAIL_NOT_VERIFIED' || err?.message?.includes('EMAIL_NOT_VERIFIED')) {
+        setUsuarioPendenteVerificacao(err.user || null);
+        setSaasView('trial');
+        return;
+      }
+      setLoginError(getFriendlyErrorMessage(err, 'E-mail ou senha inválidos. Por favor, tente novamente.'));
     } finally {
       setSubmittingLogin(false);
     }
@@ -258,7 +330,7 @@ export default function App() {
     try {
       await auth?.loginWithGoogle();
     } catch (err: any) {
-      setLoginError(err.message || 'Falha ao autenticar com o Google.');
+      setLoginError(getFriendlyErrorMessage(err, 'Falha ao autenticar com o Google.'));
     } finally {
       setSubmittingLogin(false);
     }
@@ -281,7 +353,7 @@ export default function App() {
     } catch (err: any) {
       setForgotStatus({
         type: 'error',
-        message: err.message || 'Ocorreu um erro ao enviar o e-mail de redefinição.'
+        message: getFriendlyErrorMessage(err, 'Ocorreu um erro ao enviar o e-mail de redefinição.')
       });
     }
   };
@@ -300,19 +372,85 @@ export default function App() {
   // Continue a draft OS in Progress
   const handleEditOS = (os: OrdemDeServico) => {
     setFormData(os);
-    if (!os.descricaoAvaria) {
-      setCurrentStep(2);
+    const fotosAtivo = Boolean(empresaCtx?.empresa?.configuracoes?.recursos?.fotosAntesDepois);
+    if (os.faseAtual && os.faseAtual >= 1 && os.faseAtual <= 5) {
+      if (!fotosAtivo) {
+        if (os.faseAtual === 2) setCurrentStep(3);
+        else if (os.faseAtual === 4) setCurrentStep(5);
+        else setCurrentStep(os.faseAtual);
+      } else {
+        setCurrentStep(os.faseAtual);
+      }
     } else {
-      setCurrentStep(3);
+      setCurrentStep(1);
     }
     setViewingForm(true);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  // Explicit Save Progress Handler across any phase (1-5)
+  const handleSaveProgress = async (stepData: Partial<OrdemDeServico>, targetStep?: OSStep) => {
+    if (isSaving) return;
+    const empresaId = activeUser?.empresaId?.trim();
+    if (!empresaId) {
+      alert("Erro crítico de isolamento: Sessão sem vínculo empresarial. Operação bloqueada.");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const docId = formData.id || stepData.id || generateNewDocumentId();
+      const activeStep = targetStep || currentStep;
+
+      const updatedOS: OrdemDeServico = {
+        ...formData,
+        ...stepData,
+        id: docId,
+        empresaId,
+        faseAtual: activeStep,
+        status: formData.status || stepData.status || 'Pendente',
+      } as OrdemDeServico;
+
+      // Retain latest id and fields in local form state
+      setFormData(updatedOS);
+
+      // Save using OrdemServicoService (Firestore official + cache local)
+      const saved = await OrdemServicoService.saveOrdemServico(updatedOS, activeUser?.email);
+      setFormData(saved);
+
+      // Refresh service orders list from official store
+      const updatedList = await OrdemServicoService.getOrdensServico(empresaId, activeUser?.email);
+      setServiceOrders(updatedList);
+
+      // Toast feedback notification
+      if (saved.sincronizado === false) {
+        setToastMessage("OS salva neste dispositivo, mas ainda não sincronizada com a nuvem.");
+        setTimeout(() => setToastMessage(null), 5000);
+      } else {
+        setToastMessage("Orçamento salvo com sucesso.");
+        setTimeout(() => setToastMessage(null), 3000);
+      }
+    } catch (err) {
+      console.error("Erro ao salvar orçamento:", err);
+      alert("Erro ao salvar orçamento: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Duplicate an OS to facilitate creating the same budget for a different equipment
   const handleDuplicateOS = (os: OrdemDeServico) => {
+    const empresaId = activeUser?.empresaId?.trim() || os.empresaId?.trim();
+    if (!empresaId) {
+      alert("Erro crítico: Não é possível duplicar sem um vínculo empresarial ativo.");
+      return;
+    }
+
     const duplicated: Partial<OrdemDeServico> = {
       id: generateNewDocumentId(),
-      empresaId: os.empresaId,
+      empresaId,
       numeroOS: '', // will be auto-calculated in Step 1
       
       // Keep customer details
@@ -354,27 +492,25 @@ export default function App() {
     setViewingForm(true);
   };
 
-  // Delete a pending service order
+  // Delete a pending service order via Central de Recuperação
   const handleDeleteOS = async (id: string) => {
-    if (!activeUser?.empresaId) return;
+    const empresaId = activeUser?.empresaId?.trim();
+    if (!empresaId) {
+      alert("Erro crítico: Impossível excluir OS sem empresaId válido.");
+      return;
+    }
     try {
-      // Optimistic update of state
-      setServiceOrders(prev => prev.filter(o => o.id !== id));
-
       if (formData.id === id) {
         handleCancelForm();
       }
 
-      await deleteServiceOrder(id, activeUser.empresaId);
+      await OrdemServicoService.deleteOrdemServico(id, empresaId, activeUser?.email);
 
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('ordens_servico_updated', { detail: { empresaId: activeUser.empresaId, deletedId: id } }));
-      }
-
-      await loadServiceOrders(true); // reload list silently
-    } catch (err) {
+      // Recarrega lista
+      await loadServiceOrders(true);
+    } catch (err: any) {
       console.error("Failed to delete service order:", err);
-      alert("Erro ao excluir Ordem de Serviço.");
+      alert("Erro ao excluir Ordem de Serviço: " + (err?.message || 'Falha na exclusão.'));
       await loadServiceOrders(true);
     }
   };
@@ -392,9 +528,11 @@ export default function App() {
 
   const handleViewPDF = async (os: OrdemDeServico) => {
     try {
-      const dataUri = await generateOSReportPDF(os);
+      const pdfBlob = await generateOSReportPDF(os);
+      const blobUrl = URL.createObjectURL(pdfBlob);
       setActiveReport(os);
-      setActivePDFDataURI(dataUri);
+      setActivePDFBlob(pdfBlob);
+      setPdfPreviewUrl(blobUrl);
       setShowPDFPreview(true);
     } catch (err) {
       console.error("Failed to compile pdf preview:", err);
@@ -404,30 +542,36 @@ export default function App() {
 
   // Wizard action: Next
   const handleStep1Submit = (step1Data: Partial<OrdemDeServico>) => {
+    const empresaId = activeUser?.empresaId?.trim();
+    if (!empresaId) {
+      alert("Erro crítico: Sessão sem empresa vinculada.");
+      return;
+    }
     const docId = formData.id || generateNewDocumentId();
-    const empresaId = activeUser?.empresaId || 'default_tenant';
+    const fotosAtivo = Boolean(empresaCtx?.empresa?.configuracoes?.recursos?.fotosAntesDepois);
+    const nextStep: OSStep = fotosAtivo ? 2 : 3;
     
     const updated = {
       ...formData,
       ...step1Data,
       id: docId,
       empresaId,
+      faseAtual: nextStep,
       status: formData.status || 'Pendente',
     } as OrdemDeServico;
 
     setFormData(updated);
-    setCurrentStep(2);
+    setCurrentStep(nextStep);
 
     // Asynchronously synchronize step progression to the database for robust auto-saving
     (async () => {
       try {
-        await saveOrdemDeServico(updated);
+        const saved = await OrdemServicoService.saveOrdemServico(updated, activeUser?.email);
+        setFormData(saved);
 
-        // Silently update list so the dashboard list has the correct local list
-        if (activeUser?.empresaId) {
-          const updatedList = await fetchAllServiceOrders(activeUser.empresaId);
-          setServiceOrders(updatedList);
-        }
+        // Silently update list so the dashboard list has the correct synced list
+        const updatedList = await OrdemServicoService.getOrdensServico(empresaId, activeUser?.email);
+        setServiceOrders(updatedList);
       } catch (err) {
         console.error("Failed to silently sync Step 1 transition:", err);
       }
@@ -435,14 +579,19 @@ export default function App() {
   };
 
   const handleStep2Submit = (step2Data: Partial<OrdemDeServico>) => {
+    const empresaId = activeUser?.empresaId?.trim();
+    if (!empresaId) {
+      alert("Erro crítico: Sessão sem empresa vinculada.");
+      return;
+    }
     const docId = formData.id || generateNewDocumentId();
-    const empresaId = activeUser?.empresaId || 'default_tenant';
 
     const updated = {
       ...formData,
       ...step2Data,
       id: docId,
       empresaId,
+      faseAtual: 3,
       status: formData.status || 'Pendente',
     } as OrdemDeServico;
 
@@ -452,13 +601,12 @@ export default function App() {
     // Asynchronously synchronize step progression to the database for robust auto-saving
     (async () => {
       try {
-        await saveOrdemDeServico(updated);
+        const saved = await OrdemServicoService.saveOrdemServico(updated, activeUser?.email);
+        setFormData(saved);
 
-        // Silently update list so the dashboard list has the correct local list
-        if (activeUser?.empresaId) {
-          const updatedList = await fetchAllServiceOrders(activeUser.empresaId);
-          setServiceOrders(updatedList);
-        }
+        // Silently update list so the dashboard list has the correct synced list
+        const updatedList = await OrdemServicoService.getOrdensServico(empresaId, activeUser?.email);
+        setServiceOrders(updatedList);
       } catch (err) {
         console.error("Failed to silently sync Step 2 transition:", err);
       }
@@ -466,27 +614,33 @@ export default function App() {
   };
 
   const handleStep3Submit = (step3Data: Partial<OrdemDeServico>) => {
+    const empresaId = activeUser?.empresaId?.trim();
+    if (!empresaId) {
+      alert("Erro crítico: Sessão sem empresa vinculada.");
+      return;
+    }
     const docId = formData.id || generateNewDocumentId();
-    const empresaId = activeUser?.empresaId || 'default_tenant';
+    const fotosAtivo = Boolean(empresaCtx?.empresa?.configuracoes?.recursos?.fotosAntesDepois);
+    const nextStep: OSStep = fotosAtivo ? 4 : 5;
 
     const updated = {
       ...formData,
       ...step3Data,
       id: docId,
       empresaId,
+      faseAtual: nextStep,
       status: formData.status || 'Pendente',
     } as OrdemDeServico;
 
     setFormData(updated);
-    setCurrentStep(4);
+    setCurrentStep(nextStep);
 
     (async () => {
       try {
-        await saveOrdemDeServico(updated);
-        if (activeUser?.empresaId) {
-          const updatedList = await fetchAllServiceOrders(activeUser.empresaId);
-          setServiceOrders(updatedList);
-        }
+        const saved = await OrdemServicoService.saveOrdemServico(updated, activeUser?.email);
+        setFormData(saved);
+        const updatedList = await OrdemServicoService.getOrdensServico(empresaId, activeUser?.email);
+        setServiceOrders(updatedList);
       } catch (err) {
         console.error("Failed to silently sync Step 3 transition:", err);
       }
@@ -494,14 +648,19 @@ export default function App() {
   };
 
   const handleStep4Submit = (step4Data: Partial<OrdemDeServico>) => {
+    const empresaId = activeUser?.empresaId?.trim();
+    if (!empresaId) {
+      alert("Erro crítico: Sessão sem empresa vinculada.");
+      return;
+    }
     const docId = formData.id || generateNewDocumentId();
-    const empresaId = activeUser?.empresaId || 'default_tenant';
 
     const updated = {
       ...formData,
       ...step4Data,
       id: docId,
       empresaId,
+      faseAtual: 5,
       status: formData.status || 'Pendente',
     } as OrdemDeServico;
 
@@ -510,11 +669,10 @@ export default function App() {
 
     (async () => {
       try {
-        await saveOrdemDeServico(updated);
-        if (activeUser?.empresaId) {
-          const updatedList = await fetchAllServiceOrders(activeUser.empresaId);
-          setServiceOrders(updatedList);
-        }
+        const saved = await OrdemServicoService.saveOrdemServico(updated, activeUser?.email);
+        setFormData(saved);
+        const updatedList = await OrdemServicoService.getOrdensServico(empresaId, activeUser?.email);
+        setServiceOrders(updatedList);
       } catch (err) {
         console.error("Failed to silently sync Step 4 transition:", err);
       }
@@ -523,10 +681,15 @@ export default function App() {
 
   // Save progress as a draft and generate its PDF immediately
   const handleSaveDraftAndPDF = async (stepData: Partial<OrdemDeServico>) => {
+    const empresaId = activeUser?.empresaId?.trim();
+    if (!empresaId) {
+      alert("Erro crítico: Impossível gerar rascunho sem empresaId.");
+      return;
+    }
+
     setIsSaving(true);
     try {
       const docId = formData.id || generateNewDocumentId();
-      const empresaId = activeUser?.empresaId || 'default_tenant';
 
       const draftDetails: OrdemDeServico = {
         ...formData,
@@ -536,50 +699,67 @@ export default function App() {
         empresaId,
       } as OrdemDeServico;
 
-      // Update local state so if we proceed, the id and new inputs are preserved
-      setFormData(draftDetails);
+      // 1. Salva primeiro no OrdemServicoService (Firestore oficial + cache local)
+      let savedDraft = await OrdemServicoService.saveOrdemServico(draftDetails, activeUser?.email);
 
-      // Generate PDF
-      const pdfUriString = await generateOSReportPDF(draftDetails);
+      setFormData(savedDraft);
+      const updatedList = await OrdemServicoService.getOrdensServico(empresaId, activeUser?.email);
+      setServiceOrders(updatedList);
 
-      // Show PDF Preview modal for download & share IMMEDIATELY
-      setActiveReport(draftDetails);
-      setActivePDFDataURI(pdfUriString);
-      setShowPDFPreview(true);
-      
-      // Stop saving animation immediately
-      setIsSaving(false);
+      // 2. Feedback conforme confirmação de sincronização
+      if (savedDraft.sincronizado === false) {
+        setToastMessage("OS salva neste dispositivo, mas ainda não sincronizada com a nuvem.");
+        setTimeout(() => setToastMessage(null), 5000);
+      } else {
+        setToastMessage("Rascunho salvo e sincronizado na nuvem com sucesso!");
+        setTimeout(() => setToastMessage(null), 3000);
+      }
 
-      // Save database and upload report in the background asynchronously!
-      (async () => {
+      // 3. Somente após o salvamento confirmado, gerar o PDF
+      try {
+        const pdfBlob = await generateOSReportPDF(savedDraft);
+        const blobUrl = URL.createObjectURL(pdfBlob);
+
+        // Tenta salvar hosted PDF se aplicável
         try {
-          await saveOrdemDeServico(draftDetails);
-          const hostedPdfUrl = await uploadPDFReport(pdfUriString, draftDetails.numeroOS);
-          draftDetails.pdfGerado = hostedPdfUrl;
-          await saveOrdemDeServico(draftDetails);
-          
-          // Silently refresh the list in the background
-          if (activeUser?.empresaId) {
-            const updatedList = await fetchAllServiceOrders(activeUser.empresaId);
-            setServiceOrders(updatedList);
+          const hostedPdfUrl = await uploadPDFReport(pdfBlob, savedDraft.numeroOS);
+          if (hostedPdfUrl && hostedPdfUrl.startsWith('http')) {
+            savedDraft.pdfGerado = hostedPdfUrl;
+            savedDraft = await OrdemServicoService.saveOrdemServico(savedDraft, activeUser?.email);
+            setFormData(savedDraft);
           }
         } catch (uploadErr) {
-          console.warn("Background Storage PDF upload bypassed or failed, falling back to local inline:", uploadErr);
+          console.warn("Background Storage PDF upload bypassed:", uploadErr);
         }
-      })();
+
+        // Exibe pré-visualização do PDF
+        setActiveReport(savedDraft);
+        setActivePDFBlob(pdfBlob);
+        setPdfPreviewUrl(blobUrl);
+        setShowPDFPreview(true);
+      } catch (pdfErr) {
+        console.error("Failed to generate draft PDF after saving:", pdfErr);
+        alert("OS salva com sucesso, porém não foi possível gerar o PDF.");
+      }
     } catch (err) {
       console.error("Failed to save draft: ", err);
-      alert("Falha ao salvar rascunho em nuvem: " + err);
+      alert("Falha ao salvar rascunho: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
       setIsSaving(false);
     }
   };
 
   // Save full OS and render PDF
   const handleFullOSSave = async (step3Data: Partial<OrdemDeServico>) => {
+    const empresaId = activeUser?.empresaId?.trim();
+    if (!empresaId) {
+      alert("Erro crítico: Impossível concluir OS sem empresaId.");
+      return;
+    }
+
     setIsSaving(true);
     try {
       const docId = formData.id || generateNewDocumentId();
-      const empresaId = activeUser?.empresaId || 'default_tenant';
 
       const fullDetails: OrdemDeServico = {
         ...formData,
@@ -589,41 +769,56 @@ export default function App() {
         status: step3Data.status || formData.status || 'Concluído',
       } as OrdemDeServico;
 
-      // Update local state is instantaneous
-      setFormData(fullDetails);
+      // 1. Executa primeiro o salvamento no OrdemServicoService (Firestore oficial + cache local)
+      let savedFull = await OrdemServicoService.saveOrdemServico(fullDetails, activeUser?.email);
 
-      // Generate PDF
-      const pdfUriString = await generateOSReportPDF(fullDetails);
+      // 2. Atualiza estado e lista de OS da empresa
+      setFormData(savedFull);
+      const updatedList = await OrdemServicoService.getOrdensServico(empresaId, activeUser?.email);
+      setServiceOrders(updatedList);
 
-      // Show preview and close wizard immediately
-      setActiveReport(fullDetails);
-      setActivePDFDataURI(pdfUriString);
-      setShowPDFPreview(true);
+      // 3. Notificação de status real de sincronização
+      if (savedFull.sincronizado === false) {
+        setToastMessage("OS salva neste dispositivo, mas ainda não sincronizada com a nuvem.");
+        setTimeout(() => setToastMessage(null), 5000);
+      } else {
+        setToastMessage("OS concluída e sincronizada com a nuvem com sucesso!");
+        setTimeout(() => setToastMessage(null), 3000);
+      }
+
+      // Encerra formulário após confirmação do salvamento
       setViewingForm(false);
-      
-      // Stop saving animation immediately
-      setIsSaving(false);
 
-      // Upload PDF and save full details asynchronously in the background!
-      (async () => {
+      // 4. Somente após o salvamento retornar com sucesso, gerar o PDF usando preferencialmente o objeto retornado pelo salvamento
+      try {
+        const pdfBlob = await generateOSReportPDF(savedFull);
+        const blobUrl = URL.createObjectURL(pdfBlob);
+
+        // Tenta persistir link do PDF se upload retornar URL
         try {
-          await saveOrdemDeServico(fullDetails);
-          const hostedPdfUrl = await uploadPDFReport(pdfUriString, fullDetails.numeroOS);
-          fullDetails.pdfGerado = hostedPdfUrl;
-          await saveOrdemDeServico(fullDetails);
-          
-          // Refetch latest silently
-          if (activeUser?.empresaId) {
-            const updatedList = await fetchAllServiceOrders(activeUser.empresaId);
-            setServiceOrders(updatedList);
+          const hostedPdfUrl = await uploadPDFReport(pdfBlob, savedFull.numeroOS);
+          if (hostedPdfUrl && hostedPdfUrl.startsWith('http')) {
+            savedFull.pdfGerado = hostedPdfUrl;
+            savedFull = await OrdemServicoService.saveOrdemServico(savedFull, activeUser?.email);
+            setFormData(savedFull);
           }
         } catch (uploadErr) {
           console.warn("Background full transaction assets sync bypassed:", uploadErr);
         }
-      })();
+
+        // Exibe prévia do PDF
+        setActiveReport(savedFull);
+        setActivePDFBlob(pdfBlob);
+        setPdfPreviewUrl(blobUrl);
+        setShowPDFPreview(true);
+      } catch (pdfErr) {
+        console.error("Failed to generate PDF after saving OS:", pdfErr);
+        alert("OS salva com sucesso, porém não foi possível gerar o PDF.");
+      }
     } catch (err) {
       console.error("Failed to complete OS transaction:", err);
-      alert("Falha ao salvar Protocolo em nuvem: " + err);
+      alert("Falha ao salvar Protocolo: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
       setIsSaving(false);
     }
   };
@@ -677,15 +872,31 @@ export default function App() {
     if (saasView === 'trial') {
       return (
         <TrialRegistrationScreen
-          onBack={() => setSaasView('welcome')}
+          usuarioPendenteVerificacao={usuarioPendenteVerificacao}
+          onBack={() => {
+            setUsuarioPendenteVerificacao(null);
+            setSaasView('welcome');
+          }}
           onOpenLogin={() => {
+            setUsuarioPendenteVerificacao(null);
             setAuthMode('login');
             setSaasView('login');
           }}
-          onAccessGranted={() => {
-            window.location.reload();
+          onAccessGranted={async (grantedEmpresaId?: string, grantedUsuario?: any) => {
+            setUsuarioPendenteVerificacao(null);
+            if (grantedUsuario && grantedUsuario.empresaId) {
+              await auth?.updateUser(grantedUsuario);
+            } else {
+              const u = await AuthService.getCurrentUser();
+              if (u && u.empresaId) {
+                await auth?.updateUser(u);
+              } else {
+                window.location.reload();
+              }
+            }
           }}
           onTrialExpired={() => {
+            setUsuarioPendenteVerificacao(null);
             setSaasView('plans');
           }}
         />
@@ -693,17 +904,22 @@ export default function App() {
     }
 
     return (
-      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4 sm:p-6 font-sans text-slate-800 relative">
-        <button
-          type="button"
-          onClick={() => setSaasView('welcome')}
-          className="absolute top-6 left-6 flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-600 hover:text-slate-900 shadow-sm transition z-20"
-        >
-          <ArrowLeft className="w-4 h-4 text-slate-500" />
-          <span>Voltar ao Início</span>
-        </button>
+      <div className="min-h-screen min-h-[100dvh] bg-[#F8FAFC] flex flex-col justify-between p-4 sm:p-6 pb-safe pl-safe pr-safe font-sans text-slate-800">
+        {/* Top Header with safe area padding for iOS devices */}
+        <header className="w-full max-w-md md:max-w-5xl mx-auto pt-safe-header pb-2 flex items-center justify-start z-20 shrink-0">
+          <button
+            type="button"
+            onClick={() => setSaasView('welcome')}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-xs sm:text-sm font-bold text-slate-700 hover:text-slate-900 hover:bg-slate-50 shadow-xs transition duration-150 z-20 cursor-pointer min-h-[44px] active:scale-98"
+          >
+            <ArrowLeft className="w-4 h-4 text-slate-500" />
+            <span>Voltar ao Início</span>
+          </button>
+        </header>
 
-        <div className="w-full max-w-md md:max-w-5xl bg-white border border-slate-200 rounded-3xl md:grid md:grid-cols-12 overflow-hidden shadow-xl animate-in fade-in zoom-in-95 duration-300">
+        {/* Main Login Card */}
+        <div className="w-full max-w-md md:max-w-5xl mx-auto my-auto py-2 flex-1 flex items-center justify-center">
+          <div className="w-full bg-white border border-slate-200 rounded-3xl md:grid md:grid-cols-12 overflow-hidden shadow-xl animate-in fade-in zoom-in-95 duration-300">
           
           {/* Banner Pane - Hidden on mobile, beautiful on desktop */}
           <div className="hidden md:block md:col-span-7 relative bg-[#001f3f] overflow-hidden group">
@@ -941,13 +1157,41 @@ export default function App() {
 
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   // 3. Authenticated State Machine Navigation
   const uid = activeUser?.id || '';
-  const empresaId = activeUser?.empresaId || '';
+  const empresaId = activeUser?.empresaId?.trim() || '';
   const lic = licenseCtx?.licencaAtual;
+
+  // FAIL-FAST TENANT ISOLATION: Bloqueio visual explícito se o usuário logado não possuir vínculo empresarial válido
+  if (!empresaId) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center font-sans">
+        <div className="bg-slate-800 border-2 border-red-500/50 rounded-3xl p-8 max-w-md w-full shadow-2xl space-y-6">
+          <div className="w-16 h-16 bg-red-500/10 border border-red-500/30 rounded-2xl flex items-center justify-center mx-auto text-red-500">
+            <AlertCircle className="w-8 h-8" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-lg font-black text-white tracking-tight uppercase">
+              Isolamento Empresarial
+            </h2>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Erro crítico: sua sessão não possui vínculo empresarial. Faça login novamente.
+            </p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider transition cursor-pointer shadow-lg"
+          >
+            Sair e Fazer Login Novamente
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Se a licença ainda não estiver carregada, permanece na tela de carregamento (É proibido utilizar 'pending' como fallback)
   if (!lic) {
@@ -987,48 +1231,76 @@ export default function App() {
         userEmail={activeUser?.email}
         userName={activeUser?.nome}
         onStartTrial={async () => {
-          await licenseCtx?.iniciarTrial();
+          await licenseCtx?.refreshLicenca();
         }}
         onLogout={() => auth?.logout()}
       />
     );
   }
 
-  // Expired, Blocked, Cancelled, Overdue ou Inválido -> TrialExpiradoScreen / ExpiredLicenseScreen
-  if (
-    !licenseCtx?.isValid ||
+  const isPago = status === 'pago' || lic.status === 'pago';
+
+  // Verificação rigorosa de expiração de teste de 7 dias via criadoEm e flags de acesso
+  const criadoEmDate = LicenseService.parseCriadoEmDate(lic.criadoEm || lic.createdAt || lic.trialInicio);
+  let isTrial7DaysExpired = false;
+  if (!isPago && status === 'trial' && criadoEmDate) {
+    const diffMs = Date.now() - criadoEmDate.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    if (diffDays > 7) {
+      isTrial7DaysExpired = true;
+    }
+  }
+
+  // Verificação rigorosa de vigência de accessUntil para licença paga
+  const getAccessUntilMs = (): number | null => {
+    const field = (lic as any).accessUntil || lic.validade || lic.fim;
+    if (!field) return null;
+    if (typeof field.toMillis === 'function') return field.toMillis();
+    if (typeof field.toDate === 'function') return field.toDate().getTime();
+    if (typeof field.seconds === 'number') return field.seconds * 1000;
+    if (typeof field === 'string' || typeof field === 'number') {
+      const d = new Date(field);
+      return isNaN(d.getTime()) ? null : d.getTime();
+    }
+    return null;
+  };
+
+  const accessUntilMs = getAccessUntilMs();
+  const isPaidExpired = isPago && (accessUntilMs === null || isNaN(accessUntilMs) || Date.now() >= accessUntilMs);
+
+  const isAccessBlocked = 
+    auth?.isTrialExpired || 
+    auth?.isAccessBlocked || 
+    !licenseCtx?.isValid || 
+    lic.ativo === false || 
+    lic.bloqueado === true || 
     status === 'expired' || 
     status === 'blocked' || 
     status === 'cancelled' || 
-    status === 'overdue'
-  ) {
+    status === 'overdue' ||
+    isTrial7DaysExpired ||
+    isPaidExpired;
+
+  // Expired, Inactive, Blocked, Cancelled, Overdue ou Inválido -> Route Guard: TrialExpired
+  if (isAccessBlocked) {
     console.log('[AUTH]', uid);
     console.log('[EMPRESA]', empresaId);
-    console.log('[LICENÇA]', `status: ${status}, isValid: ${licenseCtx?.isValid}, trialInicio: ${trialInicio}, trialFim: ${trialFim}`);
-    console.log('[ROTA]', `Tela de Bloqueio (Status: ${status}, isValid: ${licenseCtx?.isValid})`);
-
-    if (status === 'expired' || !licenseCtx?.isValid) {
-      return (
-        <TrialExpiradoScreen
-          onOpenPlans={() => setShowPlansInApp(true)}
-          onLogout={() => auth?.logout()}
-        />
-      );
-    }
+    console.log('[LICENÇA]', `status: ${status}, isValid: ${licenseCtx?.isValid}, isTrial7DaysExpired: ${isTrial7DaysExpired}, isPaidExpired: ${isPaidExpired}, trialInicio: ${trialInicio}, trialFim: ${trialFim}`);
+    console.log('[ROTA GUARD]', `Acesso Bloqueado / Teste ou Licença Expirada -> TrialExpired (Status: ${status})`);
 
     return (
-      <ExpiredLicenseScreen
-        status={status}
+      <TrialExpired
+        userEmail={activeUser?.email}
         onOpenPlans={() => setShowPlansInApp(true)}
         onLogout={() => auth?.logout()}
       />
     );
   }
 
-  // Status == 'trial' ou status == 'active' -> Acesso livre ao Dashboard
+  // Status == 'pago', status == 'trial' ou status == 'active' -> Acesso livre ao Dashboard
   console.log('[AUTH]', uid);
   console.log('[EMPRESA]', empresaId);
-  console.log('[LICENÇA]', `status: ${status}, trialInicio: ${trialInicio}, trialFim: ${trialFim}`);
+  console.log('[LICENÇA]', `status: ${status}, isValid: ${licenseCtx?.isValid}, trialInicio: ${trialInicio}, trialFim: ${trialFim}`);
   console.log('[ROTA]', `Dashboard (Acesso Liberado - Status: ${status})`);
 
   const showInitialWizard = empresaCtx?.empresa && empresaCtx.empresa.configuracaoInicialConcluida === false;
@@ -1179,7 +1451,11 @@ export default function App() {
                   <div className="absolute top-1/2 left-0 w-full h-0.5 bg-slate-100 -translate-y-1/2 -z-0"></div>
                   <div 
                     className="absolute top-1/2 left-0 h-0.5 bg-[#FF6600] -translate-y-1/2 transition-all duration-305 -z-0"
-                    style={{ width: currentStep === 1 ? '0%' : currentStep === 2 ? '25%' : currentStep === 3 ? '50%' : currentStep === 4 ? '75%' : '100%' }}
+                    style={{ 
+                      width: fotosAtivo
+                        ? (currentStep === 1 ? '0%' : currentStep === 2 ? '25%' : currentStep === 3 ? '50%' : currentStep === 4 ? '75%' : '100%')
+                        : (currentStep === 1 ? '0%' : currentStep === 3 ? '50%' : '100%')
+                    }}
                   ></div>
                   
                   {(() => {
@@ -1188,6 +1464,67 @@ export default function App() {
                       if (formData.id) return true;
                       return false;
                     };
+
+                    if (!fotosAtivo) {
+                      return (
+                        <>
+                          {/* Step 1: Identificação (Internal 1) */}
+                          <button
+                            type="button"
+                            disabled={!isStepClickable(1)}
+                            onClick={() => setCurrentStep(1)}
+                            className={`relative z-10 flex flex-col items-center gap-2 focus:outline-none transition ${isStepClickable(1) ? 'cursor-pointer hover:opacity-90' : 'cursor-not-allowed opacity-50'}`}
+                          >
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center shadow-md transition duration-200 font-bold ${
+                              currentStep > 1 
+                                ? 'bg-[#003366] text-white border-none' 
+                                : currentStep === 1
+                                  ? 'bg-[#FF6600] text-white ring-4 ring-[#FF6600]/25'
+                                  : 'bg-white border-2 border-slate-200 text-slate-400'
+                            }`}>
+                              {currentStep > 1 ? <Check className="w-5 h-5 text-white stroke-[3.5]" /> : '1'}
+                            </div>
+                            <span className={`text-[11px] font-bold uppercase tracking-wider ${currentStep === 1 ? 'text-[#FF6600]' : currentStep > 1 ? 'text-[#003366]' : 'text-slate-400'}`}>Identificação</span>
+                          </button>
+                          
+                          {/* Step 2: Orçamento (Internal 3) */}
+                          <button
+                            type="button"
+                            disabled={!isStepClickable(3)}
+                            onClick={() => setCurrentStep(3)}
+                            className={`relative z-10 flex flex-col items-center gap-2 focus:outline-none transition ${isStepClickable(3) ? 'cursor-pointer hover:opacity-90' : 'cursor-not-allowed opacity-50'}`}
+                          >
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center shadow-md transition duration-200 font-bold ${
+                              currentStep > 3
+                                ? 'bg-[#003366] text-white border-none'
+                                : currentStep === 3
+                                  ? 'bg-[#FF6600] text-white ring-4 ring-[#FF6600]/25'
+                                  : 'bg-white border-2 border-slate-200 text-slate-400'
+                            }`}>
+                              {currentStep > 3 ? <Check className="w-5 h-5 text-white stroke-[3.5]" /> : '2'}
+                            </div>
+                            <span className={`text-[11px] font-bold uppercase tracking-wider ${currentStep === 3 ? 'text-[#FF6600]' : currentStep > 3 ? 'text-[#003366]' : 'text-slate-400'}`}>Orçamento</span>
+                          </button>
+
+                          {/* Step 3: Conclusão (Internal 5) */}
+                          <button
+                            type="button"
+                            disabled={!isStepClickable(5)}
+                            onClick={() => setCurrentStep(5)}
+                            className={`relative z-10 flex flex-col items-center gap-2 focus:outline-none transition ${isStepClickable(5) ? 'cursor-pointer hover:opacity-90' : 'cursor-not-allowed opacity-50'}`}
+                          >
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center shadow-md transition duration-200 font-bold ${
+                              currentStep === 5
+                                ? 'bg-[#FF6600] text-white ring-4 ring-[#FF6600]/25'
+                                : 'bg-white border-2 border-slate-200 text-slate-400'
+                            }`}>
+                              3
+                            </div>
+                            <span className={`text-[11px] font-bold uppercase tracking-wider ${currentStep === 5 ? 'text-[#FF6600]' : 'text-slate-400'}`}>Conclusão</span>
+                          </button>
+                        </>
+                      );
+                    }
 
                     return (
                       <>
@@ -1295,8 +1632,8 @@ export default function App() {
                 <div className="w-full md:w-72 shrink-0 space-y-4">
                   <div className="bg-[#003366] text-white p-5 rounded-2xl shadow-md space-y-4 border border-[#002244] shrink-0">
                     <div className="border-b border-white/10 pb-3">
-                      <p className="text-[10px] uppercase font-bold opacity-60 tracking-widest mb-1">Protocolo</p>
-                      <h2 className="text-2xl font-black tracking-tighter font-mono">{formData.numeroOS || 'Novo Protocolo'}</h2>
+                      <p className="text-[10px] uppercase font-bold opacity-60 tracking-widest mb-1">{getProtocoloLabel(empresaCtx?.perfilConfig, 'Protocolo')}</p>
+                      <h2 className="text-2xl font-black tracking-tighter font-mono">{formData.numeroOS || `Novo ${getProtocoloLabel(empresaCtx?.perfilConfig, 'Protocolo')}`}</h2>
                     </div>
                     <div className="grid grid-cols-2 gap-4 text-xs">
                       <div>
@@ -1309,33 +1646,87 @@ export default function App() {
                       </div>
                       {formData.clienteNome && (
                         <div className="col-span-2">
-                          <p className="opacity-60 mb-0.5">Cliente Proprietário</p>
+                          <p className="opacity-60 mb-0.5">{getCampoLabel(empresaCtx?.perfilConfig, 'cliente', 'Cliente')}</p>
                           <p className="font-bold truncate text-[#FF6600]">{formData.clienteNome}</p>
                         </div>
                       )}
-                      <div className="col-span-2">
-                        <p className="opacity-60 mb-0.5">Equipamento</p>
-                        <p className="font-bold line-clamp-2">{formData.equipamento || '-'}</p>
-                      </div>
-                      <div className="col-span-2">
-                        <p className="opacity-60 mb-0.5">Placa/Série</p>
-                        <p className="font-bold tracking-widest text-[#FF6600] font-mono">{formData.placa || '-'}</p>
-                      </div>
+                      {isCampoVisivel(empresaCtx?.perfilConfig, 'equipamento') && (
+                        <div className="col-span-2">
+                          <p className="opacity-60 mb-0.5">{getCampoLabel(empresaCtx?.perfilConfig, 'equipamento', 'Equipamento')}</p>
+                          <p className="font-bold line-clamp-2">{formData.equipamento || '-'}</p>
+                        </div>
+                      )}
+                      {isCampoVisivel(empresaCtx?.perfilConfig, 'placa') && (
+                        <div className="col-span-2">
+                          <p className="opacity-60 mb-0.5">{getCampoLabel(empresaCtx?.perfilConfig, 'placa', 'Placa/Série')}</p>
+                          <p className="font-bold tracking-widest text-[#FF6600] font-mono">{formData.placa || '-'}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                    <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-3">Dicas de Campo</p>
+                    <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-3">Dicas de Atendimento</p>
                     <ul className="text-xs space-y-2 text-slate-600 italic">
-                      <li>• Capture as fotos em locais iluminados</li>
-                      <li>• Detalhe vazamentos visíveis</li>
-                      <li>• Verifique o horímetro do painel</li>
+                      {fotosAtivo && <li>• Registre fotos em locais iluminados</li>}
+                      <li>• Detalhe itens e serviços prestados</li>
+                      <li>• Valide as informações com o cliente</li>
+                      {!fotosAtivo && <li>• Adicione condições comerciais claras</li>}
                     </ul>
                   </div>
                 </div>
 
                 {/* Right Column: Working Area */}
                 <div className="flex-1 w-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                  {/* Working Area Header Bar */}
+                  <div className="bg-slate-50 border-b border-slate-200 px-5 py-3.5 flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#FF6600]"></span>
+                      <span className="text-xs font-bold text-[#003366] uppercase tracking-wider">
+                        {fotosAtivo ? (
+                          `Fase ${currentStep} de 5: ${
+                            currentStep === 1 ? `Identificação e ${getProtocoloLabel(empresaCtx?.perfilConfig, 'Protocolo')}` :
+                            currentStep === 2 ? 'Registro Fotográfico (Antes)' :
+                            currentStep === 3 ? 'Itens do Orçamento e Mão de Obra' :
+                            currentStep === 4 ? 'Registro Fotográfico (Depois)' : 'Conclusão e Relatório Final'
+                          }`
+                        ) : (
+                          `Fase ${currentStep === 1 ? 1 : currentStep === 3 ? 2 : 3} de 3: ${
+                            currentStep === 1 ? `Identificação e ${getProtocoloLabel(empresaCtx?.perfilConfig, 'Protocolo')}` :
+                            currentStep === 3 ? 'Itens do Orçamento e Mão de Obra' : 'Conclusão e Relatório Final'
+                          }`
+                        )}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={isSaving}
+                      onClick={() => {
+                        const activeBtn = document.getElementById(`btn-save-progress-step${currentStep}`);
+                        if (activeBtn) {
+                          activeBtn.click();
+                        } else {
+                          handleSaveProgress({}, currentStep);
+                        }
+                      }}
+                      className="bg-[#003366] hover:bg-[#002244] text-white px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer disabled:opacity-50"
+                      title="Salvar progresso atual"
+                    >
+                      {isSaving ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>Salvando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-3.5 h-3.5 text-sky-300" />
+                          <span>Salvar</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
                   {/* Form step rendered panel */}
                   <div className="p-5 sm:p-6">
                     <Suspense fallback={
@@ -1346,48 +1737,60 @@ export default function App() {
                     }>
                       {currentStep === 1 && (
                         <OSFormStep1
+                          key={`step1_${formData.id || 'new'}`}
                           initialData={formData}
                           onNext={handleStep1Submit}
                           onCancel={handleCancelForm}
                           serviceOrders={serviceOrders}
+                          onSaveProgress={(data) => handleSaveProgress(data, 1)}
+                          isSaving={isSaving}
                         />
                       )}
-                      {currentStep === 2 && (
+                      {fotosAtivo && currentStep === 2 && (
                         <OSFormStep2
+                          key={`step2_${formData.id || 'new'}`}
                           initialData={formData}
                           onNext={handleStep2Submit}
                           onBack={() => setCurrentStep(1)}
                           onCancel={handleCancelForm}
                           onSaveDraftAndPDF={handleSaveDraftAndPDF}
                           isSavingDraft={isSaving}
+                          onSaveProgress={(data) => handleSaveProgress(data, 2)}
                         />
                       )}
                       {currentStep === 3 && (
                         <OSFormStep3
+                          key={`step3_${formData.id || 'new'}`}
                           initialData={formData}
                           onNext={handleStep3Submit}
-                          onBack={() => setCurrentStep(2)}
+                          onBack={() => setCurrentStep(fotosAtivo ? 2 : 1)}
                           onCancel={handleCancelForm}
+                          onSaveProgress={(data) => handleSaveProgress(data, 3)}
+                          isSaving={isSaving}
                         />
                       )}
-                      {currentStep === 4 && (
+                      {fotosAtivo && currentStep === 4 && (
                         <OSFormStep4
+                          key={`step4_${formData.id || 'new'}`}
                           initialData={formData}
                           onNext={handleStep4Submit}
                           onBack={() => setCurrentStep(3)}
                           onCancel={handleCancelForm}
                           onSaveDraftAndPDF={handleSaveDraftAndPDF}
                           isSavingDraft={isSaving}
+                          onSaveProgress={(data) => handleSaveProgress(data, 4)}
                         />
                       )}
                       {currentStep === 5 && (
                         <OSFormStep5
+                          key={`step5_${formData.id || 'new'}`}
                           initialData={formData}
                           onSave={handleFullOSSave}
-                          onBack={() => setCurrentStep(4)}
+                          onBack={() => setCurrentStep(fotosAtivo ? 4 : 3)}
                           onCancel={handleCancelForm}
                           onSaveDraftAndPDF={handleSaveDraftAndPDF}
                           isSaving={isSaving}
+                          onSaveProgress={(data) => handleSaveProgress(data, 5)}
                         />
                       )}
                     </Suspense>
@@ -1543,7 +1946,7 @@ export default function App() {
                   onBack={() => setActiveSubView('dashboard')}
                   onViewCustomPDF={(pseudoOS, pdfUriString) => {
                     setActiveReport(pseudoOS);
-                    setActivePDFDataURI(pdfUriString);
+                    setPdfPreviewUrl(pdfUriString);
                     setShowPDFPreview(true);
                   }}
                 />
@@ -1626,6 +2029,14 @@ export default function App() {
 
       </div> {/* Closes Right Panel Container */}
 
+      {/* Toast Notification Banner */}
+      {toastMessage && (
+        <div className="fixed bottom-14 right-6 z-50 bg-[#003366] text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-sky-400/30 animate-bounce">
+          <div className="w-2.5 h-2.5 bg-emerald-400 rounded-full animate-ping"></div>
+          <span className="text-xs font-bold tracking-wider uppercase">{toastMessage}</span>
+        </div>
+      )}
+
       {/* Overlay: PDF Document Previewer modal */}
       {showPDFPreview && activeReport && (
         <Suspense fallback={
@@ -1639,7 +2050,8 @@ export default function App() {
           <PDFPreviewModal
             os={activeReport}
             pdfDataUri={activePDFDataURI}
-            onClose={() => setShowPDFPreview(false)}
+            pdfBlob={activePDFBlob}
+            onClose={handleClosePDFPreview}
           />
         </Suspense>
       )}

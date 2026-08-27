@@ -5,6 +5,7 @@
 
 export const PERFIL_EMPRESA_OPCOES = [
   'Oficina Mecânica',
+  'Autônomo',
   'Lava Jato',
   'Refrigeração',
   'Informática',

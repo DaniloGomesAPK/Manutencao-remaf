@@ -12,6 +12,10 @@ export interface PerfilLabels {
   servico: string;
   peca: string;
 
+  // Rótulos de documento e protocolo
+  protocolo?: string;
+  numeroOS?: string;
+
   // Rótulos específicos de campos
   placa?: string;
   chassi?: string;

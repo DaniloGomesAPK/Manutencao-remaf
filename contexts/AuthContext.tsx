@@ -10,12 +10,16 @@ export interface AuthContextType {
   currentUser: Usuario | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  isTrialExpired: boolean;
+  isAccessBlocked: boolean;
+  trialDiasRestantes: number;
   login: (email: string, password?: string) => Promise<Usuario>;
   register: (email: string, password: string, nomeCompleto?: string, nomeEmpresa?: string) => Promise<Usuario>;
   loginWithGoogle: () => Promise<Usuario>;
   logout: () => Promise<void>;
   sendPasswordResetEmail: (email: string) => Promise<void>;
   updateUser: (usuario: Usuario) => Promise<void>;
+  checkAccessStatus: () => Promise<boolean>;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
