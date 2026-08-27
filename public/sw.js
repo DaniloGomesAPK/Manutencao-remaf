@@ -4,7 +4,7 @@
  * DG Gestão em Orçamentos - Service Worker Enterprise Offline-First Architecture
  */
 
-const CACHE_NAME = 'dg-gestao-pwa-v8';
+const CACHE_NAME = 'dg-gestao-pwa-v9';
 
 const INITIAL_ASSETS = [
   '/',
@@ -72,9 +72,30 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network-First with Cache-Fallback strategy for HTML, JavaScript bundles, CSS, and app routes
+  // 1. Navigation requests: Network-First with fallback to cached /index.html
+  if (req.mode === 'navigate') {
+    event.respondWith(
+      fetch(req)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(req, responseClone);
+            });
+          }
+          return networkResponse;
+        })
+        .catch(() => {
+          return caches.match(req).then((cachedResponse) => {
+            return cachedResponse || caches.match('/index.html');
+          });
+        })
+    );
+    return;
+  }
+
+  // 2. JavaScript bundles, CSS, and source assets: Network-First with Cache-Fallback (NEVER fallback to index.html)
   if (
-    req.mode === 'navigate' ||
     url.pathname.endsWith('.js') ||
     url.pathname.endsWith('.css') ||
     url.pathname.includes('/src/')
@@ -91,10 +112,7 @@ self.addEventListener('fetch', (event) => {
           return networkResponse;
         })
         .catch(() => {
-          return caches.match(req).then((cachedResponse) => {
-            if (cachedResponse) return cachedResponse;
-            return caches.match('/index.html');
-          });
+          return caches.match(req);
         })
     );
     return;
