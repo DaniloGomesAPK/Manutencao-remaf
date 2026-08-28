@@ -529,10 +529,16 @@ export default function App() {
   const handleViewPDF = async (os: OrdemDeServico) => {
     try {
       const pdfBlob = await generateOSReportPDF(os);
-      const blobUrl = URL.createObjectURL(pdfBlob);
+      const isIOS = typeof window !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent || '') || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent || '')));
+      
       setActiveReport(os);
       setActivePDFBlob(pdfBlob);
-      setPdfPreviewUrl(blobUrl);
+      if (!isIOS) {
+        const blobUrl = URL.createObjectURL(pdfBlob);
+        setPdfPreviewUrl(blobUrl);
+      } else {
+        setActivePDFDataURI('');
+      }
       setShowPDFPreview(true);
     } catch (err) {
       console.error("Failed to compile pdf preview:", err);
@@ -718,7 +724,7 @@ export default function App() {
       // 3. Somente após o salvamento confirmado, gerar o PDF
       try {
         const pdfBlob = await generateOSReportPDF(savedDraft);
-        const blobUrl = URL.createObjectURL(pdfBlob);
+        const isIOS = typeof window !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent || '') || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent || '')));
 
         // Tenta salvar hosted PDF se aplicável
         try {
@@ -735,7 +741,12 @@ export default function App() {
         // Exibe pré-visualização do PDF
         setActiveReport(savedDraft);
         setActivePDFBlob(pdfBlob);
-        setPdfPreviewUrl(blobUrl);
+        if (!isIOS) {
+          const blobUrl = URL.createObjectURL(pdfBlob);
+          setPdfPreviewUrl(blobUrl);
+        } else {
+          setActivePDFDataURI('');
+        }
         setShowPDFPreview(true);
       } catch (pdfErr) {
         console.error("Failed to generate draft PDF after saving:", pdfErr);
@@ -792,7 +803,7 @@ export default function App() {
       // 4. Somente após o salvamento retornar com sucesso, gerar o PDF usando preferencialmente o objeto retornado pelo salvamento
       try {
         const pdfBlob = await generateOSReportPDF(savedFull);
-        const blobUrl = URL.createObjectURL(pdfBlob);
+        const isIOS = typeof window !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent || '') || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent || '')));
 
         // Tenta persistir link do PDF se upload retornar URL
         try {
@@ -809,7 +820,12 @@ export default function App() {
         // Exibe prévia do PDF
         setActiveReport(savedFull);
         setActivePDFBlob(pdfBlob);
-        setPdfPreviewUrl(blobUrl);
+        if (!isIOS) {
+          const blobUrl = URL.createObjectURL(pdfBlob);
+          setPdfPreviewUrl(blobUrl);
+        } else {
+          setActivePDFDataURI('');
+        }
         setShowPDFPreview(true);
       } catch (pdfErr) {
         console.error("Failed to generate PDF after saving OS:", pdfErr);
@@ -1946,7 +1962,12 @@ export default function App() {
                   onBack={() => setActiveSubView('dashboard')}
                   onViewCustomPDF={(pseudoOS, pdfUriString) => {
                     setActiveReport(pseudoOS);
-                    setPdfPreviewUrl(pdfUriString);
+                    const isIOS = typeof window !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent || '') || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent || '')));
+                    if (!isIOS) {
+                      setPdfPreviewUrl(pdfUriString);
+                    } else {
+                      setActivePDFDataURI('');
+                    }
                     setShowPDFPreview(true);
                   }}
                 />

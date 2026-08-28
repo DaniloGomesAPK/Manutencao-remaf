@@ -28,7 +28,11 @@ export default function PDFPreviewModal({ os, pdfDataUri, pdfBlob, onClose }: PD
   const [blobUrl, setBlobUrl] = useState<string>('');
   const [internalBlob, setInternalBlob] = useState<Blob | null>(pdfBlob || null);
   const [isInIframe, setIsInIframe] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
+  const [isIOS, setIsIOS] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const ua = window.navigator.userAgent || '';
+    return /iPad|iPhone|iPod/.test(ua) || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1 && /Macintosh/.test(ua));
+  });
   const [activeTab, setActiveTab] = useState<'quick' | 'native'>('quick');
 
   // Detect iOS and iframe environments
@@ -55,10 +59,19 @@ export default function PDFPreviewModal({ os, pdfDataUri, pdfBlob, onClose }: PD
     }
   }, [pdfBlob]);
 
-  // Handle direct Blob URL or base64 DataURI on mount (for desktop fallback)
+  // Handle direct Blob URL or base64 DataURI on mount (strictly for desktop fallback only)
   useEffect(() => {
+    const userAgent = typeof window !== 'undefined' ? window.navigator.userAgent || '' : '';
+    const iosDevice = /iPad|iPhone|iPod/.test(userAgent) || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1 && /Macintosh/.test(userAgent));
+    
+    // On iOS: strictly never create ObjectURL or store blobUrl
+    if (iosDevice || isIOS) {
+      setBlobUrl('');
+      return;
+    }
+
     let activeUrl = '';
-    // Only create object URL if not on iOS or if needed for desktop view
+    // Desktop only:
     if (pdfBlob) {
       activeUrl = URL.createObjectURL(pdfBlob);
       setBlobUrl(activeUrl);
@@ -94,7 +107,7 @@ export default function PDFPreviewModal({ os, pdfDataUri, pdfBlob, onClose }: PD
         URL.revokeObjectURL(activeUrl);
       }
     };
-  }, [pdfBlob, pdfDataUri]);
+  }, [pdfBlob, pdfDataUri, isIOS]);
 
   // Helper to generate sanitized PDF filename: Orçamento_NumeroDoOrcamento_NomeDoVeiculo.pdf
   const getPDFFilename = (osData: OrdemDeServico): string => {
