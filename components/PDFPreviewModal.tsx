@@ -204,9 +204,54 @@ export default function PDFPreviewModal({ os, pdfDataUri, pdfBlob, onClose }: PD
 
   const triggerDownload = async () => {
     const activeBlob = pdfBlob || internalBlob;
-    const filename = getPDFFilename(os);
+    if (!activeBlob) {
+      setShareSuccess('Arquivo PDF não disponível para download.');
+      return;
+    }
 
-    if (activeBlob && typeof navigator !== 'undefined' && navigator.canShare) {
+    const filename = getPDFFilename(os);
+    const encodedFilename = encodeURIComponent(filename);
+    const downloadPath = `/pdf-download/${encodedFilename}`;
+    const downloadUrl = window.location.origin + downloadPath;
+
+    // 1. Save Blob in Cache Storage with domain HTTPS URL and trigger standard download
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      try {
+        const cache = await caches.open('dg-gestao-pdf-cache');
+        const responseToCache = new Response(activeBlob, {
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `attachment; filename="${encodedFilename}"`,
+            'Content-Length': activeBlob.size.toString(),
+          },
+        });
+
+        // Cache for both absolute URL and relative path
+        await cache.put(downloadUrl, responseToCache.clone());
+        await cache.put(downloadPath, responseToCache);
+
+        // Initiate download using HTTPS URL of the domain
+        const link = document.createElement('a');
+        link.href = downloadPath;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+
+        setShareSuccess('Download do PDF iniciado!');
+
+        setTimeout(() => {
+          if (document.body.contains(link)) {
+            document.body.removeChild(link);
+          }
+        }, 150);
+        return;
+      } catch (cacheErr) {
+        console.warn('Cache Storage download attempt failed:', cacheErr);
+      }
+    }
+
+    // Fallback: If Cache Storage is unavailable and navigator supports file sharing
+    if (typeof navigator !== 'undefined' && navigator.canShare) {
       try {
         const file = new File([activeBlob], filename, { type: 'application/pdf' });
         if (navigator.canShare({ files: [file] })) {
@@ -223,27 +268,7 @@ export default function PDFPreviewModal({ os, pdfDataUri, pdfBlob, onClose }: PD
     }
 
     if (isIOS) {
-      // On iOS/iPad: strictly prohibited to use blobUrl or <a download>
-      setShareSuccess('O seu navegador iOS não suporta compartilhamento direto de arquivos.');
-      return;
-    }
-
-    // Fallback strictly for desktop / non-iOS browsers without canShare
-    if (!isIOS && blobUrl) {
-      try {
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        setTimeout(() => {
-          if (document.body.contains(link)) {
-            document.body.removeChild(link);
-          }
-        }, 150);
-      } catch (err) {
-        console.error("Blob download failed:", err);
-      }
+      setShareSuccess('Não foi possível iniciar o download direto no dispositivo.');
     }
   };
 

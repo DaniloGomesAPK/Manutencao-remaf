@@ -42,7 +42,7 @@
       "destination": "/marketing/catalogo_comercial.html"
     },
     {
-      "source": "/((?!api/|marketing/).*)",
+      "source": "/((?!api/|marketing/|pdf-download/).*)",
       "destination": "/index.html"
     }
   ]

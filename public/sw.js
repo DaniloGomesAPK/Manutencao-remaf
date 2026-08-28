@@ -5,6 +5,7 @@
  */
 
 const CACHE_NAME = 'dg-gestao-pwa-v9';
+const PDF_CACHE_NAME = 'dg-gestao-pdf-cache';
 
 const INITIAL_ASSETS = [
   '/',
@@ -37,13 +38,13 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// 2. Activate event: purges unused older caches to keep storage lean
+// 2. Activate event: purges unused older caches to keep storage lean (preserving PDF cache)
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cache) => {
-          if (cache !== CACHE_NAME) {
+          if (cache !== CACHE_NAME && cache !== PDF_CACHE_NAME) {
             console.log('[PWA SW] Purging legacy cache:', cache);
             return caches.delete(cache);
           }
@@ -59,6 +60,47 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
+
+  // 0. On-device PDF download requests via Cache Storage (HTTPS URLs on same domain)
+  if (url.pathname.startsWith('/pdf-download/')) {
+    const rawFilename = url.pathname.replace('/pdf-download/', '') || 'Orçamento.pdf';
+    const filename = decodeURIComponent(rawFilename);
+    const safeAsciiFilename = filename.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]/g, '_');
+
+    event.respondWith(
+      (async () => {
+        try {
+          const cache = await caches.open(PDF_CACHE_NAME);
+          const cachedResponse = (await cache.match(req.url)) || (await cache.match(url.pathname)) || (await cache.match(req));
+          if (cachedResponse) {
+            const blob = await cachedResponse.blob();
+            // Remove the entry from cache only after the Blob is already in memory
+            try {
+              await cache.delete(req.url);
+              await cache.delete(url.pathname);
+              await cache.delete(req);
+            } catch (delErr) {
+              console.warn('[PWA SW] Cache entry cleanup error:', delErr);
+            }
+            return new Response(blob, {
+              status: 200,
+              headers: {
+                'Content-Type': 'application/pdf',
+                'Content-Disposition': `attachment; filename="${safeAsciiFilename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+                'Content-Length': blob.size.toString(),
+                'Cache-Control': 'no-store, no-cache, must-revalidate',
+              },
+            });
+          }
+          return new Response('PDF não encontrado ou expirado no cache.', { status: 404 });
+        } catch (err) {
+          console.error('[PWA SW] Erro ao servir PDF do cache:', err);
+          return new Response('Erro ao processar download do PDF.', { status: 500 });
+        }
+      })()
+    );
+    return;
+  }
 
   // Skip non-GET requests and external third-party operational traffic (Firebase, Chrome extensions, websockets)
   if (
