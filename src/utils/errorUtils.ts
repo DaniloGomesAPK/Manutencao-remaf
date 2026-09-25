@@ -39,8 +39,12 @@ export function getFriendlyErrorMessage(error: unknown, defaultMessage = 'Ocorre
     return 'E-mail ou senha incorretos. Verifique suas credenciais e tente novamente.';
   }
 
-  if (errorString.includes('auth/email-already-in-use') || errorString.includes('já está cadastrado')) {
-    return 'Este e-mail já possui cadastro no sistema. Você pode entrar diretamente com sua senha ou recuperá-la.';
+  if (
+    errorString.includes('auth/email-already-in-use') ||
+    errorString.includes('já está cadastrado') ||
+    errorString.includes('sua conta já foi criada')
+  ) {
+    return 'Sua conta já foi criada. Entre com seu e-mail e senha para concluirmos automaticamente a ativação dos seus 7 dias gratuitos.';
   }
 
   if (errorString.includes('auth/weak-password')) {

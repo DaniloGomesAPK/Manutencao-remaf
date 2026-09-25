@@ -6,7 +6,6 @@
 import { auth, db } from '../config/firebase';
 import { 
   createUserWithEmailAndPassword,
-  sendEmailVerification,
   updateProfile,
   User
 } from 'firebase/auth';
@@ -27,8 +26,10 @@ export interface DadosCadastroTrial {
   senha?: string;
 }
 
-export interface RegistroAuthPendente {
+export interface ResultadoCadastroTrial {
   user: User;
+  empresaId: string;
+  usuario: Usuario;
   email: string;
   nomeResponsavel: string;
   nomeEmpresa: string;
@@ -64,73 +65,8 @@ export function validarForcaSenha(senha: string): { valida: boolean; mensagem?: 
 }
 
 /**
- * Etapa 1 do Cadastro: Cria a conta de autenticação no Firebase Auth
- * e envia imediatamente o e-mail de verificação (sendEmailVerification).
- * NÃO cria empresa, tenant nem trial nesta etapa.
- */
-export async function iniciarCadastroTrial(dados: DadosCadastroTrial): Promise<RegistroAuthPendente> {
-  const emailClean = dados.email.trim().toLowerCase();
-  const nomeFinal = dados.nomeResponsavel?.trim() || dados.nome?.trim() || 'Administrador';
-  const perfilEmpresaFinal = dados.perfilEmpresa || 'mecanica_pesada';
-  const nomeEmpresaFinal = dados.nomeEmpresa?.trim() || 'Minha Empresa';
-  const whatsappFinal = dados.whatsapp?.trim() || '';
-
-  // 1. Validação estrita de senha forte no cliente
-  const senhaInformada = dados.senha?.trim() || '';
-  const validacaoSenha = validarForcaSenha(senhaInformada);
-  if (!validacaoSenha.valida) {
-    throw new Error(validacaoSenha.mensagem || 'Senha inválida.');
-  }
-
-  let fbUser: User;
-
-  // 2. Criação do usuário no Firebase Auth
-  try {
-    const userCred = await createUserWithEmailAndPassword(auth, emailClean, senhaInformada);
-    fbUser = userCred.user;
-    
-    await updateProfile(fbUser, {
-      displayName: nomeFinal
-    });
-  } catch (createErr: any) {
-    if (createErr?.code === 'auth/email-already-in-use') {
-      throw new Error('Este e-mail já está cadastrado no sistema. Por favor, faça login ou utilize a recuperação de senha.');
-    }
-    throw new Error(`Falha ao registrar credenciais de autenticação: ${createErr?.message || 'Erro desconhecido'}`);
-  }
-
-  // 3. Envio do e-mail de verificação oficial pelo Firebase Auth
-  try {
-    await sendEmailVerification(fbUser);
-  } catch (emailErr: any) {
-    console.warn('[TrialService] Falha no envio inicial do e-mail de verificação:', emailErr);
-    // Não interrompe o fluxo caso seja rate-limit momentâneo do Firebase
-  }
-
-  return {
-    user: fbUser,
-    email: emailClean,
-    nomeResponsavel: nomeFinal,
-    nomeEmpresa: nomeEmpresaFinal,
-    perfilEmpresa: perfilEmpresaFinal,
-    whatsapp: whatsappFinal
-  };
-}
-
-/**
- * Reenvia o e-mail de confirmação pelo Firebase Auth
- */
-export async function reenviarEmailVerificacao(user?: User | null): Promise<void> {
-  const targetUser = user || auth.currentUser;
-  if (!targetUser) {
-    throw new Error('Nenhum usuário conectado para reenviar confirmação.');
-  }
-  await sendEmailVerification(targetUser);
-}
-
-/**
- * Etapa 2 do Cadastro: Verifica se o e-mail foi validado (user.reload() + emailVerified).
- * Se verificado, solicita um novo ID Token e chama /api/onboarding/trial para ativar empresa e trial.
+ * Solicita o ID Token do usuário autenticado e chama /api/onboarding/trial
+ * para criar/vincular empresa, user e emailsAutorizados e liberar os 7 dias.
  */
 export async function confirmarEmailEAtivarTrial(
   fbUser: User,
@@ -141,20 +77,13 @@ export async function confirmarEmailEAtivarTrial(
     whatsapp: string;
   }
 ): Promise<{ empresaId: string; usuario: Usuario }> {
-  // 1. Recarrega o estado do usuário no Firebase Auth para obter a confirmação mais recente
-  await fbUser.reload();
-
-  if (!fbUser.emailVerified) {
-    throw new Error('EMAIL_NAO_CONFIRMADO');
-  }
-
   const emailClean = (fbUser.email || '').trim().toLowerCase();
   const uid = fbUser.uid;
 
-  // 2. Obtenção do novo Firebase ID Token COM a claim email_verified atualizada
+  // 1. Obtenção do Firebase ID Token do usuário
   const idToken = await fbUser.getIdToken(true);
 
-  // 3. Solicitação Server-Authoritative de criação de Tenant e Período Trial
+  // 2. Solicitação Server-Authoritative de criação de Tenant e Período Trial
   const response = await fetch('/api/onboarding/trial', {
     method: 'POST',
     headers: {
@@ -201,7 +130,7 @@ export async function confirmarEmailEAtivarTrial(
     throw new Error('Resposta incompleta do servidor de cadastro. Operação abortada.');
   }
 
-  // 4. Executa processUserSession() após o sucesso do endpoint e confirma que empresaId existe
+  // 3. Executa processUserSession() após o sucesso do endpoint e confirma que empresaId existe
   let usuario: Usuario;
   try {
     usuario = await AuthService.processUserSession(fbUser, dadosCadastro.nomeResponsavel);
@@ -227,7 +156,7 @@ export async function confirmarEmailEAtivarTrial(
   const userRole: string = serverResult.usuario.role;
   const trialAtivo: boolean = serverResult.trialAtivo;
 
-  // 5. Atualiza o armazenamento local para persistência de sessão e cache não privilegiado de UI
+  // 4. Atualiza o armazenamento local para persistência de sessão e cache não privilegiado de UI
   localStorage.setItem('empresaId', empresaId);
   localStorage.setItem('userEmail', emailClean);
   localStorage.setItem('userName', usuario.nome);
@@ -239,6 +168,63 @@ export async function confirmarEmailEAtivarTrial(
   return {
     empresaId,
     usuario
+  };
+}
+
+/**
+ * Cria a conta de autenticação no Firebase Auth com e-mail e senha
+ * e aciona imediatamente /api/onboarding/trial para liberar os 7 dias e concluir a sessão.
+ */
+export async function iniciarCadastroTrial(dados: DadosCadastroTrial): Promise<ResultadoCadastroTrial> {
+  const emailClean = dados.email.trim().toLowerCase();
+  const nomeFinal = dados.nomeResponsavel?.trim() || dados.nome?.trim() || 'Administrador';
+  const perfilEmpresaFinal = dados.perfilEmpresa || 'mecanica_pesada';
+  const nomeEmpresaFinal = dados.nomeEmpresa?.trim() || 'Minha Empresa';
+  const whatsappFinal = dados.whatsapp?.trim() || '';
+
+  // 1. Validação estrita de senha forte no cliente
+  const senhaInformada = dados.senha?.trim() || '';
+  const validacaoSenha = validarForcaSenha(senhaInformada);
+  if (!validacaoSenha.valida) {
+    throw new Error(validacaoSenha.mensagem || 'Senha inválida.');
+  }
+
+  let fbUser: User;
+
+  // 2. Criação do usuário no Firebase Auth
+  try {
+    const userCred = await createUserWithEmailAndPassword(auth, emailClean, senhaInformada);
+    fbUser = userCred.user;
+
+    await updateProfile(fbUser, {
+      displayName: nomeFinal
+    });
+  } catch (createErr: any) {
+    if (createErr?.code === 'auth/email-already-in-use') {
+      const err: any = new Error('Sua conta já foi criada. Entre com seu e-mail e senha para concluirmos automaticamente a ativação dos seus 7 dias gratuitos.');
+      err.code = 'auth/email-already-in-use';
+      throw err;
+    }
+    throw new Error(`Falha ao registrar credenciais de autenticação: ${createErr?.message || 'Erro desconhecido'}`);
+  }
+
+  // 3. Ativação imediata do onboarding/trial e conclusão da sessão
+  const { empresaId, usuario } = await confirmarEmailEAtivarTrial(fbUser, {
+    nomeResponsavel: nomeFinal,
+    nomeEmpresa: nomeEmpresaFinal,
+    perfilEmpresa: perfilEmpresaFinal,
+    whatsapp: whatsappFinal
+  });
+
+  return {
+    user: fbUser,
+    empresaId,
+    usuario,
+    email: emailClean,
+    nomeResponsavel: nomeFinal,
+    nomeEmpresa: nomeEmpresaFinal,
+    perfilEmpresa: perfilEmpresaFinal,
+    whatsapp: whatsappFinal
   };
 }
 
@@ -299,7 +285,6 @@ export async function verificarAcessoTrial(empresaId: string): Promise<{ ativo: 
 
 export const TrialService = {
   iniciarCadastroTrial,
-  reenviarEmailVerificacao,
   confirmarEmailEAtivarTrial,
   verificarAcessoTrial,
   validarForcaSenha

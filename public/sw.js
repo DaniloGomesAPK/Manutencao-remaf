@@ -4,7 +4,7 @@
  * DG Gestão em Orçamentos - Service Worker Enterprise Offline-First Architecture
  */
 
-const CACHE_NAME = 'dg-gestao-pwa-v9';
+const CACHE_NAME = 'dg-gestao-pwa-v10';
 const PDF_CACHE_NAME = 'dg-gestao-pdf-cache';
 
 const INITIAL_ASSETS = [

@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useContext } from 'react';
-import { Download, Share2, X, MessageSquare, Mail, Check, AlertCircle, ExternalLink, Eye, FileText, Lock } from 'lucide-react';
+import { Download, Share2, X, MessageSquare, Mail, Check, AlertCircle, Eye, FileText } from 'lucide-react';
 import { OrdemDeServico } from '../types';
 import { formatToBrazilianDate } from '../utils/dateFormatter';
 import { EmpresaContext } from '../contexts/EmpresaContext';
@@ -12,42 +12,70 @@ import { getPerfilConfig, isCampoVisivel, getCampoLabel } from '../config/perfis
 
 interface PDFPreviewModalProps {
   os: OrdemDeServico;
-  pdfDataUri: string; // The generated jsPDF output uri
+  pdfDataUri: string; // The generated jsPDF output uri or blob url
+  pdfBlob?: Blob | null; // The real Blob
   onClose: () => void;
 }
 
-export default function PDFPreviewModal({ os, pdfDataUri, onClose }: PDFPreviewModalProps) {
+export default function PDFPreviewModal({ os, pdfDataUri, pdfBlob, onClose }: PDFPreviewModalProps) {
   const empresaCtx = useContext(EmpresaContext);
   const company = empresaCtx?.empresa;
   const perfilConfig = empresaCtx?.perfilConfig || getPerfilConfig(company?.perfilEmpresa);
   const companyName = (company?.nomeFantasia || company?.razaoSocial || '').trim();
-  const isCompanyRegistered = Boolean(companyName && companyName !== 'Sua Empresa');
 
   const [sharing, setSharing] = useState(false);
   const [shareSuccess, setShareSuccess] = useState<string | null>(null);
   const [blobUrl, setBlobUrl] = useState<string>('');
-  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
+  const [internalBlob, setInternalBlob] = useState<Blob | null>(pdfBlob || null);
   const [isInIframe, setIsInIframe] = useState(false);
+  const [isIOS, setIsIOS] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const ua = window.navigator.userAgent || '';
+    return /iPad|iPhone|iPod/.test(ua) || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1 && /Macintosh/.test(ua));
+  });
   const [activeTab, setActiveTab] = useState<'quick' | 'native'>('quick');
 
-  // Detect sandboxed iframe environments
+  // Detect iOS and iframe environments
   useEffect(() => {
+    const userAgent = typeof window !== 'undefined' ? window.navigator.userAgent || '' : '';
+    const iosDevice = /iPad|iPhone|iPod/.test(userAgent) || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1 && /Macintosh/.test(userAgent));
+    setIsIOS(iosDevice);
+
     try {
       const inIframe = window.self !== window.top;
       setIsInIframe(inIframe);
-      // If we are in an iframe (like Google AI Studio live preview), default to 'quick' view
-      // because Chrome/Safari strictly block iframe blob/dataURIs embeds.
-      setActiveTab(inIframe ? 'quick' : 'native');
+      // On iOS or sandboxed environments, default to structured quick view to avoid blob: iframe leaks
+      setActiveTab(iosDevice || inIframe ? 'quick' : 'native');
     } catch (e) {
       setIsInIframe(true);
       setActiveTab('quick');
     }
   }, []);
 
-  // Handle direct Blob URL or base64 DataURI on mount
+  // Sync pdfBlob prop when available
   useEffect(() => {
+    if (pdfBlob) {
+      setInternalBlob(pdfBlob);
+    }
+  }, [pdfBlob]);
+
+  // Handle direct Blob URL or base64 DataURI on mount (strictly for desktop fallback only)
+  useEffect(() => {
+    const userAgent = typeof window !== 'undefined' ? window.navigator.userAgent || '' : '';
+    const iosDevice = /iPad|iPhone|iPod/.test(userAgent) || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1 && /Macintosh/.test(userAgent));
+
+    // On iOS: strictly never create ObjectURL or store blobUrl
+    if (iosDevice || isIOS) {
+      setBlobUrl('');
+      return;
+    }
+
     let activeUrl = '';
-    if (pdfDataUri) {
+    // Desktop only:
+    if (pdfBlob) {
+      activeUrl = URL.createObjectURL(pdfBlob);
+      setBlobUrl(activeUrl);
+    } else if (pdfDataUri) {
       if (pdfDataUri.startsWith('blob:') || pdfDataUri.startsWith('http')) {
         setBlobUrl(pdfDataUri);
       } else {
@@ -62,7 +90,7 @@ export default function PDFPreviewModal({ os, pdfDataUri, onClose }: PDFPreviewM
               ia[i] = byteString.charCodeAt(i);
             }
             const blob = new Blob([ab], { type: mimeString });
-            setPdfBlob(blob);
+            setInternalBlob(blob);
             activeUrl = URL.createObjectURL(blob);
             setBlobUrl(activeUrl);
           } else {
@@ -79,7 +107,7 @@ export default function PDFPreviewModal({ os, pdfDataUri, onClose }: PDFPreviewM
         URL.revokeObjectURL(activeUrl);
       }
     };
-  }, [pdfDataUri]);
+  }, [pdfBlob, pdfDataUri, isIOS]);
 
   // Helper to generate sanitized PDF filename: Orçamento_NumeroDoOrcamento_NomeDoVeiculo.pdf
   const getPDFFilename = (osData: OrdemDeServico): string => {
@@ -100,74 +128,61 @@ export default function PDFPreviewModal({ os, pdfDataUri, onClose }: PDFPreviewM
     return `Orçamento_${num}_${veiculoClean || 'Veiculo'}.pdf`;
   };
 
-  // Helper to extract base64 binary and trigger native sharing
+  // Helper to share strictly the PDF document (only { files: [file] })
   const handleNativeShare = async () => {
     setSharing(true);
     setShareSuccess(null);
     const pdfFilename = getPDFFilename(os);
     try {
-      let file: File;
-      if (pdfBlob) {
-        file = new File([pdfBlob], pdfFilename, { type: 'application/pdf' });
-      } else {
-        // Convert dataURI to a File object
-        const res = await fetch(pdfDataUri);
-        const blob = await res.blob();
-        file = new File([blob], pdfFilename, { type: 'application/pdf' });
+      const activeBlob = pdfBlob || internalBlob;
+      if (!activeBlob) {
+        throw new Error('Arquivo PDF não disponível para compartilhamento.');
       }
-      
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+
+      // Create a native File object strictly from the real Blob
+      const file = new File([activeBlob], pdfFilename, { type: 'application/pdf' });
+
+      if (typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],
-          title: `Ordem de Serviço - Protocolo ${os.numeroOS}`,
-          text: `Segue em anexo a Ordem de Serviço do Protocolo ${os.numeroOS}.\nEquipamento: ${os.equipamento}\nStatus: ${os.status || 'Concluído'}`,
+        });
+        setShareSuccess('Compartilhado com sucesso!');
+      } else if (typeof navigator !== 'undefined' && navigator.share) {
+        await navigator.share({
+          files: [file],
         });
         setShareSuccess('Compartilhado com sucesso!');
       } else {
-        throw new Error('Navegador não suporta compartilhamento de arquivos nativo. Tente WhatsApp/E-mail abaixo.');
-      }
-    } catch (err) {
-      console.warn("Native file sharing not supported or cancelled:", err);
-      // Fallback: Copy link/simulate share
-      try {
-        if (navigator.share) {
-          // If text sharing is supported even if file sharing is not
-          await navigator.share({
-            title: `Relatório Protocolo ${os.numeroOS}`,
-            text: `Ordem de Serviço - Protocolo ${os.numeroOS}.\nEquipamento: ${os.equipamento}\nConsulte o relatório online.`,
-            url: os.pdfGerado?.startsWith('http') ? os.pdfGerado : undefined
-          });
-        } else {
-          // Fallback to clipboard copy
-          const shareText = `Ordem de Serviço - Protocolo ${os.numeroOS}\nEquipamento: ${os.equipamento}\nPlaca: ${os.placa}\nTécnico: ${os.tecnico}\nStatus: ${os.status}`;
-          await navigator.clipboard.writeText(shareText);
-          setShareSuccess('Resumo copiado para a Área de Transferência!');
+        if (isIOS) {
+          // On iOS/iPad: strictly prohibited to use blobUrl or <a download>
+          setShareSuccess('O seu navegador iOS não suporta compartilhamento direto de arquivos.');
+        } else if (blobUrl) {
+          // Fallback ONLY for desktop/non-iOS browsers without Web Share API
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = pdfFilename;
+          document.body.appendChild(link);
+          link.click();
+          setTimeout(() => {
+            if (document.body.contains(link)) {
+              document.body.removeChild(link);
+            }
+          }, 150);
         }
-      } catch (clipErr) {
-        setShareSuccess('Use os atalhos do WhatsApp ou E-mail abaixo.');
+      }
+    } catch (err: any) {
+      if (err && (err.name === 'AbortError' || err.code === 20)) {
+        // User closed the native share sheet
+        return;
+      }
+      console.warn("Native file sharing not completed:", err);
+      if (isIOS) {
+        setShareSuccess('Compartilhamento cancelado ou não suportado no dispositivo.');
       }
     } finally {
       setSharing(false);
       setTimeout(() => setShareSuccess(null), 4000);
     }
-  };
-
-  const shareViaWhatsApp = () => {
-    // Generate text message
-    let message = `*Ordem de Serviço*\n`;
-    message += `*Protocolo Nº:* ${os.numeroOS}\n`;
-    message += `*Equipamento:* ${os.equipamento}\n`;
-    message += `*Placa:* ${os.placa}\n`;
-    message += `*Técnico:* ${os.tecnico}\n`;
-    message += `*Status:* ${os.status || 'Concluído'}\n`;
-    
-    if (os.pdfGerado && os.pdfGerado.startsWith('http')) {
-      message += `*Link para o PDF:* ${os.pdfGerado}\n`;
-    } else {
-      message += `_(Visualização do PDF completo gerada no celular do técnico)_\n`;
-    }
-    
-    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`, '_blank');
   };
 
   const shareViaEmail = () => {
@@ -195,43 +210,78 @@ export default function PDFPreviewModal({ os, pdfDataUri, onClose }: PDFPreviewM
     }
     body += `- Status Final: ${os.status || 'Concluído'}\n`;
     body += `- Orçamento Itens: ${orcamentoStr}\n\n`;
-    
-    if (os.pdfGerado && os.pdfGerado.startsWith('http')) {
-      body += `Você pode baixar o PDF completo em anexo ou neste link:\n${os.pdfGerado}\n\n`;
-    } else {
-      body += `O PDF já foi gerado na memória do dispositivo.\n\n`;
-    }
     body += `Atenciosamente,\nGestão de Manutenção`;
     
     window.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
   };
 
-  const triggerDownload = () => {
-    try {
-      const targetUrl = blobUrl || pdfDataUri;
-      const link = document.createElement('a');
-      link.href = targetUrl;
-      link.download = getPDFFilename(os);
-      document.body.appendChild(link);
-      link.click();
-      
-      setTimeout(() => {
-        if (document.body.contains(link)) {
-          document.body.removeChild(link);
-        }
-      }, 150);
-    } catch (err) {
-      console.error("Blob download failed, opening in new tab:", err);
-      window.open(blobUrl || pdfDataUri, '_blank');
+  const triggerDownload = async () => {
+    const activeBlob = pdfBlob || internalBlob;
+    if (!activeBlob) {
+      setShareSuccess('Arquivo PDF não disponível para download.');
+      return;
     }
-  };
 
-  const handleOpenInNewTab = () => {
-    try {
-      const url = blobUrl || pdfDataUri;
-      window.open(url, '_blank');
-    } catch (err) {
-      console.error("Failed to open tab:", err);
+    const filename = getPDFFilename(os);
+    const encodedFilename = encodeURIComponent(filename);
+    const downloadPath = `/pdf-download/${encodedFilename}`;
+    const downloadUrl = window.location.origin + downloadPath;
+
+    // 1. Save Blob in Cache Storage with domain HTTPS URL and trigger standard download
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      try {
+        const cache = await caches.open('dg-gestao-pdf-cache');
+        const responseToCache = new Response(activeBlob, {
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `attachment; filename="${encodedFilename}"`,
+            'Content-Length': activeBlob.size.toString(),
+          },
+        });
+
+        // Cache for both absolute URL and relative path
+        await cache.put(downloadUrl, responseToCache.clone());
+        await cache.put(downloadPath, responseToCache);
+
+        // Initiate download using HTTPS URL of the domain
+        const link = document.createElement('a');
+        link.href = downloadPath;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+
+        setShareSuccess('Download do PDF iniciado!');
+
+        setTimeout(() => {
+          if (document.body.contains(link)) {
+            document.body.removeChild(link);
+          }
+        }, 150);
+        return;
+      } catch (cacheErr) {
+        console.warn('Cache Storage download attempt failed:', cacheErr);
+      }
+    }
+
+    // Fallback: If Cache Storage is unavailable and navigator supports file sharing
+    if (typeof navigator !== 'undefined' && navigator.canShare) {
+      try {
+        const file = new File([activeBlob], filename, { type: 'application/pdf' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+          });
+          return;
+        }
+      } catch (err: any) {
+        if (err && (err.name === 'AbortError' || err.code === 20)) {
+          return;
+        }
+      }
+    }
+
+    if (isIOS) {
+      setShareSuccess('Não foi possível iniciar o download direto no dispositivo.');
     }
   };
 
@@ -267,34 +317,41 @@ export default function PDFPreviewModal({ os, pdfDataUri, onClose }: PDFPreviewM
           <div className="lg:col-span-2 flex flex-col bg-slate-100 border border-slate-200 rounded-xl p-2 min-h-[450px] sm:min-h-[520px]">
             {/* Tabs Header */}
             <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-2 px-1 gap-2 flex-wrap">
-              <div className="flex gap-1.5 bg-slate-200 p-1 rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('quick')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition cursor-pointer ${
-                    activeTab === 'quick'
-                      ? 'bg-white text-[#003366] shadow-xs'
-                      : 'text-slate-600 hover:text-slate-800'
-                  }`}
-                >
-                  <FileText className="w-3.5 h-3.5 animate-pulse text-[#FF6600]" />
-                  Visualização Rápida (SaaS)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('native')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition cursor-pointer ${
-                    activeTab === 'native'
-                      ? 'bg-white text-[#003366] shadow-xs'
-                      : 'text-slate-600 hover:text-slate-800'
-                  }`}
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  Visualizador do Navegador
-                </button>
-              </div>
+              {!isIOS ? (
+                <div className="flex gap-1.5 bg-slate-200 p-1 rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('quick')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition cursor-pointer ${
+                      activeTab === 'quick'
+                        ? 'bg-white text-[#003366] shadow-xs'
+                        : 'text-slate-600 hover:text-slate-800'
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5 animate-pulse text-[#FF6600]" />
+                    Visualização Rápida (SaaS)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('native')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition cursor-pointer ${
+                      activeTab === 'native'
+                        ? 'bg-white text-[#003366] shadow-xs'
+                        : 'text-slate-600 hover:text-slate-800'
+                    }`}
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    Visualizador do Navegador
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold text-[#003366]">
+                  <FileText className="w-4 h-4 text-[#FF6600]" />
+                  <span>Resumo do Documento PDF</span>
+                </div>
+              )}
 
-              {isInIframe && activeTab === 'native' && (
+              {isInIframe && activeTab === 'native' && !isIOS && (
                 <div className="flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200 font-medium">
                   <AlertCircle className="w-3.5 h-3.5 text-[#FF6600]" />
                   <span>Chrome pode bloquear embeds no iframe</span>
@@ -304,7 +361,7 @@ export default function PDFPreviewModal({ os, pdfDataUri, onClose }: PDFPreviewM
 
             {/* Inner render area */}
             <div className="flex-1 rounded-lg overflow-hidden flex flex-col relative min-h-[350px]">
-              {activeTab === 'quick' ? (
+              {activeTab === 'quick' || isIOS ? (
                 <div className="flex-1 bg-white rounded-lg p-5 sm:p-6 overflow-y-auto border border-slate-200 flex flex-col justify-between max-h-[480px]">
                   {/* Digital Document Header */}
                   <div className="border-b border-dashed border-slate-300 pb-4 mb-4">
@@ -493,7 +550,7 @@ export default function PDFPreviewModal({ os, pdfDataUri, onClose }: PDFPreviewM
                       <div>
                         <span className="font-bold text-amber-900 block">Modo de Visualização Segura Ativo</span>
                         <span>
-                          Para garantir a segurança do seu navegador, o Google Chrome bloqueia PDFs incorporados em áreas de testes e ambientes de desenvolvimento. Clique em <strong className="text-[#FF6600]">"Abrir PDF em Nova Guia"</strong> para visualizar, salvar ou imprimir o documento original formatado em A4 oficial.
+                          Para garantir a segurança do seu dispositivo, utilize o botão <strong className="text-[#003366]">"Baixar Arquivo PDF (A4)"</strong> ou <strong className="text-[#25D366]">"Enviar pelo WhatsApp"</strong> para salvar ou compartilhar o documento PDF original.
                         </span>
                       </div>
                     </div>
@@ -518,7 +575,7 @@ export default function PDFPreviewModal({ os, pdfDataUri, onClose }: PDFPreviewM
               )}
             </div>
             <p className="text-[10px] text-slate-400 mt-2 text-center font-medium">
-              📱 Dica para Celular: Se o botão Baixar falhar devido ao seu modelo de navegador, clique em <strong className="text-[#FF6600]">Abrir PDF em Nova Guia</strong> para salvá-lo nativamente.
+              📱 Dica para Celular: Toque em <strong className="text-[#25D366]">Enviar pelo WhatsApp</strong> ou <strong className="text-[#003366]">Compartilhar no Celular</strong> para enviar o arquivo PDF diretamente.
             </p>
           </div>
 
@@ -552,16 +609,6 @@ export default function PDFPreviewModal({ os, pdfDataUri, onClose }: PDFPreviewM
                 Baixar Arquivo PDF (A4)
               </button>
 
-              {/* Open in PDF viewers */}
-              <button
-                id="btn-open-pdf-fullscreen"
-                onClick={handleOpenInNewTab}
-                className="w-full flex items-center justify-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 py-3.5 px-4 rounded-xl font-bold active:scale-98 transition duration-150 cursor-pointer text-sm shadow-xs"
-              >
-                <ExternalLink className="w-4.5 h-4.5 text-amber-700" />
-                Abrir PDF em Nova Guia
-              </button>
-
               <button
                 id="btn-share-native"
                 onClick={handleNativeShare}
@@ -577,11 +624,12 @@ export default function PDFPreviewModal({ os, pdfDataUri, onClose }: PDFPreviewM
                 <div className="relative flex justify-center text-[10px] uppercase font-bold text-slate-400 bg-white px-2">Ou Enviar Manual</div>
               </div>
 
-              {/* WhatsApp direct launch */}
+              {/* WhatsApp direct launch with native file sharing */}
               <button
                 id="btn-share-whatsapp"
-                onClick={shareViaWhatsApp}
-                className="w-full flex items-center justify-center gap-2.5 bg-[#25D366] hover:bg-[#128C7E] text-white py-3 px-4 rounded-xl font-bold active:scale-98 transition duration-150 cursor-pointer text-sm shadow-xs"
+                onClick={handleNativeShare}
+                disabled={sharing}
+                className="w-full flex items-center justify-center gap-2.5 bg-[#25D366] hover:bg-[#128C7E] text-white py-3.5 px-4 rounded-xl font-bold active:scale-98 transition duration-150 cursor-pointer text-sm shadow-xs"
               >
                 <MessageSquare className="w-4.5 h-4.5 text-white" />
                 Enviar pelo WhatsApp

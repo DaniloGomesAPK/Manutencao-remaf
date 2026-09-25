@@ -48,13 +48,14 @@ import { AuthService } from './services/AuthService';
 import { getFriendlyErrorMessage } from './utils/errorUtils';
 import { safeStorage } from './utils/safeStorage';
 
+import OSFormStep1 from './components/OSFormStep1';
+import OSFormStep2 from './components/OSFormStep2';
+import OSFormStep3 from './components/OSFormStep3';
+import OSFormStep4 from './components/OSFormStep4';
+import OSFormStep5 from './components/OSFormStep5';
+import PDFPreviewModal from './components/PDFPreviewModal';
+
 const OSDashboard = lazy(() => import('./components/OSDashboard'));
-const OSFormStep1 = lazy(() => import('./components/OSFormStep1'));
-const OSFormStep2 = lazy(() => import('./components/OSFormStep2'));
-const OSFormStep3 = lazy(() => import('./components/OSFormStep3'));
-const OSFormStep4 = lazy(() => import('./components/OSFormStep4'));
-const OSFormStep5 = lazy(() => import('./components/OSFormStep5'));
-const PDFPreviewModal = lazy(() => import('./components/PDFPreviewModal'));
 const MinhaEmpresa = lazy(() => import('./pages/MinhaEmpresa'));
 const CadastroClientes = lazy(() => import('./pages/CadastroClientes'));
 const CadastroEquipamentos = lazy(() => import('./pages/CadastroEquipamentos'));
@@ -82,7 +83,6 @@ export default function App() {
   const [loginError, setLoginError] = useState('');
   const [submittingLogin, setSubmittingLogin] = useState(false);
   const [showPlansInApp, setShowPlansInApp] = useState(false);
-  const [usuarioPendenteVerificacao, setUsuarioPendenteVerificacao] = useState<any>(null);
 
   // Esqueci a Senha States
   const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -159,6 +159,7 @@ export default function App() {
   // PDF Modal states
   const [activeReport, setActiveReport] = useState<OrdemDeServico | null>(null);
   const [activePDFDataURI, setActivePDFDataURI] = useState<string>('');
+  const [activePDFBlob, setActivePDFBlob] = useState<Blob | null>(null);
   const [showPDFPreview, setShowPDFPreview] = useState(false);
   const activePdfUrlRef = useRef<string>('');
 
@@ -177,6 +178,7 @@ export default function App() {
       activePdfUrlRef.current = '';
     }
     setActivePDFDataURI('');
+    setActivePDFBlob(null);
   };
 
   useEffect(() => {
@@ -310,24 +312,7 @@ export default function App() {
     try {
       await auth?.login(loginEmail.trim().toLowerCase(), loginPassword);
     } catch (err: any) {
-      if (err?.code === 'EMAIL_NOT_VERIFIED' || err?.message?.includes('EMAIL_NOT_VERIFIED')) {
-        setUsuarioPendenteVerificacao(err.user || null);
-        setSaasView('trial');
-        return;
-      }
       setLoginError(getFriendlyErrorMessage(err, 'E-mail ou senha inválidos. Por favor, tente novamente.'));
-    } finally {
-      setSubmittingLogin(false);
-    }
-  };
-
-  const handleSaaSGoogleLogin = async () => {
-    setSubmittingLogin(true);
-    setLoginError('');
-    try {
-      await auth?.loginWithGoogle();
-    } catch (err: any) {
-      setLoginError(getFriendlyErrorMessage(err, 'Falha ao autenticar com o Google.'));
     } finally {
       setSubmittingLogin(false);
     }
@@ -526,9 +511,16 @@ export default function App() {
   const handleViewPDF = async (os: OrdemDeServico) => {
     try {
       const pdfBlob = await generateOSReportPDF(os);
-      const blobUrl = URL.createObjectURL(pdfBlob);
+      const isIOS = typeof window !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent || '') || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent || '')));
+
       setActiveReport(os);
-      setPdfPreviewUrl(blobUrl);
+      setActivePDFBlob(pdfBlob);
+      if (!isIOS) {
+        const blobUrl = URL.createObjectURL(pdfBlob);
+        setPdfPreviewUrl(blobUrl);
+      } else {
+        setActivePDFDataURI('');
+      }
       setShowPDFPreview(true);
     } catch (err) {
       console.error("Failed to compile pdf preview:", err);
@@ -714,7 +706,7 @@ export default function App() {
       // 3. Somente após o salvamento confirmado, gerar o PDF
       try {
         const pdfBlob = await generateOSReportPDF(savedDraft);
-        const blobUrl = URL.createObjectURL(pdfBlob);
+        const isIOS = typeof window !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent || '') || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent || '')));
 
         // Tenta salvar hosted PDF se aplicável
         try {
@@ -730,7 +722,13 @@ export default function App() {
 
         // Exibe pré-visualização do PDF
         setActiveReport(savedDraft);
-        setPdfPreviewUrl(blobUrl);
+        setActivePDFBlob(pdfBlob);
+        if (!isIOS) {
+          const blobUrl = URL.createObjectURL(pdfBlob);
+          setPdfPreviewUrl(blobUrl);
+        } else {
+          setActivePDFDataURI('');
+        }
         setShowPDFPreview(true);
       } catch (pdfErr) {
         console.error("Failed to generate draft PDF after saving:", pdfErr);
@@ -787,7 +785,7 @@ export default function App() {
       // 4. Somente após o salvamento retornar com sucesso, gerar o PDF usando preferencialmente o objeto retornado pelo salvamento
       try {
         const pdfBlob = await generateOSReportPDF(savedFull);
-        const blobUrl = URL.createObjectURL(pdfBlob);
+        const isIOS = typeof window !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent || '') || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent || '')));
 
         // Tenta persistir link do PDF se upload retornar URL
         try {
@@ -803,7 +801,13 @@ export default function App() {
 
         // Exibe prévia do PDF
         setActiveReport(savedFull);
-        setPdfPreviewUrl(blobUrl);
+        setActivePDFBlob(pdfBlob);
+        if (!isIOS) {
+          const blobUrl = URL.createObjectURL(pdfBlob);
+          setPdfPreviewUrl(blobUrl);
+        } else {
+          setActivePDFDataURI('');
+        }
         setShowPDFPreview(true);
       } catch (pdfErr) {
         console.error("Failed to generate PDF after saving OS:", pdfErr);
@@ -866,18 +870,20 @@ export default function App() {
     if (saasView === 'trial') {
       return (
         <TrialRegistrationScreen
-          usuarioPendenteVerificacao={usuarioPendenteVerificacao}
           onBack={() => {
-            setUsuarioPendenteVerificacao(null);
             setSaasView('welcome');
           }}
-          onOpenLogin={() => {
-            setUsuarioPendenteVerificacao(null);
+          onOpenLogin={(emailPreenchido?: string) => {
+            if (emailPreenchido) {
+              setLoginEmail(emailPreenchido);
+            }
+            setLoginPassword('');
+            setLoginError('');
+            setShowForgotPassword(false);
             setAuthMode('login');
             setSaasView('login');
           }}
           onAccessGranted={async (grantedEmpresaId?: string, grantedUsuario?: any) => {
-            setUsuarioPendenteVerificacao(null);
             if (grantedUsuario && grantedUsuario.empresaId) {
               await auth?.updateUser(grantedUsuario);
             } else {
@@ -890,7 +896,6 @@ export default function App() {
             }
           }}
           onTrialExpired={() => {
-            setUsuarioPendenteVerificacao(null);
             setSaasView('plans');
           }}
         />
@@ -1036,29 +1041,8 @@ export default function App() {
                   </form>
                 </div>
               ) : (
-                /* Form de Login / Cadastro Padrao */
+                /* Form de Login E-mail e Senha */
                 <>
-                  {/* Google Login button - Primary (at the top) */}
-                  <button
-                    id="btn-login-google"
-                    type="button"
-                    onClick={handleSaaSGoogleLogin}
-                    disabled={submittingLogin}
-                    className="w-full border-2 border-slate-200 text-slate-700 bg-white rounded-xl py-3.5 px-6 font-bold tracking-widest text-[10px] uppercase hover:bg-slate-50 hover:border-slate-350 active:scale-98 transition duration-200 cursor-pointer flex items-center justify-center gap-2"
-                  >
-                    <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                      <path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.137 4.114a5.99 5.99 0 0 1-6-6c0-3.314 2.686-6 6-6 1.457 0 2.783.514 3.823 1.371l3.051-3.052A9.957 9.957 0 0 0 12.24 2c-5.523 0-10 4.477-10 10s4.477 10 10 10c5.523 0 10-4.477 10-10 0-.685-.068-1.354-.188-1.996L12.24 10.285z"/>
-                    </svg>
-                    <span>Entrar com o Google</span>
-                  </button>
-
-                  {/* Divider */}
-                  <div className="relative flex items-center py-1">
-                    <div className="flex-grow border-t border-slate-200"></div>
-                    <span className="flex-shrink mx-4 text-[9px] font-black text-slate-400 tracking-wider uppercase">ou</span>
-                    <div className="flex-grow border-t border-slate-200"></div>
-                  </div>
-
                   {/* Email & Password Form */}
                   <form onSubmit={handleSaaSLogin} className="space-y-4">
                     {loginError && (
@@ -1940,7 +1924,12 @@ export default function App() {
                   onBack={() => setActiveSubView('dashboard')}
                   onViewCustomPDF={(pseudoOS, pdfUriString) => {
                     setActiveReport(pseudoOS);
-                    setPdfPreviewUrl(pdfUriString);
+                    const isIOS = typeof window !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent || '') || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent || '')));
+                    if (!isIOS) {
+                      setPdfPreviewUrl(pdfUriString);
+                    } else {
+                      setActivePDFDataURI('');
+                    }
                     setShowPDFPreview(true);
                   }}
                 />
@@ -2044,6 +2033,7 @@ export default function App() {
           <PDFPreviewModal
             os={activeReport}
             pdfDataUri={activePDFDataURI}
+            pdfBlob={activePDFBlob}
             onClose={handleClosePDFPreview}
           />
         </Suspense>

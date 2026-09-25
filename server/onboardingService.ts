@@ -89,17 +89,9 @@ export async function handleTrialOnboarding(
     throw new Error('O token de autenticação não possui endereço de e-mail associado.');
   }
 
-  console.log(`[ONBOARDING] token validado (UID: ${uid})`);
+  console.log(`[ONBOARDING] token validado (UID: ${uid}, E-mail: ${userEmail})`);
 
-  // 2. Validação obrigatória de segurança: e-mail deve estar verificado no Firebase Auth
-  if (decodedToken.email_verified !== true) {
-    console.warn(`[ONBOARDING ERROR] etapa: validacao_email, code: EMAIL_NOT_VERIFIED, message: E-mail ${userEmail} não confirmado no Firebase Auth.`);
-    throw new Error('EMAIL_NAO_VERIFICADO: É necessário confirmar seu endereço de e-mail antes de ativar o período de avaliação.');
-  }
-
-  console.log(`[ONBOARDING] email verified: ${userEmail}`);
-
-  // 3. Sanitização de dados cadastrais
+  // 2. Sanitização de dados cadastrais
   const nomeResponsavelSanitizado = sanitizeString(rawPayload.nomeResponsavel, 120);
   const nomeEmpresaSanitizado = sanitizeString(rawPayload.nomeEmpresa, 120);
   const perfilEmpresaSanitizado = sanitizeString(rawPayload.perfilEmpresa, 60);

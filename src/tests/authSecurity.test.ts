@@ -79,20 +79,20 @@ export async function runAuthSecurityTests() {
     }
   }
 
-  // Teste 5: Garantir que usuário com emailVerified = false não execute processUserSession nem gere TenantIsolationViolation
+  // Teste 5: Garantir que usuário sem vínculo de empresa (TENANT_NOT_READY) não conclua processUserSession
   try {
-    const mockUnverifiedUser: any = {
-      uid: 'user_unverified_123',
-      email: 'pendente@empresa.com',
+    const mockIncompleteUser: any = {
+      uid: 'user_incomplete_123',
+      email: 'incompleto_sem_tenant@empresa.com',
       emailVerified: false,
     };
-    await AuthService.processUserSession(mockUnverifiedUser);
-    logFail('Bloqueio de emailVerified = false', 'Deveria ter lançado EMAIL_NOT_VERIFIED.');
+    await AuthService.processUserSession(mockIncompleteUser);
+    logFail('Bloqueio de usuário sem empresaId no processUserSession', 'Deveria ter lançado TENANT_NOT_READY.');
   } catch (e: any) {
-    if (e.code === 'EMAIL_NOT_VERIFIED' || e.message === 'EMAIL_NOT_VERIFIED') {
-      logPass('Bloqueio de emailVerified = false impede processUserSession e isola tenant');
+    if (e.message === 'TENANT_NOT_READY' || e.message?.includes('TENANT_NOT_READY')) {
+      logPass('processUserSession exige empresaId válido antes de criar sessão');
     } else {
-      logFail('Bloqueio de emailVerified = false', `Erro inesperado: ${e.message}`);
+      logFail('Bloqueio de usuário sem empresaId no processUserSession', `Erro inesperado: ${e.message}`);
     }
   }
 

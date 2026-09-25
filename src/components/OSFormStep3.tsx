@@ -238,7 +238,12 @@ export default function OSFormStep3({ initialData, onNext, onBack, onCancel, onS
     }
 
     // Validate empty line fields
-    const hasIncomplete = items.some(item => !item.descricao.trim() || item.quantidade <= 0 || item.valorUnitario < 0);
+    const hasIncomplete = items.some(
+      item =>
+        !item.descricao.trim() ||
+        item.quantidade <= 0 ||
+        !Number.isFinite(item.valorUnitario)
+    );
     if (hasIncomplete) {
       setOrcamentoError('Por favor, certifique-se de que todos os itens possuem descrição válida, quantidade maior que 0 e preço válido.');
       setOrcamentoFinalizado(false);
@@ -623,7 +628,6 @@ export default function OSFormStep3({ initialData, onNext, onBack, onCancel, onS
                       <label className="sm:hidden block text-[9px] font-black text-slate-400 uppercase mb-1 text-left">Valor Unitário (R$)</label>
                       <input
                         type="number"
-                        min="0"
                         step="0.01"
                         required
                         value={item.valorUnitario === 0 ? '' : item.valorUnitario}

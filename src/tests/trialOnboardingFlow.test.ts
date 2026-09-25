@@ -22,7 +22,7 @@ export async function runTrialOnboardingFlowTests() {
     }
   }
 
-  // 1. Teste: Novo usuário + e-mail confirmado -> 7 dias liberados com status "trial"
+  // 1. Teste: Novo usuário (sem exigir confirmação de e-mail) -> 7 dias liberados com status "trial"
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
   const novoTrialDoc: EmailAutorizado = {
@@ -44,7 +44,7 @@ export async function runTrialOnboardingFlowTests() {
 
   assert(
     valNovoTrial.isValid && valNovoTrial.status === 'trial' && tempoNovoTrial.dias >= 6 && !tempoNovoTrial.expirou,
-    '1. Novo usuário com e-mail confirmado -> 7 dias liberados e válido no LicenseService'
+    '1. Novo usuário com onboarding imediato -> 7 dias liberados e válido no LicenseService'
   );
 
   // 2. Teste: Documento com status ausente (antigo bug) -> tratado como pending pelo LicenseService
@@ -64,7 +64,7 @@ export async function runTrialOnboardingFlowTests() {
     '2. Documento com status ausente vira "pending" no mapper (exigindo que o backend sempre grave status: "trial")'
   );
 
-  // 3. Teste: Usuário verificado com Firestore incompleto recuperado
+  // 3. Teste: Usuário com Firestore incompleto recuperado no login
   // O backend grava todos os campos requeridos
   const docRecuperado: EmailAutorizado = {
     email: 'usuario_incompleto@oficina.com',
@@ -81,7 +81,7 @@ export async function runTrialOnboardingFlowTests() {
   const valRecuperado = LicenseService.validarLicenca(docRecuperado);
   assert(
     valRecuperado.isValid && valRecuperado.status === 'trial',
-    '3. Usuário verificado com Firestore incompleto -> onboarding recuperado com status "trial"'
+    '3. Usuário com Firestore incompleto -> onboarding recuperado automaticamente com status "trial"'
   );
 
   // 4. Teste: Recovery repetido (idempotência) -> preserva datas originais sem estender 7 dias
