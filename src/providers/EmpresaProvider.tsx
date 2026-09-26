@@ -79,7 +79,7 @@ export const EmpresaProvider: React.FC<EmpresaProviderProps> = ({ children }) =>
   const saveEmpresa = async (data: Empresa): Promise<Empresa> => {
     setIsLoadingEmpresa(true);
     try {
-      const updated = await EmpresaService.saveEmpresa(data);
+      const updated = await EmpresaService.saveEmpresa(data, auth?.currentUser?.email);
       setEmpresa(updated);
       return updated;
     } finally {

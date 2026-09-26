@@ -9,6 +9,7 @@ import { Empresa } from '../models/Empresa';
 import { Usuario } from '../models/Usuario';
 import { FirestoreRepository } from './FirestoreRepository';
 import { IntegridadeService } from './IntegridadeService';
+import { compressImage } from '../utils/imageCompressor';
 
 export const EmpresaService = {
   /**
@@ -27,9 +28,29 @@ export const EmpresaService = {
    */
   async saveEmpresa(empresaData: Empresa, userEmail?: string): Promise<Empresa> {
     const timestamp = new Date().toISOString();
+    let logomarcaFinal: string | null = empresaData.logomarca ?? null;
+
+    if (
+      typeof logomarcaFinal === 'string' &&
+      logomarcaFinal.startsWith('data:image/') &&
+      logomarcaFinal.length > 270000 &&
+      typeof document !== 'undefined'
+    ) {
+      try {
+        let compressed = await compressImage(logomarcaFinal, 0.7, 512);
+        if (compressed.compressedSizeKB > 200) {
+          compressed = await compressImage(logomarcaFinal, 0.55, 400);
+        }
+        logomarcaFinal = compressed.dataUrl;
+      } catch (compressError) {
+        console.error('[EmpresaService] Falha ao recomprimir logomarca existente; mantendo imagem original para validação de limite:', compressError);
+      }
+    }
+
     const company: Empresa = {
       ...empresaData,
       id: empresaData.id,
+      logomarca: logomarcaFinal,
       createdAt: empresaData.createdAt || timestamp,
       updatedAt: timestamp,
     };

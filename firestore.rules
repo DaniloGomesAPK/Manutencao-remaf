@@ -32,6 +32,12 @@ service cloud.firestore {
         && hasActiveAccess();
     }
 
+    function isValidCompanyLogo(data) {
+      return !('logomarca' in data)
+        || data.logomarca == null
+        || (data.logomarca is string && data.logomarca.size() <= 360000);
+    }
+
     // =========================================================================
     // 1. COLEÇÃO: USERS (PERFIL E VÍNCULO DE TENANT)
     // =========================================================================
@@ -269,11 +275,13 @@ service cloud.firestore {
       match /company_profile/{docId} {
         allow get, list: if isTenantMember(empresaId);
         allow create: if isTenantMember(empresaId)
-          && request.resource.data.empresaId == empresaId;
+          && request.resource.data.empresaId == empresaId
+          && isValidCompanyLogo(request.resource.data);
         allow update: if isTenantMember(empresaId)
           && resource.data.empresaId == empresaId
           && request.resource.data.empresaId == empresaId
-          && (request.resource.data.id == resource.data.id || request.resource.data.id == docId);
+          && (request.resource.data.id == resource.data.id || request.resource.data.id == docId)
+          && isValidCompanyLogo(request.resource.data);
         allow delete: if isTenantMember(empresaId)
           && resource.data.empresaId == empresaId;
       }
@@ -427,12 +435,13 @@ service cloud.firestore {
 
     match /company_profile/{docId} {
       allow get, list: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
-      allow create: if isAuthenticated() && request.resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
+      allow create: if isAuthenticated() && request.resource.data.empresaId == getUserEmpresaId() && hasActiveAccess() && isValidCompanyLogo(request.resource.data);
       allow update: if isAuthenticated() 
         && resource.data.empresaId == getUserEmpresaId()
         && request.resource.data.empresaId == resource.data.empresaId
         && (request.resource.data.id == resource.data.id || request.resource.data.id == docId)
-        && hasActiveAccess();
+        && hasActiveAccess()
+        && isValidCompanyLogo(request.resource.data);
       allow delete: if isAuthenticated() && resource.data.empresaId == getUserEmpresaId() && hasActiveAccess();
     }
 

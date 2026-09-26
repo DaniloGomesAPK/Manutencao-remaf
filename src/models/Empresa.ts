@@ -34,7 +34,7 @@ export interface Empresa {
   email: string;
   site?: string;
   slogan?: string;
-  logomarca?: string;       // base64 representation of the logo
+  logomarca?: string | null; // base64 representation of the logo
   
   perfilEmpresa?: string;   // Ex: 'Oficina Mecânica', 'Lava Jato', etc.
   configuracaoInicialConcluida?: boolean; // Flag de conclusão do assistente inicial

@@ -131,8 +131,9 @@ export function sanitizeForFirestore(obj: any): any {
 /**
  * Remove campos binários/base64 de grande porte (fotos, assinaturas, PDFs) do payload
  * enviado para a nuvem para economizar banda e otimizar limites do Firestore.
+ * A logomarca é preservada exclusivamente quando a coleção for 'company_profile'.
  */
-export function stripHeavyFields(item: any): DocumentData {
+export function stripHeavyFields(item: any, colecao?: string): DocumentData {
   if (!item || typeof item !== 'object') return item;
   const clone = { ...item };
 
@@ -142,8 +143,19 @@ export function stripHeavyFields(item: any): DocumentData {
   delete clone.pdfBase64;
   delete clone.assinaturaTecnico;
   delete clone.assinaturaCliente;
-  delete clone.logomarca;
   delete clone.anexos;
+
+  if (colecao === 'company_profile') {
+    if (clone.logomarca === undefined) {
+      delete clone.logomarca;
+    } else if (typeof clone.logomarca === 'string' && clone.logomarca.length > 360000) {
+      throw new Error(
+        'A logomarca ultrapassa o tamanho máximo permitido. Selecione uma imagem menor.'
+      );
+    }
+  } else {
+    delete clone.logomarca;
+  }
 
   return sanitizeForFirestore(clone);
 }
@@ -185,6 +197,9 @@ export const FirestoreRepository = {
       ultimaSincronizacao: data.ultimaSincronizacao || null,
     };
 
+    // Prepara e valida o payload do Firestore (interrompe antes de salvar caso company_profile tenha logomarca acima do limite)
+    const lightData = stripHeavyFields(recordWithMeta, colecao);
+
     unmarkAsDeletedLocally(colecao, docId, tenantId);
 
     // 1. Grava no cache local primeiro (IndexedDB / LocalStorage)
@@ -195,7 +210,6 @@ export const FirestoreRepository = {
       try {
         const collectionPath = getTenantCollectionPath(colecao, tenantId, 'add');
         const docRef = doc(db, collectionPath, docId);
-        const lightData = stripHeavyFields(recordWithMeta);
 
         lightData.sincronizado = true;
         lightData.ultimaSincronizacao = timestamp;
@@ -250,13 +264,15 @@ export const FirestoreRepository = {
       sincronizado: false,
     };
 
+    // Prepara e valida o payload do Firestore (interrompe antes de salvar caso company_profile tenha logomarca acima do limite)
+    const lightData = stripHeavyFields(updatedDoc, colecao);
+
     await saveLocalStoreItem(colecao, updatedDoc);
 
     if (this.isOnline()) {
       try {
         const collectionPath = getTenantCollectionPath(colecao, validTenantId, 'update');
         const docRef = doc(db, collectionPath, docId);
-        const lightData = stripHeavyFields(updatedDoc);
 
         lightData.sincronizado = true;
         lightData.ultimaSincronizacao = timestamp;
@@ -697,7 +713,7 @@ export const FirestoreRepository = {
             const itemTenantId = validateEmpresaId(item.empresaId || validTenantId, 'syncPendingItem', storeName, userEmail);
             const collectionPath = getTenantCollectionPath(storeName, itemTenantId, 'syncPendingRecords');
             const docRef = doc(db, collectionPath, item.id);
-            const lightData = stripHeavyFields(item);
+            const lightData = stripHeavyFields(item, storeName);
 
             lightData.sincronizado = true;
             lightData.ultimaSincronizacao = now;

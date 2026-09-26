@@ -66,7 +66,7 @@ export default function MinhaEmpresa({ onBack }: MinhaEmpresaProps) {
   const [email, setEmail] = useState('');
   const [site, setSite] = useState('');
   const [slogan, setSlogan] = useState('');
-  const [logomarca, setLogomarca] = useState<string | undefined>(undefined);
+  const [logomarca, setLogomarca] = useState<string | null>(null);
   
   // Tax configuration states
   const [regimeTributario, setRegimeTributario] = useState('Simples Nacional');
@@ -110,7 +110,7 @@ export default function MinhaEmpresa({ onBack }: MinhaEmpresaProps) {
       setEmail(company.email || '');
       setSite(company.site || '');
       setSlogan(company.slogan || '');
-      setLogomarca(company.logomarca);
+      setLogomarca(company.logomarca ?? null);
       setRegimeTributario(company.regimeTributario || 'Simples Nacional');
       setAliquotaImposto(company.aliquotaImposto !== undefined ? company.aliquotaImposto.toString() : '6.00');
       setFotosAntesDepois(company.configuracoes?.recursos?.fotosAntesDepois ?? false);
@@ -202,7 +202,7 @@ export default function MinhaEmpresa({ onBack }: MinhaEmpresaProps) {
       email: email.trim().toLowerCase(),
       site: site.trim() || undefined,
       slogan: slogan.trim() || undefined,
-      logomarca: logomarca,
+      logomarca: logomarca ?? null,
       regimeTributario: regimeTributario,
       aliquotaImposto: Number(aliquotaImposto) || 0,
       configuracoes: {
@@ -230,9 +230,9 @@ export default function MinhaEmpresa({ onBack }: MinhaEmpresaProps) {
       if (empresaCtx) {
         await empresaCtx.saveEmpresa(empresaData);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Falha ao salvar dados:', err);
-      alert('Erro ao gravar dados no banco offline.');
+      alert(err instanceof Error && err.message ? err.message : 'Erro ao gravar dados no banco offline.');
       setSaving(false);
       return;
     }

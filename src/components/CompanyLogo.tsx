@@ -8,8 +8,8 @@ import { Camera, Image as ImageIcon, Trash2, RefreshCw } from 'lucide-react';
 import { compressImage } from '../utils/imageCompressor';
 
 interface CompanyLogoProps {
-  logo?: string;
-  onChange: (logo: string | undefined) => void;
+  logo?: string | null;
+  onChange: (logo: string | null) => void;
 }
 
 export default function CompanyLogo({ logo, onChange }: CompanyLogoProps) {
@@ -25,8 +25,19 @@ export default function CompanyLogo({ logo, onChange }: CompanyLogoProps) {
 
     try {
       const file = files[0];
-      // Auto compress logo using our browser canvas-based compressor
-      const result = await compressImage(file, 0.75);
+      // Compress logo to at most 512x512 in WebP, keeping final size well below 200-250 KB
+      let result = await compressImage(file, 0.75, 512);
+
+      if (result.compressedSizeKB > 200) {
+        result = await compressImage(file, 0.6, 512);
+      }
+      if (result.compressedSizeKB > 200) {
+        result = await compressImage(file, 0.5, 400);
+      }
+      if (result.compressedSizeKB > 250) {
+        alert("A logomarca selecionada excede o limite de 250 KB mesmo após compressão. Por favor, escolha uma imagem mais leve.");
+        return;
+      }
       
       setSizes({
         original: result.originalSizeKB,
@@ -51,7 +62,7 @@ export default function CompanyLogo({ logo, onChange }: CompanyLogoProps) {
 
   const removeLogo = () => {
     if (confirm("Tem certeza de que deseja remover a logomarca da empresa?")) {
-      onChange(undefined);
+      onChange(null);
       setSizes(null);
     }
   };

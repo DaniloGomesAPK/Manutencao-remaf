@@ -52,7 +52,7 @@ export const InitialSetupWizard: React.FC<InitialSetupWizardProps> = ({ onComple
   const [telefone, setTelefone] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [email, setEmail] = useState('');
-  const [logomarca, setLogomarca] = useState<string | undefined>(undefined);
+  const [logomarca, setLogomarca] = useState<string | null>(null);
 
   // Pre-load from company object if available
   useEffect(() => {
@@ -71,7 +71,7 @@ export const InitialSetupWizard: React.FC<InitialSetupWizardProps> = ({ onComple
       setTelefone(company.telefone || company.whatsapp || '');
       setWhatsapp(company.whatsapp || company.telefone || '');
       setEmail(company.email || '');
-      setLogomarca(company.logomarca);
+      setLogomarca(company.logomarca ?? null);
     }
   }, [company]);
 
@@ -146,7 +146,7 @@ export const InitialSetupWizard: React.FC<InitialSetupWizardProps> = ({ onComple
         telefone: telefone.trim(),
         whatsapp: whatsapp.trim(),
         email: email.trim().toLowerCase(),
-        logomarca: logomarca,
+        logomarca: logomarca ?? null,
         perfilEmpresa: perfilEmpresa,
         configuracaoInicialConcluida: true, // Conclusão do assistente
         updatedAt: new Date().toISOString()
@@ -159,7 +159,7 @@ export const InitialSetupWizard: React.FC<InitialSetupWizardProps> = ({ onComple
       }
     } catch (err: any) {
       console.error('[InitialSetupWizard] Erro ao salvar dados:', err);
-      setErro('Falha ao concluir configuração. Tente novamente.');
+      setErro(err instanceof Error && err.message ? err.message : 'Falha ao concluir configuração. Tente novamente.');
     } finally {
       setSaving(false);
     }
