@@ -223,66 +223,77 @@ export default function PDFPreviewModal({ os, pdfDataUri, pdfBlob, onClose }: PD
     }
 
     const filename = getPDFFilename(os);
-    const encodedFilename = encodeURIComponent(filename);
-    const downloadPath = `/pdf-download/${encodedFilename}`;
-    const downloadUrl = window.location.origin + downloadPath;
 
-    // 1. Save Blob in Cache Storage with domain HTTPS URL and trigger standard download
-    if (typeof window !== 'undefined' && 'caches' in window) {
-      try {
-        const cache = await caches.open('dg-gestao-pdf-cache');
-        const responseToCache = new Response(activeBlob, {
-          headers: {
-            'Content-Type': 'application/pdf',
-            'Content-Disposition': `attachment; filename="${encodedFilename}"`,
-            'Content-Length': activeBlob.size.toString(),
-          },
-        });
-
-        // Cache for both absolute URL and relative path
-        await cache.put(downloadUrl, responseToCache.clone());
-        await cache.put(downloadPath, responseToCache);
-
-        // Initiate download using HTTPS URL of the domain
-        const link = document.createElement('a');
-        link.href = downloadPath;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-
-        setShareSuccess('Download do PDF iniciado!');
-
-        setTimeout(() => {
-          if (document.body.contains(link)) {
-            document.body.removeChild(link);
-          }
-        }, 150);
-        return;
-      } catch (cacheErr) {
-        console.warn('Cache Storage download attempt failed:', cacheErr);
-      }
-    }
-
-    // Fallback: If Cache Storage is unavailable and navigator supports file sharing
-    if (typeof navigator !== 'undefined' && navigator.canShare) {
+    if (isIOS) {
       try {
         const file = new File([activeBlob], filename, { type: 'application/pdf' });
-        if (navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            files: [file],
-          });
+        if (typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file] });
+          setShareSuccess('PDF pronto para salvar ou compartilhar.');
+          setTimeout(() => setShareSuccess(null), 4000);
           return;
         }
       } catch (err: any) {
         if (err && (err.name === 'AbortError' || err.code === 20)) {
           return;
         }
+        console.warn('Falha no compartilhamento nativo no iOS:', err);
+      }
+
+      try {
+        const objectUrl = URL.createObjectURL(activeBlob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
+        setShareSuccess('PDF pronto para salvar ou compartilhar.');
+        setTimeout(() => setShareSuccess(null), 4000);
+      } catch (iosFallbackErr) {
+        console.error('Erro ao abrir PDF no iOS:', iosFallbackErr);
+        setShareSuccess('Não foi possível abrir o PDF neste dispositivo.');
+      }
+      return;
+    }
+
+    try {
+      const objectUrl = URL.createObjectURL(activeBlob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setShareSuccess('Download do PDF iniciado!');
+      setTimeout(() => setShareSuccess(null), 4000);
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
+      return;
+    } catch (downloadErr) {
+      console.warn('Falha no download direto via ObjectURL, tentando fallback:', downloadErr);
+    }
+
+    if (typeof navigator !== 'undefined' && navigator.canShare) {
+      try {
+        const file = new File([activeBlob], filename, { type: 'application/pdf' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file] });
+          setShareSuccess('PDF pronto para salvar ou compartilhar.');
+          setTimeout(() => setShareSuccess(null), 4000);
+          return;
+        }
+      } catch (err: any) {
+        if (err && (err.name === 'AbortError' || err.code === 20)) {
+          return;
+        }
+        console.error('Falha no fallback de compartilhamento de arquivo:', err);
       }
     }
 
-    if (isIOS) {
-      setShareSuccess('Não foi possível iniciar o download direto no dispositivo.');
-    }
+    setShareSuccess('Não foi possível concluir o download do PDF.');
   };
 
   return (
