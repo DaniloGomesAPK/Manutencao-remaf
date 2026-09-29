@@ -97,23 +97,7 @@ export async function handleTrialOnboarding(
   const perfilEmpresaSanitizado = sanitizeString(rawPayload.perfilEmpresa, 60);
   const whatsappSanitizado = sanitizeString(rawPayload.whatsapp, 30);
 
-  const nomeFinal =
-    nomeResponsavelSanitizado ||
-    decodedToken.name ||
-    userEmail.split('@')[0] ||
-    'Administrador';
-
-  const nomeEmpresaFinal =
-    nomeEmpresaSanitizado ||
-    'Minha Empresa';
-
-  const perfilEmpresaFinal =
-    perfilEmpresaSanitizado ||
-    'mecanica_pesada';
-
-  const whatsappFinal = whatsappSanitizado;
-
-  // 4. Consulta de estado existente no Firestore (users, emailsAutorizados, empresas)
+  // 4. Consulta de estado existente no Firestore (users, emailsAutorizados, empresas, company_profile)
   const userRef = db.collection('users').doc(uid);
   const userDoc = await userRef.get();
 
@@ -133,6 +117,57 @@ export async function handleTrialOnboarding(
 
   const empresaRef = db.collection('empresas').doc(empresaId);
   const empresaDoc = await empresaRef.get();
+
+  const companyProfileRef = db
+    .collection('empresas')
+    .doc(empresaId)
+    .collection('company_profile')
+    .doc(empresaId);
+  const companyProfileDoc = await companyProfileRef.get();
+
+  const existingUserData = userDoc.exists ? userDoc.data() : null;
+  const existingEmpData = empresaDoc.exists ? empresaDoc.data() : null;
+  const existingProfileData = companyProfileDoc.exists ? companyProfileDoc.data() : null;
+
+  // Preserva primeiro os dados já existentes no Firestore sem sobrescrever perfilEmpresa existente
+  const existingFirestorePerfil =
+    [existingProfileData?.perfilEmpresa, existingEmpData?.perfilEmpresa, existingUserData?.perfilEmpresa]
+      .find((p) => typeof p === 'string' && p.trim() !== '' && p.trim() !== 'mecanica_pesada') || '';
+
+  const existingFirestoreNomeEmpresa =
+    [
+      existingProfileData?.nomeFantasia,
+      existingProfileData?.nomeEmpresa,
+      existingEmpData?.nomeEmpresa,
+      existingEmpData?.nome,
+    ].find((n) => typeof n === 'string' && n.trim() !== '' && n.trim() !== 'Minha Empresa') || '';
+
+  const nomeFinal =
+    existingUserData?.nome ||
+    existingProfileData?.nomeResponsavel ||
+    nomeResponsavelSanitizado ||
+    decodedToken.name ||
+    userEmail.split('@')[0] ||
+    'Administrador';
+
+  const nomeEmpresaFinal =
+    existingFirestoreNomeEmpresa ||
+    (nomeEmpresaSanitizado && nomeEmpresaSanitizado !== 'Minha Empresa' ? nomeEmpresaSanitizado : '') ||
+    existingProfileData?.nomeFantasia ||
+    existingEmpData?.nome ||
+    nomeEmpresaSanitizado ||
+    'Minha Empresa';
+
+  const perfilEmpresaFinal =
+    existingFirestorePerfil ||
+    (perfilEmpresaSanitizado && perfilEmpresaSanitizado !== 'mecanica_pesada' ? perfilEmpresaSanitizado : '') ||
+    'Autônomo';
+
+  const whatsappFinal =
+    existingUserData?.whatsapp ||
+    existingProfileData?.whatsapp ||
+    existingEmpData?.telefone ||
+    whatsappSanitizado;
 
   // 4.1. Verificação de Bloqueios Administrativos
   const isUserBlocked = userDoc.exists && (
@@ -293,7 +328,7 @@ export async function handleTrialOnboarding(
         whatsapp: whatsappFinal || userData?.whatsapp || '',
         role: 'admin',
         empresaId: empresaId,
-        perfilEmpresa: perfilEmpresaFinal || userData?.perfilEmpresa || 'mecanica_pesada',
+        perfilEmpresa: perfilEmpresaFinal,
         trialAtivo: true,
         dataExpiracaoTrial: trialExpiresAtIso,
         accessUntil: accessUntilTimestamp,
@@ -313,10 +348,10 @@ export async function handleTrialOnboarding(
       {
         id: empresaId,
         ownerUid: uid,
-        nome: nomeEmpresaFinal || empData?.nome || 'Minha Empresa',
+        nome: nomeEmpresaFinal,
         emailContato: userEmail,
         telefone: whatsappFinal || empData?.telefone || '',
-        perfilEmpresa: perfilEmpresaFinal || empData?.perfilEmpresa || 'mecanica_pesada',
+        perfilEmpresa: perfilEmpresaFinal,
         trialAtivo: true,
         status: 'trial',
         dataCriacao: trialInicioIso,
@@ -357,29 +392,23 @@ export async function handleTrialOnboarding(
     );
 
     // Sincroniza company_profile/{empresaId}
-    const companyProfileRef = db
-      .collection('empresas')
-      .doc(empresaId)
-      .collection('company_profile')
-      .doc(empresaId);
-
     batch.set(
       companyProfileRef,
       {
         id: empresaId,
         empresaId: empresaId,
-        nomeFantasia: nomeEmpresaFinal || empData?.nome || 'Minha Empresa',
-        razaoSocial: nomeEmpresaFinal || empData?.nome || 'Minha Empresa',
-        nomeEmpresa: nomeEmpresaFinal || empData?.nome || 'Minha Empresa',
-        perfilEmpresa: perfilEmpresaFinal || 'mecanica_pesada',
+        nomeFantasia: existingProfileData?.nomeFantasia || nomeEmpresaFinal,
+        razaoSocial: existingProfileData?.razaoSocial || nomeEmpresaFinal,
+        nomeEmpresa: existingProfileData?.nomeEmpresa || nomeEmpresaFinal,
+        perfilEmpresa: perfilEmpresaFinal,
         nomeResponsavel: nomeFinal,
         whatsapp: whatsappFinal,
-        telefone: whatsappFinal,
-        email: userEmail,
+        telefone: existingProfileData?.telefone || whatsappFinal,
+        email: existingProfileData?.email || userEmail,
         trialAtivo: true,
         dataExpiracaoTrial: trialExpiresAtIso,
         accessUntil: accessUntilTimestamp,
-        createdAt: trialInicioIso,
+        createdAt: existingProfileData?.createdAt || trialInicioIso,
         updatedAt: nowIso,
       },
       { merge: true }
@@ -489,29 +518,23 @@ export async function handleTrialOnboarding(
   );
 
   // 5.4. company_profile/{empresaId}
-  const companyProfileRef = db
-    .collection('empresas')
-    .doc(empresaId)
-    .collection('company_profile')
-    .doc(empresaId);
-
   batch.set(
     companyProfileRef,
     {
       id: empresaId,
       empresaId: empresaId,
-      nomeFantasia: nomeEmpresaFinal,
-      razaoSocial: nomeEmpresaFinal,
-      nomeEmpresa: nomeEmpresaFinal,
+      nomeFantasia: existingProfileData?.nomeFantasia || nomeEmpresaFinal,
+      razaoSocial: existingProfileData?.razaoSocial || nomeEmpresaFinal,
+      nomeEmpresa: existingProfileData?.nomeEmpresa || nomeEmpresaFinal,
       perfilEmpresa: perfilEmpresaFinal,
       nomeResponsavel: nomeFinal,
       whatsapp: whatsappFinal,
-      telefone: whatsappFinal,
-      email: userEmail,
+      telefone: existingProfileData?.telefone || whatsappFinal,
+      email: existingProfileData?.email || userEmail,
       trialAtivo: true,
       dataExpiracaoTrial: expiresAtIso,
       accessUntil: accessUntilTimestamp,
-      createdAt: nowIso,
+      createdAt: existingProfileData?.createdAt || nowIso,
       updatedAt: nowIso,
     },
     { merge: true }

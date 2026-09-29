@@ -26,6 +26,7 @@ const PERFIS_MAP: Record<string, PerfilConfig> = {
   'oficina mecânica': oficinaMecanica,
   'oficina_mecanica': oficinaMecanica,
   'oficinamecanica': oficinaMecanica,
+  'mecanica_pesada': oficinaMecanica, // Valor legado mapeado para oficinaMecanica
 
   'lava jato': lavaJato,
   'lava_jato': lavaJato,

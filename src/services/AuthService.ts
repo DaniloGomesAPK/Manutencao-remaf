@@ -299,6 +299,11 @@ export const AuthService = {
     try {
       // Verifica se o onboarding no Firestore (users, empresa ou emailsAutorizados) está ausente/incompleto
       let needsRecovery = false;
+      let firestoreNomeResponsavel = '';
+      let firestoreNomeEmpresa = '';
+      let firestorePerfilEmpresa = '';
+      let firestoreWhatsapp = '';
+
       try {
         const emailDocRef = doc(db, 'emailsAutorizados', emailNormalizado);
         const emailSnap = await getDoc(emailDocRef);
@@ -306,22 +311,64 @@ export const AuthService = {
         const userDocRef = doc(db, 'users', fbUser.uid);
         const userSnap = await getDoc(userDocRef);
 
-        const resolvedEmpresaId = userSnap.exists()
+        if (userSnap.exists()) {
+          const uData = userSnap.data();
+          firestoreNomeResponsavel = uData?.nome || '';
+          if (uData?.perfilEmpresa && uData.perfilEmpresa !== 'mecanica_pesada') {
+            firestorePerfilEmpresa = uData.perfilEmpresa;
+          }
+          firestoreWhatsapp = uData?.whatsapp || '';
+        }
+
+        const resolvedEmpresaId = userSnap.exists() && userSnap.data()?.empresaId
           ? userSnap.data()?.empresaId
-          : (emailSnap.exists() ? emailSnap.data()?.empresaId : '');
+          : (emailSnap.exists() && emailSnap.data()?.empresaId ? emailSnap.data()?.empresaId : '');
+
+        const candidateEmpresaId = resolvedEmpresaId || `emp_${fbUser.uid.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+
+        try {
+          const empresaDocRef = doc(db, 'empresas', candidateEmpresaId);
+          const empresaSnap = await getDoc(empresaDocRef);
+          if (empresaSnap.exists()) {
+            const empData = empresaSnap.data();
+            firestoreNomeEmpresa = empData?.nomeEmpresa || empData?.nome || '';
+            if (!firestorePerfilEmpresa && empData?.perfilEmpresa && empData.perfilEmpresa !== 'mecanica_pesada') {
+              firestorePerfilEmpresa = empData.perfilEmpresa;
+            }
+            if (!firestoreWhatsapp) {
+              firestoreWhatsapp = empData?.whatsapp || empData?.telefone || '';
+            }
+          } else if (resolvedEmpresaId) {
+            needsRecovery = true;
+          }
+        } catch (_) {
+          if (resolvedEmpresaId) {
+            needsRecovery = true;
+          }
+        }
+
+        try {
+          const profileDocRef = doc(db, 'empresas', candidateEmpresaId, 'company_profile', candidateEmpresaId);
+          const profileSnap = await getDoc(profileDocRef);
+          if (profileSnap.exists()) {
+            const profData = profileSnap.data();
+            if (profData?.nomeFantasia || profData?.nomeEmpresa) {
+              firestoreNomeEmpresa = profData.nomeFantasia || profData.nomeEmpresa;
+            }
+            if (profData?.perfilEmpresa && profData.perfilEmpresa !== 'mecanica_pesada') {
+              firestorePerfilEmpresa = profData.perfilEmpresa;
+            }
+            if (!firestoreNomeResponsavel && profData?.nomeResponsavel) {
+              firestoreNomeResponsavel = profData.nomeResponsavel;
+            }
+            if (!firestoreWhatsapp && (profData?.whatsapp || profData?.telefone)) {
+              firestoreWhatsapp = profData.whatsapp || profData.telefone;
+            }
+          }
+        } catch (_) {}
 
         if (!emailSnap.exists() || !userSnap.exists() || !resolvedEmpresaId) {
           needsRecovery = true;
-        } else {
-          try {
-            const empresaDocRef = doc(db, 'empresas', resolvedEmpresaId);
-            const empresaSnap = await getDoc(empresaDocRef);
-            if (!empresaSnap.exists()) {
-              needsRecovery = true;
-            }
-          } catch (_) {
-            needsRecovery = true;
-          }
         }
       } catch (checkErr) {
         console.warn('[AuthService] Verificação de integridade de cadastro no login:', checkErr);
@@ -330,6 +377,54 @@ export const AuthService = {
 
       if (needsRecovery) {
         console.log('[AuthService] Onboarding incompleto detectado. Recuperando via backend seguro (/api/onboarding/trial)...');
+
+        // Recupera dados originalmente informados no frontend caso ainda estejam disponíveis
+        let pendingFrontend: {
+          email?: string;
+          nomeResponsavel?: string;
+          nomeEmpresa?: string;
+          perfilEmpresa?: string;
+          whatsapp?: string;
+        } | null = null;
+
+        try {
+          const rawPending = localStorage.getItem('remaf_pending_onboarding');
+          if (rawPending) {
+            const parsed = JSON.parse(rawPending);
+            if (!parsed?.email || parsed.email.trim().toLowerCase() === emailNormalizado) {
+              pendingFrontend = parsed;
+            }
+          }
+        } catch (_) {}
+
+        const storedPerfil = localStorage.getItem('perfilEmpresa');
+        const storedNomeEmpresa = localStorage.getItem('nomeEmpresa');
+
+        const nomeResponsavelRecuperado =
+          firestoreNomeResponsavel ||
+          pendingFrontend?.nomeResponsavel ||
+          fbUser.displayName ||
+          emailNormalizado.split('@')[0];
+
+        const nomeEmpresaRecuperado =
+          firestoreNomeEmpresa ||
+          pendingFrontend?.nomeEmpresa ||
+          storedNomeEmpresa ||
+          undefined;
+
+        const perfilEmpresaRecuperado =
+          firestorePerfilEmpresa ||
+          (pendingFrontend?.perfilEmpresa && pendingFrontend.perfilEmpresa !== 'mecanica_pesada'
+            ? pendingFrontend.perfilEmpresa
+            : '') ||
+          (storedPerfil && storedPerfil !== 'mecanica_pesada' ? storedPerfil : '') ||
+          undefined;
+
+        const whatsappRecuperado =
+          firestoreWhatsapp ||
+          pendingFrontend?.whatsapp ||
+          undefined;
+
         const idToken = await fbUser.getIdToken(true);
         const response = await fetch('/api/onboarding/trial', {
           method: 'POST',
@@ -338,9 +433,10 @@ export const AuthService = {
             'Authorization': `Bearer ${idToken}`
           },
           body: JSON.stringify({
-            nomeResponsavel: fbUser.displayName || emailNormalizado.split('@')[0],
-            nomeEmpresa: 'Minha Empresa',
-            perfilEmpresa: 'mecanica_pesada'
+            nomeResponsavel: nomeResponsavelRecuperado,
+            ...(nomeEmpresaRecuperado ? { nomeEmpresa: nomeEmpresaRecuperado } : {}),
+            ...(perfilEmpresaRecuperado ? { perfilEmpresa: perfilEmpresaRecuperado } : {}),
+            ...(whatsappRecuperado ? { whatsapp: whatsappRecuperado } : {}),
           })
         });
 
@@ -361,6 +457,12 @@ export const AuthService = {
         if (!recoverResult?.empresaId) {
           throw new Error('Vínculo empresarial não retornado pelo servidor de onboarding.');
         }
+
+        const recoveredPerfil = recoverResult?.usuario?.perfilEmpresa || perfilEmpresaRecuperado;
+        if (recoveredPerfil && recoveredPerfil !== 'mecanica_pesada') {
+          localStorage.setItem('perfilEmpresa', recoveredPerfil);
+        }
+        localStorage.removeItem('remaf_pending_onboarding');
       }
 
       const usuario = await this.processUserSession(fbUser);
@@ -425,6 +527,12 @@ export const AuthService = {
 
     const idToken = await fbUser.getIdToken(true);
 
+    const storedPerfil = localStorage.getItem('perfilEmpresa');
+    const perfilEscolhido =
+      storedPerfil && storedPerfil !== 'mecanica_pesada'
+        ? storedPerfil
+        : undefined;
+
     // 2. Criação do tenant e autorização de forma estritamente server-authoritative no backend
     const response = await fetch('/api/onboarding/trial', {
       method: 'POST',
@@ -435,7 +543,7 @@ export const AuthService = {
       body: JSON.stringify({
         nomeResponsavel: nomeDigitado,
         nomeEmpresa: oficinaDigitada,
-        perfilEmpresa: 'mecanica_pesada',
+        ...(perfilEscolhido ? { perfilEmpresa: perfilEscolhido } : {}),
       })
     });
 
@@ -494,7 +602,10 @@ export const AuthService = {
     localStorage.setItem('userRole', userRole);
     localStorage.setItem('trial_active', trialAtivo ? 'true' : 'false');
     localStorage.setItem('trial_expiration', dataExpiracaoTrial);
-    localStorage.setItem('perfilEmpresa', 'mecanica_pesada');
+    const perfilAtivo = serverResult.usuario?.perfilEmpresa || perfilEscolhido;
+    if (perfilAtivo && perfilAtivo !== 'mecanica_pesada') {
+      localStorage.setItem('perfilEmpresa', perfilAtivo);
+    }
 
     const uiCache: UserUICache = {
       nome: usuario.nome,

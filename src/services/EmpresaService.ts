@@ -83,7 +83,7 @@ export const EmpresaService = {
       return existing;
     }
 
-    let perfilEmpresa = 'Oficina Mecânica';
+    let perfilEmpresa = 'Autônomo';
     let nomeEmpresa = 'DG Gestão em Orçamentos';
     let whatsapp = '(11) 99999-9999';
 
@@ -92,9 +92,15 @@ export const EmpresaService = {
       const snap = await getDoc(empresaDocRef);
       if (snap.exists()) {
         const data = snap.data();
-        if (data.perfilEmpresa) perfilEmpresa = data.perfilEmpresa;
-        if (data.nomeEmpresa) nomeEmpresa = data.nomeEmpresa;
-        if (data.whatsapp) whatsapp = data.whatsapp;
+        if (data.perfilEmpresa && data.perfilEmpresa !== 'mecanica_pesada') {
+          perfilEmpresa = data.perfilEmpresa;
+        }
+        if (data.nomeEmpresa || data.nome) {
+          nomeEmpresa = data.nomeEmpresa || data.nome;
+        }
+        if (data.whatsapp || data.telefone) {
+          whatsapp = data.whatsapp || data.telefone;
+        }
       }
     } catch (_) {
       // Ignora erro de acesso direto se for offline

@@ -163,7 +163,11 @@ export async function confirmarEmailEAtivarTrial(
   localStorage.setItem('userRole', userRole);
   localStorage.setItem('trial_active', trialAtivo ? 'true' : 'false');
   localStorage.setItem('trial_expiration', dataExpiracaoTrial);
-  localStorage.setItem('perfilEmpresa', dadosCadastro.perfilEmpresa);
+  const resolvedPerfil = serverResult.usuario?.perfilEmpresa || dadosCadastro.perfilEmpresa;
+  if (resolvedPerfil && resolvedPerfil !== 'mecanica_pesada') {
+    localStorage.setItem('perfilEmpresa', resolvedPerfil);
+  }
+  localStorage.removeItem('remaf_pending_onboarding');
 
   return {
     empresaId,
@@ -178,7 +182,10 @@ export async function confirmarEmailEAtivarTrial(
 export async function iniciarCadastroTrial(dados: DadosCadastroTrial): Promise<ResultadoCadastroTrial> {
   const emailClean = dados.email.trim().toLowerCase();
   const nomeFinal = dados.nomeResponsavel?.trim() || dados.nome?.trim() || 'Administrador';
-  const perfilEmpresaFinal = dados.perfilEmpresa || 'mecanica_pesada';
+  const perfilEmpresaFinal =
+    dados.perfilEmpresa && dados.perfilEmpresa !== 'mecanica_pesada'
+      ? dados.perfilEmpresa.trim()
+      : 'Autônomo';
   const nomeEmpresaFinal = dados.nomeEmpresa?.trim() || 'Minha Empresa';
   const whatsappFinal = dados.whatsapp?.trim() || '';
 
@@ -188,6 +195,22 @@ export async function iniciarCadastroTrial(dados: DadosCadastroTrial): Promise<R
   if (!validacaoSenha.valida) {
     throw new Error(validacaoSenha.mensagem || 'Senha inválida.');
   }
+
+  // Preserva os dados originais informados pelo usuário no frontend para eventual recuperação de onboarding
+  try {
+    localStorage.setItem(
+      'remaf_pending_onboarding',
+      JSON.stringify({
+        email: emailClean,
+        nomeResponsavel: nomeFinal,
+        nomeEmpresa: nomeEmpresaFinal,
+        perfilEmpresa: perfilEmpresaFinal,
+        whatsapp: whatsappFinal,
+      })
+    );
+    localStorage.setItem('perfilEmpresa', perfilEmpresaFinal);
+    localStorage.setItem('nomeEmpresa', nomeEmpresaFinal);
+  } catch (_) {}
 
   let fbUser: User;
 
