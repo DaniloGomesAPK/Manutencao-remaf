@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { applyRateLimit, trialRateLimiter } from '../../server/rateLimiter';
+import { applyRateLimit, trialRateLimiter } from '../../server/rateLimiter.js';
 
 export default async function handler(req: any, res: any) {
   // CORS headers

@@ -1,7 +1,7 @@
-import { handleAdminLicenseOperation } from '../../server/adminLicenseService';
+import { handleAdminLicenseOperation } from '../../server/adminLicenseService.js';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirebaseAdmin } from '../../server/firebaseAdmin';
-import { applyRateLimit, adminRateLimiter } from '../../server/rateLimiter';
+import { getFirebaseAdmin } from '../../server/firebaseAdmin.js';
+import { applyRateLimit, adminRateLimiter } from '../../server/rateLimiter.js';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {

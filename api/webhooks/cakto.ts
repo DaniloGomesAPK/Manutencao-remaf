@@ -1,5 +1,5 @@
-import { handleCaktoWebhook } from '../../server/caktoWebhookService';
-import { applyRateLimit, caktoWebhookRateLimiter } from '../../server/rateLimiter';
+import { handleCaktoWebhook } from '../../server/caktoWebhookService.js';
+import { applyRateLimit, caktoWebhookRateLimiter } from '../../server/rateLimiter.js';
 
 /**
  * Vercel Serverless Function: Webhook Cakto

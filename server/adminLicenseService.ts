@@ -1,6 +1,6 @@
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
-import { getFirebaseAdmin } from './firebaseAdmin';
+import { getFirebaseAdmin } from './firebaseAdmin.js';
 
 export type AdminLicenseAction = 'activate' | 'renew' | 'block' | 'revoke';
 export type AdminLicensePlan = 'mensal' | 'anual';

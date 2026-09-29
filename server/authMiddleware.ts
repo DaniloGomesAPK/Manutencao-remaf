@@ -5,7 +5,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { getAuth, DecodedIdToken } from 'firebase-admin/auth';
-import { getFirebaseAdmin } from './firebaseAdmin';
+import { getFirebaseAdmin } from './firebaseAdmin.js';
 
 export interface AuthenticatedAdminRequest extends Request {
   adminUser?: {

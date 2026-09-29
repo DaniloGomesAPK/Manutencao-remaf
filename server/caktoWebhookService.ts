@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
-import { getFirebaseAdmin } from './firebaseAdmin';
+import { getFirebaseAdmin } from './firebaseAdmin.js';
 
 /**
  * Eventos reconhecidos por igualdade exata (Strict Equality).
