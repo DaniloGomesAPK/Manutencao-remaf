@@ -23,11 +23,12 @@ import {
   Menu,
   X,
   LogOut,
-  BarChart2
+  BarChart2,
+  ClipboardList
 } from 'lucide-react';
 
 interface SidebarProps {
-  activeSubView: 'dashboard' | 'list' | 'clientes' | 'equipamentos' | 'banco_servicos' | 'precificacao' | 'company' | 'licensing' | 'configuracoes' | 'relatorios';
+  activeSubView: 'dashboard' | 'list' | 'controle_ordens' | 'clientes' | 'equipamentos' | 'banco_servicos' | 'precificacao' | 'company' | 'licensing' | 'configuracoes' | 'relatorios';
   setActiveSubView: (view: any) => void;
   onNewOS: () => void;
   collapsed: boolean;
@@ -155,6 +156,20 @@ export default function Sidebar({
             >
               <Plus className="w-4.5 h-4.5 text-[#FF6600] shrink-0" />
               {!collapsed && <span className="font-bold">Nova {labels.ordemServico.includes('/') ? labels.ordemServico.split('/')[0].trim() : labels.ordemServico}</span>}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSubMenuClick('controle_ordens')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
+                activeSubView === 'controle_ordens'
+                  ? 'bg-slate-800/65 text-white font-bold border-l-2 border-[#FF6600]'
+                  : 'text-slate-400 hover:bg-slate-800/30 hover:text-white'
+              } ${collapsed ? 'justify-center' : 'text-left'}`}
+              title="Controle de ordens"
+            >
+              <ClipboardList className="w-4.5 h-4.5 text-[#00E5FF] shrink-0" />
+              {!collapsed && <span>Controle de ordens</span>}
             </button>
 
             {/* Submenu: Histórico das Ordens de Serviço */}

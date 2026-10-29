@@ -14,6 +14,7 @@ import {
   generateNewDocumentId
 } from './db';
 import { OrdemServicoService } from './services/OSService';
+import { ControleOrdemService } from './services/ControleOrdemService';
 import { FirestoreRepository } from './services/FirestoreRepository';
 
 import { AuthContext } from './contexts/AuthContext';
@@ -56,6 +57,7 @@ import OSFormStep5 from './components/OSFormStep5';
 import PDFPreviewModal from './components/PDFPreviewModal';
 
 const OSDashboard = lazy(() => import('./components/OSDashboard'));
+const ControleOrdens = lazy(() => import('./components/ControleOrdens'));
 const MinhaEmpresa = lazy(() => import('./pages/MinhaEmpresa'));
 const CadastroClientes = lazy(() => import('./pages/CadastroClientes'));
 const CadastroEquipamentos = lazy(() => import('./pages/CadastroEquipamentos'));
@@ -139,7 +141,7 @@ export default function App() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [activeSubView, setActiveSubView] = useState<'dashboard' | 'list' | 'company' | 'clientes' | 'equipamentos' | 'banco_servicos' | 'precificacao' | 'licensing' | 'configuracoes' | 'relatorios'>(() => {
+  const [activeSubView, setActiveSubView] = useState<'dashboard' | 'list' | 'controle_ordens' | 'company' | 'clientes' | 'equipamentos' | 'banco_servicos' | 'precificacao' | 'licensing' | 'configuracoes' | 'relatorios'>(() => {
     try {
       const saved = sessionStorage.getItem('remaf_active_subview');
       if (saved) return saved as any;
@@ -434,7 +436,7 @@ export default function App() {
       id: generateNewDocumentId(),
       empresaId,
       numeroOS: '', // will be auto-calculated in Step 1
-      
+
       // Keep customer details
       clienteId: os.clienteId,
       clienteNome: os.clienteNome,
@@ -1795,12 +1797,29 @@ export default function App() {
                 />
               )}
               <DashboardHome
-                orders={serviceOrders}
-                onNewOS={handleStartNewOS}
-                onEditOS={handleEditOS}
-                onViewPDF={handleViewPDF}
                 onNavigate={(view) => setActiveSubView(view)}
+                empresaId={activeUser?.empresaId || ''}
+                userEmail={activeUser?.email}
+                controleStore={ControleOrdemService}
               />
+            </motion.div>
+          ) : activeSubView === 'controle_ordens' ? (
+            <motion.div
+              key="controle-ordens-view"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.18 }}
+              className="w-full"
+            >
+              <Suspense fallback={<p className="p-8 text-sm text-slate-500">Carregando controle de ordens…</p>}>
+                <ControleOrdens
+                  empresaId={activeUser?.empresaId || ''}
+                  userEmail={activeUser?.email}
+                  store={ControleOrdemService}
+                  onBack={() => setActiveSubView('dashboard')}
+                />
+              </Suspense>
             </motion.div>
           ) : activeSubView === 'company' ? (
             
