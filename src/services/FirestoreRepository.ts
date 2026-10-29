@@ -19,6 +19,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { openDB } from '../db';
+import { openControleOrdensDB } from '../dbControleOrdens';
 import { LogService } from './LogService';
 import { safeStorage } from '../utils/safeStorage';
 
@@ -26,6 +27,7 @@ export const ALL_STORES = [
   'clientes',
   'equipamentos',
   'ordensServico',
+  'controle_ordens',
   'financeiro',
   'precificacao',
   'historicos',
@@ -880,7 +882,7 @@ async function getLocalStoreItems<T>(colecao: string, empresaId: string): Promis
   try {
     const idbName = mapCollectionToStoreName(colecao);
     if (idbName) {
-      const dbInstance = await openDB();
+      const dbInstance = await (colecao === 'controle_ordens' ? openControleOrdensDB() : openDB());
       if (dbInstance.objectStoreNames.contains(idbName)) {
         const items = await new Promise<T[]>((resolve, reject) => {
           const transaction = dbInstance.transaction(idbName, 'readonly');
@@ -921,7 +923,7 @@ async function saveLocalStoreItem(colecao: string, item: any): Promise<void> {
   try {
     const idbName = mapCollectionToStoreName(colecao);
     if (idbName) {
-      const dbInstance = await openDB();
+      const dbInstance = await (colecao === 'controle_ordens' ? openControleOrdensDB() : openDB());
       if (dbInstance.objectStoreNames.contains(idbName)) {
         await new Promise<void>((resolve, reject) => {
           const transaction = dbInstance.transaction(idbName, 'readwrite');
@@ -975,7 +977,7 @@ async function saveLocalStoreBatch(colecao: string, items: any[], empresaId: str
   try {
     const idbName = mapCollectionToStoreName(colecao);
     if (idbName) {
-      const dbInstance = await openDB();
+      const dbInstance = await (colecao === 'controle_ordens' ? openControleOrdensDB() : openDB());
       if (dbInstance.objectStoreNames.contains(idbName)) {
         const tx = dbInstance.transaction(idbName, 'readwrite');
         const store = tx.objectStore(idbName);
@@ -1015,7 +1017,7 @@ export async function deleteLocalStoreItem(colecao: string, id: string, empresaI
   try {
     const idbName = mapCollectionToStoreName(colecao);
     if (idbName) {
-      const dbInstance = await openDB();
+      const dbInstance = await (colecao === 'controle_ordens' ? openControleOrdensDB() : openDB());
       if (dbInstance.objectStoreNames.contains(idbName)) {
         await new Promise<void>((resolve, reject) => {
           const transaction = dbInstance.transaction(idbName, 'readwrite');

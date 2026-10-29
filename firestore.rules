@@ -167,6 +167,19 @@ service cloud.firestore {
           && resource.data.empresaId == empresaId;
       }
 
+      // Planilha de acompanhamento de orçamentos, isolada por empresa.
+      match /controle_ordens/{controleId} {
+        allow get, list: if isTenantMember(empresaId);
+        allow create: if isTenantMember(empresaId)
+          && request.resource.data.empresaId == empresaId
+          && request.resource.data.id == controleId;
+        allow update: if isTenantMember(empresaId)
+          && resource.data.empresaId == empresaId
+          && request.resource.data.empresaId == empresaId
+          && request.resource.data.id == controleId;
+        allow delete: if false;
+      }
+
       match /ordens_servico/{osId} {
         allow get, list: if isTenantMember(empresaId);
         allow create: if isTenantMember(empresaId)

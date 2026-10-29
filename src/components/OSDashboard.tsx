@@ -10,6 +10,7 @@ import { Search, Settings, FileText, ChevronRight, PenTool, CheckCircle, AlertTr
 import { OrdemDeServico } from '../types';
 import { formatToBrazilianDate } from '../utils/dateFormatter';
 import { saveModuleState, getModuleState, applySmartFocus } from '../utils/navigationState';
+import { sortOrdersByLastUpdate } from '../utils/orderSorting';
 import { UIHeader, UICard, UIButton, UIBadge } from './ui/UIComponents';
 
 interface OSDashboardProps {
@@ -84,7 +85,7 @@ export default function OSDashboard({ orders, onNewOS, onEditOS, onViewPDF, onDe
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(currentUrlStr)}`;
 
   // Search filtering
-  const filteredOrders = orders.filter(o => {
+  const filteredOrders = sortOrdersByLastUpdate(orders.filter(o => {
     const term = searchTerm.toLowerCase();
     const matchesSearch = 
       o.numeroOS.toLowerCase().includes(term) ||
@@ -95,7 +96,7 @@ export default function OSDashboard({ orders, onNewOS, onEditOS, onViewPDF, onDe
     const matchesStatus = statusFilter === 'All' || o.status === statusFilter;
 
     return matchesSearch && matchesStatus;
-  });
+  }));
 
   const getStatusStyle = (status?: string) => {
     switch (status) {
@@ -265,7 +266,7 @@ export default function OSDashboard({ orders, onNewOS, onEditOS, onViewPDF, onDe
 
       {/* Service orders collection list */}
       <div className="space-y-3.5">
-        <h3 className="text-[11px] font-black text-[#003366] tracking-widest uppercase mb-1">Histórico de Atendimentos</h3>
+        <h3 className="text-[11px] font-black text-[#003366] tracking-widest uppercase mb-1">Histórico de Atendimentos · Mais recentes primeiro</h3>
         
         {filteredOrders.length > 0 ? (
           <div className="space-y-4">
