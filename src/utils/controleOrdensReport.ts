@@ -17,6 +17,37 @@ export function dataControleOrdem(value: string): string {
   return `${day}/${month}/${year}`;
 }
 
+export function ordenarControleOrdensPorData(rows: ControleOrdem[]): ControleOrdem[] {
+  return [...rows].sort((a, b) => {
+    // The date entered in the table is the date the user sees and expects to sort by.
+    const dateA = /^\d{4}-\d{2}-\d{2}$/.test(a.data) ? a.data : '';
+    const dateB = /^\d{4}-\d{2}-\d{2}$/.test(b.data) ? b.data : '';
+    return dateB.localeCompare(dateA)
+      || (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '')
+      || a.id.localeCompare(b.id);
+  });
+}
+
+export function camposPreenchidosPDF(row: ControleOrdem): Array<[string, string]> {
+  const fields: Array<[string, string]> = [];
+  const add = (label: string, value: string | undefined, format?: (value: string) => string) => {
+    const filled = String(value ?? '').trim();
+    if (filled) fields.push([label, format ? format(filled) : filled]);
+  };
+
+  add('Data', row.data, dataControleOrdem);
+  add('Equipamento', row.equipamento);
+  add('Solicitante', row.solicitante);
+  add('Serviço', row.servico);
+  add('Valor', row.valor, value => moedaControleOrdem(valorControleOrdem(value)));
+  add('Pedido de compra', row.pedidoCompra);
+  add('FRS', row.frs);
+  add('Tarefa', row.tarefaExtra);
+  add('NF', row.nf);
+  add('Pagamento previsto', row.pagamento, dataControleOrdem);
+  return fields;
+}
+
 export async function gerarPDFDetalhesControleOrdens({
   empresa, status, rows, generatedAt = new Date(),
 }: { empresa: string; status: string; rows: ControleOrdem[]; generatedAt?: Date }): Promise<Blob> {
@@ -65,24 +96,16 @@ export async function gerarPDFDetalhesControleOrdens({
   y += 4;
 
   rows.forEach((row, index) => {
-    nextPage(82);
+    const fields = camposPreenchidosPDF(row);
+    nextPage(14);
     doc.setFillColor(239, 244, 249);
     doc.rect(margin, y - 4, width, 8, 'F');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.setTextColor(0, 51, 102);
-    doc.text(`${index + 1}. ${row.protocolo || 'Sem protocolo'}`, margin + 4, y + 1);
+    doc.text(`${index + 1}. ${row.protocolo?.trim() || 'Ordem'}`, margin + 4, y + 1);
     y += 10;
-    line('Data', dataControleOrdem(row.data));
-    line('Equipamento', row.equipamento);
-    line('Solicitante', row.solicitante);
-    line('Serviço', row.servico);
-    line('Valor', moedaControleOrdem(valorControleOrdem(row.valor)));
-    line('Pedido de compra', row.pedidoCompra);
-    line('FRS', row.frs);
-    line('Tarefa', row.tarefaExtra);
-    line('NF', row.nf);
-    line('Pagamento previsto', dataControleOrdem(row.pagamento));
+    fields.forEach(([label, value]) => line(label, value));
     y += 4;
   });
 

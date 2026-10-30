@@ -1,7 +1,28 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { STATUS_CONTROLE_ORDEM, atualizarNFControleOrdem, categoriaResumoControleOrdem, emptyControleOrdem, resumoStatusControleOrdens, validateControleOrdem } from '../models/ControleOrdem';
-import { dataControleOrdem, gerarPDFDetalhesControleOrdens, valorControleOrdem } from '../utils/controleOrdensReport';
+import { camposPreenchidosPDF, dataControleOrdem, gerarPDFDetalhesControleOrdens, ordenarControleOrdensPorData, valorControleOrdem } from '../utils/controleOrdensReport';
+
+test('PDF includes only filled fields and keeps an explicitly entered zero value', () => {
+  const row = { ...emptyControleOrdem('empresa-teste'), data: '2026-10-30', servico: 'Revisão', valor: '  ', frs: '', nf: '' };
+  assert.deepEqual(camposPreenchidosPDF(row), [
+    ['Data', '30/10/2026'], ['Serviço', 'Revisão'],
+  ]);
+  assert.deepEqual(camposPreenchidosPDF({ ...row, valor: '0' }), [
+    ['Data', '30/10/2026'], ['Serviço', 'Revisão'], ['Valor', 'R$ 0,00'],
+  ]);
+});
+
+test('orders control and dashboard details by visible date, with undated rows last', () => {
+  const base = emptyControleOrdem('empresa-teste');
+  const rows = [
+    { ...base, id: 'older', data: '2026-09-23', updatedAt: '2026-10-30T12:00:00Z' },
+    { ...base, id: 'undated', data: '', updatedAt: '2026-10-31T12:00:00Z' },
+    { ...base, id: 'newer', data: '2026-10-30', updatedAt: '2026-10-01T12:00:00Z' },
+  ];
+  assert.deepEqual(ordenarControleOrdensPorData(rows).map(row => row.id), ['newer', 'older', 'undated']);
+  assert.equal(rows[0].id, 'older');
+});
 
 test('offers exactly the requested predefined status choices', () => {
   assert.deepEqual([...STATUS_CONTROLE_ORDEM], [

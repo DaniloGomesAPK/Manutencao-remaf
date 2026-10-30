@@ -4,6 +4,7 @@
  */
 
 import { useEmpresa } from '../contexts/EmpresaContext';
+import { useState } from 'react';
 import { toPlural } from '../config/perfis';
 import { Plus, Users, Car, Calculator, FileText, Building2, ClipboardList } from 'lucide-react';
 import ControleOrdensResumo from './ControleOrdensResumo';
@@ -20,6 +21,18 @@ interface DashboardHomeProps {
 export default function DashboardHome({ onNavigate, empresaId, userEmail, controleStore, companyName }: DashboardHomeProps) {
   const { perfilConfig, empresa } = useEmpresa();
   const labels = perfilConfig.labels;
+  const visibilityKey = `dg_dashboard_visible_${empresaId}_${userEmail || ''}`;
+  const [showDashboard, setShowDashboard] = useState(() => {
+    try { return sessionStorage.getItem(visibilityKey) === 'true'; } catch { return false; }
+  });
+
+  const toggleDashboard = () => {
+    setShowDashboard(value => {
+      const next = !value;
+      try { sessionStorage.setItem(visibilityKey, String(next)); } catch { /* Session storage may be unavailable. */ }
+      return next;
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -147,13 +160,20 @@ export default function DashboardHome({ onNavigate, empresaId, userEmail, contro
         </div>
       </div>
 
-      <ControleOrdensResumo
+      <div className="flex justify-end">
+        <button type="button" onClick={toggleDashboard}
+          aria-expanded={showDashboard} aria-controls="controle-ordens-dashboard"
+          className="rounded-xl border border-[#003366] bg-white px-4 py-2 text-sm font-bold text-[#003366] hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#003366]">
+          {showDashboard ? 'Ocultar Dashboard' : 'Exibir Dashboard'}
+        </button>
+      </div>
+      {showDashboard && <div id="controle-ordens-dashboard"><ControleOrdensResumo
         empresaId={empresaId}
         userEmail={userEmail}
         store={controleStore}
         companyName={companyName || empresa?.nomeFantasia?.trim() || empresa?.razaoSocial?.trim()}
         onOpen={() => onNavigate('controle_ordens')}
-      />
+      /></div>}
 
     </div>
   );
