@@ -4,6 +4,7 @@ import {
   ControleOrdem, STATUS_CONTROLE_ORDEM, atualizarNFControleOrdem,
   emptyControleOrdem, statusEfetivoControleOrdem, validateControleOrdem,
 } from '../models/ControleOrdem';
+import { ordenarControleOrdensPorData } from '../utils/controleOrdensReport';
 
 export interface ControleOrdemStore {
   getAll(empresaId: string, userEmail?: string): Promise<ControleOrdem[]>;
@@ -134,9 +135,7 @@ export default function ControleOrdens({ empresaId, userEmail, store, onBack }: 
     return () => { active = false; unsubscribe(); };
   }, [empresaId, userEmail, store]);
 
-  const orderedRows = useMemo(() => [...rows].sort((a, b) =>
-    (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '')
-  ), [rows]);
+  const orderedRows = useMemo(() => ordenarControleOrdensPorData(rows), [rows]);
 
   const save = async (row: ControleOrdem) => {
     const error = validateControleOrdem(row);

@@ -6,7 +6,7 @@ import {
   type ControleOrdem,
 } from '../models/ControleOrdem';
 import type { ControleOrdemStore } from './ControleOrdens';
-import { dataControleOrdem, gerarPDFDetalhesControleOrdens, moedaControleOrdem, valorControleOrdem } from '../utils/controleOrdensReport';
+import { dataControleOrdem, gerarPDFDetalhesControleOrdens, moedaControleOrdem, ordenarControleOrdensPorData, valorControleOrdem } from '../utils/controleOrdensReport';
 
 interface Props {
   empresaId: string;
@@ -113,7 +113,7 @@ export default function ControleOrdensResumo({
         percent,
         totalValor,
       };
-    });
+    }).filter(item => item.count > 0);
 
     return {
       items,
@@ -122,7 +122,7 @@ export default function ControleOrdensResumo({
   }, [rows]);
 
   const detailRows = useMemo(() => detailStatus
-    ? rows.filter(row => categoriaResumoControleOrdem(row) === detailStatus)
+    ? ordenarControleOrdensPorData(rows.filter(row => categoriaResumoControleOrdem(row) === detailStatus))
     : [], [rows, detailStatus]);
   const detailTotal = detailRows.reduce((sum, row) => sum + valorControleOrdem(row.valor), 0);
 
@@ -205,12 +205,16 @@ export default function ControleOrdensResumo({
         aria-label="Barras de status do controle de ordens"
         className="space-y-1.5"
       >
+        {!loading && !loadError && stats.items.length === 0 && (
+          <p className="rounded-xl border border-slate-100 p-4 text-sm text-slate-500">Nenhuma ordem cadastrada no controle.</p>
+        )}
         {stats.items.map(({ status, count, percent, totalValor }) => {
           const isSelected = selected === status;
           const barWidth = count > 0 ? Math.max(percent, 2) : 0;
 
           return (
-            <div key={status} className="flex items-stretch gap-2">
+            <div key={status}>
+            <div className="flex items-stretch gap-2">
             <button
               type="button"
               aria-pressed={isSelected}
@@ -254,38 +258,41 @@ export default function ControleOrdensResumo({
                 />
               </div>
             </button>
-            <button type="button" disabled={loading || loadError || count === 0}
-              onClick={() => { setSelected(status); setDetailStatus(status); setExportError(false); }}
-              aria-label={`Exibir detalhes de ${status}`}
+            <button type="button" disabled={loading || loadError}
+              onClick={() => { setSelected(status); setDetailStatus(current => current === status ? null : status); setExportError(false); }}
+              aria-expanded={detailStatus === status}
+              aria-controls={`detalhes-${status.replace(/\s+/g, '-')}`}
+              aria-label={`${detailStatus === status ? 'Ocultar' : 'Exibir'} detalhes de ${status}`}
               className="shrink-0 rounded-xl border border-slate-200 px-2 text-xs font-bold text-[#003366] hover:border-[#003366] hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#003366] disabled:cursor-not-allowed disabled:opacity-40 sm:px-3"
-            >Exibir detalhes</button>
+            >{detailStatus === status ? 'Ocultar detalhes' : 'Exibir detalhes'}</button>
+            </div>
+            {detailStatus === status && (
+              <div id={`detalhes-${status.replace(/\s+/g, '-')}`} role="region" aria-label={`Detalhes de ${status}`} className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-sm font-black text-[#003366]">{status}</h4>
+                    <p className="text-xs text-slate-600">{detailRows.length} {detailRows.length === 1 ? 'ordem' : 'ordens'} · Total: {moedaControleOrdem(detailTotal)}</p>
+                  </div>
+                  <button type="button" onClick={exportDetails} disabled={exporting || !detailRows.length}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#003366] px-3 py-2 text-xs font-bold text-white hover:bg-[#002244] focus:outline-none focus:ring-2 focus:ring-[#FF6600] disabled:opacity-50">
+                    <Download className="h-4 w-4" />{exporting ? 'Gerando PDF…' : 'Baixar PDF'}
+                  </button>
+                </div>
+                {exportError && <p role="alert" className="mb-2 text-xs text-red-700">Não foi possível gerar o PDF. Tente novamente.</p>}
+                <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                  <table className="min-w-[1100px] w-full text-left text-xs">
+                    <thead className="bg-slate-100 text-[#003366]"><tr>{['Data', 'Protocolo', 'Equipamento', 'Solicitante', 'Serviço', 'Valor', 'Pedido de compra', 'FRS', 'Tarefa', 'NF', 'Pagamento previsto'].map(label => <th key={label} scope="col" className="px-2 py-2 font-bold">{label}</th>)}</tr></thead>
+                    <tbody>{detailRows.map(row => <tr key={row.id} className="border-t border-slate-100 align-top text-slate-700">
+                      {[dataControleOrdem(row.data), row.protocolo, row.equipamento, row.solicitante, row.servico, moedaControleOrdem(valorControleOrdem(row.valor)), row.pedidoCompra, row.frs, row.tarefaExtra, row.nf, dataControleOrdem(row.pagamento)].map((value, index) => <td key={index} className="px-2 py-2">{value || '—'}</td>)}
+                    </tr>)}</tbody>
+                  </table>
+                </div>
+              </div>
+            )}
             </div>
           );
         })}
       </div>
-      {detailStatus && (
-        <div role="region" aria-label={`Detalhes de ${detailStatus}`} className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h4 className="text-sm font-black text-[#003366]">{detailStatus}</h4>
-              <p className="text-xs text-slate-600">{detailRows.length} {detailRows.length === 1 ? 'ordem' : 'ordens'} · Total: {moedaControleOrdem(detailTotal)}</p>
-            </div>
-            <button type="button" onClick={exportDetails} disabled={exporting || !detailRows.length}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#003366] px-3 py-2 text-xs font-bold text-white hover:bg-[#002244] focus:outline-none focus:ring-2 focus:ring-[#FF6600] disabled:opacity-50">
-              <Download className="h-4 w-4" />{exporting ? 'Gerando PDF…' : 'Baixar PDF'}
-            </button>
-          </div>
-          {exportError && <p role="alert" className="mb-2 text-xs text-red-700">Não foi possível gerar o PDF. Tente novamente.</p>}
-          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-            <table className="min-w-[1100px] w-full text-left text-xs">
-              <thead className="bg-slate-100 text-[#003366]"><tr>{['Data', 'Protocolo', 'Equipamento', 'Solicitante', 'Serviço', 'Valor', 'Pedido de compra', 'FRS', 'Tarefa', 'NF', 'Pagamento previsto'].map(label => <th key={label} scope="col" className="px-2 py-2 font-bold">{label}</th>)}</tr></thead>
-              <tbody>{detailRows.map(row => <tr key={row.id} className="border-t border-slate-100 align-top text-slate-700">
-                {[dataControleOrdem(row.data), row.protocolo, row.equipamento, row.solicitante, row.servico, moedaControleOrdem(valorControleOrdem(row.valor)), row.pedidoCompra, row.frs, row.tarefaExtra, row.nf, dataControleOrdem(row.pagamento)].map((value, index) => <td key={index} className="px-2 py-2">{value || '—'}</td>)}
-              </tr>)}</tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </section>
   );
 }
