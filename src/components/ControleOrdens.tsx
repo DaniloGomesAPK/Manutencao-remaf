@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArrowLeft, ClipboardList, Save, Search } from 'lucide-react';
+import { ArrowLeft, ClipboardList, Download, Save, Search } from 'lucide-react';
 import {
   ControleOrdem, STATUS_CONTROLE_ORDEM, atualizarNFControleOrdem, categoriaResumoControleOrdem,
   emptyControleOrdem, statusEfetivoControleOrdem, validateControleOrdem,
@@ -132,6 +132,7 @@ export default function ControleOrdens({ empresaId, userEmail, store, onBack }: 
   const [message, setMessage] = useState('');
   const [filtros, setFiltros] = useState<FiltrosControleOrdens>(FILTROS_INICIAIS_CONTROLE_ORDENS);
   const [showNewForm, setShowNewForm] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const updateFilter = <K extends keyof FiltrosControleOrdens>(key: K, value: FiltrosControleOrdens[K]) => {
     setFiltros(current => ({ ...current, [key]: value }));
@@ -160,6 +161,20 @@ export default function ControleOrdens({ empresaId, userEmail, store, onBack }: 
   }, [empresaId, userEmail, store]);
 
   const visibleRows = useMemo(() => filtrarOrdenarControleOrdens(rows, filtros), [rows, filtros]);
+
+  const exportExcel = async () => {
+    if (!visibleRows.length || exporting) return;
+    setExporting(true);
+    setMessage('');
+    try {
+      const { exportarControleOrdensExcel } = await import('../utils/controleOrdensExcel');
+      exportarControleOrdensExcel(visibleRows);
+    } catch {
+      setMessage('Não foi possível gerar o arquivo Excel. Tente novamente.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const save = async (row: ControleOrdem) => {
     const error = validateControleOrdem(row);
@@ -245,6 +260,11 @@ export default function ControleOrdens({ empresaId, userEmail, store, onBack }: 
           <div className="flex flex-wrap items-center gap-3">
             <button type="button" onClick={() => setFiltros(FILTROS_INICIAIS_CONTROLE_ORDENS)}
               className="font-bold text-[#003366] hover:underline focus:outline-none focus:ring-2 focus:ring-[#003366]">Limpar filtros</button>
+            <button type="button" onClick={exportExcel} disabled={loading || !visibleRows.length || exporting}
+              title="Exporta os registros salvos que aparecem com os filtros atuais"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#003366] px-3 py-2 font-bold text-[#003366] hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-[#FF6600] disabled:cursor-not-allowed disabled:opacity-50">
+              <Download className="h-4 w-4" />{exporting ? 'Gerando Excel…' : 'Exportar Excel'}
+            </button>
             <button type="button" onClick={() => setShowNewForm(value => !value)} aria-expanded={showNewForm} aria-controls="novo-registro-controle"
               className="rounded-lg bg-[#003366] px-3 py-2 font-bold text-white hover:bg-[#002244] focus:outline-none focus:ring-2 focus:ring-[#FF6600]">
               {showNewForm ? 'Ocultar novo registro' : 'Novo registro'}
