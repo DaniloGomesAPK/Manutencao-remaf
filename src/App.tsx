@@ -1286,13 +1286,13 @@ export default function App() {
   const showInitialWizard = empresaCtx?.empresa && empresaCtx.empresa.configuracaoInicialConcluida === false;
 
   return (
-    <div id="app-root-frame" className="min-h-screen bg-[#F8FAFC] flex font-sans text-slate-800 selection:bg-[#FF6600]/10 selection:text-[#FF6600]">
+    <div id="app-root-frame" className={`min-h-screen bg-[#F8FAFC] flex font-sans text-slate-800 selection:bg-[#FF6600]/10 selection:text-[#FF6600] ${activeSubView === 'controle_ordens' && !viewingForm ? 'h-dvh overflow-hidden' : ''}`}>
       <CheckoutModal />
       <PWAInstallBanner />
       {showInitialWizard && <InitialSetupWizard />}
       
       {/* Main Structural Right Panel */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
+      <div className={`flex-1 flex flex-col min-w-0 ${activeSubView === 'controle_ordens' && !viewingForm ? 'min-h-0' : 'min-h-screen'}`}>
         
         {/* Main Header with iOS Safe Area Protection */}
         <header className="bg-white text-slate-800 min-h-[4.25rem] pt-safe-header pb-2.5 px-3 sm:px-6 flex items-center justify-between border-b border-slate-200 shrink-0 shadow-xs animate-in fade-in duration-300 z-30">
@@ -1346,7 +1346,7 @@ export default function App() {
         </header>
 
         {/* Primary Application Workspace */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col">
+        <main className={`flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col ${activeSubView === 'controle_ordens' && !viewingForm ? 'min-h-0' : ''}`}>
           <div className="max-w-7xl w-full mx-auto flex-1 flex flex-col">
             
             <AnimatePresence mode="wait">
@@ -1817,7 +1817,10 @@ export default function App() {
                   empresaId={activeUser?.empresaId || ''}
                   userEmail={activeUser?.email}
                   store={ControleOrdemService}
-                  onBack={() => setActiveSubView('dashboard')}
+                  onBack={() => {
+                    document.querySelector('#app-root-frame main')?.scrollTo(0, 0);
+                    setActiveSubView('dashboard');
+                  }}
                 />
               </Suspense>
             </motion.div>

@@ -188,7 +188,7 @@ export default function ControleOrdens({ empresaId, userEmail, store, onBack }: 
 
   return (
     <section className="space-y-5 pb-8">
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-3">
           <button type="button" onClick={onBack} aria-label="Voltar ao início" className="rounded-xl border border-slate-200 p-2.5 text-slate-600 hover:bg-slate-50">
             <ArrowLeft className="h-5 w-5" />

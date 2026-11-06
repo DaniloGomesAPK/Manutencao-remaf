@@ -78,11 +78,11 @@ function PreviewApp() {
   const showDemoNotice = () => setMessage('Prévia demonstrativa: nenhuma ordem real foi alterada.');
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="bg-amber-100 border-b border-amber-300 px-4 py-3 text-center text-sm font-semibold text-amber-900">
+    <div className={`min-h-screen bg-slate-50 text-slate-900 ${view === 'controle' ? 'h-dvh flex flex-col overflow-hidden' : ''}`}>
+      <div className="shrink-0 bg-amber-100 border-b border-amber-300 px-4 py-3 text-center text-sm font-semibold text-amber-900">
         Prévia local no VS Code · Dados fictícios · Sem conexão com usuários ou produção
       </div>
-      <header className="bg-[#003366] text-white px-6 py-4 shadow-md">
+      <header className="shrink-0 bg-[#003366] text-white px-6 py-4 shadow-md">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
           <div>
             <div className="font-black text-lg">DG Gestão de Orçamentos</div>
@@ -93,7 +93,7 @@ function PreviewApp() {
           </button>
         </div>
       </header>
-      <main className="max-w-7xl mx-auto py-6">
+      <main className={`max-w-7xl w-full mx-auto py-6 ${view === 'controle' ? 'min-h-0 flex-1 overflow-y-auto' : ''}`}>
         {view === 'home' ? (
           <div className="px-4 sm:px-6">
             <DashboardHome
