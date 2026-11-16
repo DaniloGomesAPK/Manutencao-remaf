@@ -22,6 +22,8 @@ interface ControleOrdensProps {
 type EditableField = 'data' | 'protocolo' | 'equipamento' | 'solicitante' | 'servico' |
   'valor' | 'pedidoCompra' | 'frs' | 'nf' | 'pagamento' | 'tarefaExtra';
 
+const orderControlClass = 'block w-full min-w-0 min-h-10 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-800 focus:border-[#FF6600] focus:outline-none focus:ring-1 focus:ring-[#FF6600] @md:min-h-9';
+
 function TextCell({ row, field, label, onChange, type = 'text' }: {
   row: ControleOrdem;
   field: EditableField;
@@ -32,14 +34,14 @@ function TextCell({ row, field, label, onChange, type = 'text' }: {
   const update = (value: string) => onChange(field === 'nf'
     ? atualizarNFControleOrdem(row, value)
     : { ...row, [field]: value });
-  const className = 'w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#FF6600] focus:outline-none focus:ring-1 focus:ring-[#FF6600]';
+  const className = `${orderControlClass} placeholder:text-slate-400`;
   if (field === 'servico' || field === 'tarefaExtra') {
     return <textarea
       aria-label={`${label} ${row.id ? row.protocolo || 'sem protocolo' : 'nova linha'}`}
       value={row[field] ?? ''}
-      rows={2}
+      rows={1}
       onChange={event => update(event.target.value)}
-      className={`${className} resize-y`}
+      className={`${className} resize-y [field-sizing:content]`}
       placeholder={label}
     />;
   }
@@ -56,8 +58,8 @@ function TextCell({ row, field, label, onChange, type = 'text' }: {
   );
 }
 
-function Field({ label, children, wide = false }: { label: string; children: ReactNode; wide?: boolean }) {
-  return <label className={`block min-w-0 space-y-1 ${wide ? 'sm:col-span-2' : ''}`}>
+function Field({ label, children, className = '' }: { label: string; children: ReactNode; className?: string }) {
+  return <label className={`block min-w-0 space-y-1 ${className}`}>
     <span className="block text-xs font-bold text-slate-600">{label}</span>
     {children}
   </label>;
@@ -73,22 +75,24 @@ function OrderCard({ row, onChange, onSave, saving, dirty, isNew }: {
 }) {
   const fields: Array<[EditableField, string, string?]> = [
     ['data', 'Data', 'date'], ['protocolo', 'Protocolo'], ['equipamento', 'Equipamento'],
-    ['solicitante', 'Solicitante'], ['servico', 'Serviço'], ['valor', 'Valor'],
-    ['pedidoCompra', 'Pedido de compra'], ['frs', 'FRS'],
+    ['solicitante', 'Solicitante'],
   ];
 
   return (
-    <article className={`min-w-0 rounded-xl border p-4 shadow-xs ${isNew ? 'border-orange-200 bg-orange-50/50' : 'border-slate-200 bg-white'}`}>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+    <article className={`@container min-w-0 rounded-xl border p-3 shadow-xs ${isNew ? 'border-orange-200 bg-orange-50/50' : 'border-slate-200 bg-white'}`}>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h3 className="break-words text-sm font-black text-[#003366]">{isNew ? 'Novo registro' : row.protocolo?.trim() || row.equipamento?.trim() || 'Registro sem protocolo'}</h3>
         {!isNew && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">{categoriaResumoControleOrdem(row)}</span>}
       </div>
-      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid min-w-0 grid-cols-1 gap-x-3 gap-y-2 @min-[20rem]:grid-cols-2 @min-[42rem]:grid-cols-4">
         {fields.map(([field, label, type]) => (
-          <Field key={field} label={label} wide={field === 'servico'}>
+          <Field key={field} label={label}>
             <TextCell row={row} field={field} label={label} type={type} onChange={onChange} />
           </Field>
         ))}
+        <Field label="Serviço" className="@min-[20rem]:col-span-2">
+          <TextCell row={row} field="servico" label="Serviço" onChange={onChange} />
+        </Field>
         <Field label="Status">
         <select
           aria-label={`Status ${row.id ? row.protocolo || 'sem protocolo' : 'nova linha'}`}
@@ -100,20 +104,23 @@ function OrderCard({ row, onChange, onSave, saving, dirty, isNew }: {
             status: event.target.value as ControleOrdem['status'],
             tarefaExtra: event.target.value === 'Outra tarefa' ? row.tarefaExtra : '',
           })}
-          className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#FF6600] focus:outline-none disabled:bg-slate-100 disabled:text-slate-600"
+          className={`${orderControlClass} disabled:bg-slate-100 disabled:text-slate-600`}
         >
           <option value="">Selecionar status</option>
           {STATUS_CONTROLE_ORDEM.map(status => <option key={status} value={status}>{status}</option>)}
           <option value="Outra tarefa">Outra tarefa…</option>
         </select>
         </Field>
-        {row.status === 'Outra tarefa' && <Field label="Tarefa adicional" wide>
+        <Field label="Pagamento previsto"><TextCell row={row} field="pagamento" label="Pagamento" type="date" onChange={onChange} /></Field>
+        <Field label="Valor"><TextCell row={row} field="valor" label="Valor" onChange={onChange} /></Field>
+        <Field label="Pedido de compra"><TextCell row={row} field="pedidoCompra" label="Pedido de compra" onChange={onChange} /></Field>
+        <Field label="FRS"><TextCell row={row} field="frs" label="FRS" onChange={onChange} /></Field>
+        <Field label="NF"><TextCell row={row} field="nf" label="NF" onChange={onChange} /></Field>
+        {row.status === 'Outra tarefa' && <Field label="Tarefa adicional" className="col-span-full">
           <TextCell row={row} field="tarefaExtra" label="Descreva a tarefa" onChange={onChange} />
         </Field>}
-        <Field label="NF"><TextCell row={row} field="nf" label="NF" onChange={onChange} /></Field>
-        <Field label="Pagamento previsto"><TextCell row={row} field="pagamento" label="Pagamento" type="date" onChange={onChange} /></Field>
       </div>
-      {(dirty || isNew) && <div className="mt-4 flex justify-end">
+      {(dirty || isNew) && <div className="mt-3 flex justify-end">
         <button type="button" disabled={saving} onClick={onSave}
           className="inline-flex items-center gap-1.5 rounded-lg bg-[#003366] px-4 py-2 text-sm font-bold text-white hover:bg-[#002244] disabled:opacity-50">
           <Save className="h-4 w-4" />{saving ? 'Salvando…' : isNew ? 'Adicionar registro' : 'Salvar registro'}
