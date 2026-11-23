@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, ClipboardList, Download } from 'lucide-react';
+import { ArrowRight, ChevronDown, ClipboardList, Download } from 'lucide-react';
 import {
   STATUS_CONTROLE_ORDEM,
   categoriaResumoControleOrdem,
   type ControleOrdem,
 } from '../models/ControleOrdem';
 import type { ControleOrdemStore } from './ControleOrdens';
-import { hojePagamentos, pagamentosFuturosConcluidos } from '../utils/controleOrdensPagamentos';
+import { agruparPagamentosPorData, hojePagamentos, pagamentosFuturosConcluidos, type PagamentosDoDia } from '../utils/controleOrdensPagamentos';
 import { dataControleOrdem, gerarPDFDetalhesControleOrdens, moedaControleOrdem, ordenarControleOrdensPorData, valorControleOrdem } from '../utils/controleOrdensReport';
 
 interface Props {
@@ -26,6 +26,66 @@ function formatPercentBR(val: number): string {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   })}%`;
+}
+
+function LinhaPagamentoDia({ dia }: { dia: PagamentosDoDia }) {
+  const [aberto, setAberto] = useState(false);
+  const dataFormatada = dataControleOrdem(dia.data);
+  const detalhesId = `pagamentos-do-dia-${dia.data}`;
+  const quantidade = dia.ordens.length;
+
+  return (
+    <>
+      <tr className="border-t border-slate-100 text-slate-700">
+        <th scope="row" className="whitespace-nowrap px-2 py-2.5 font-bold sm:px-3">
+          <time dateTime={dia.data}>{dataFormatada}</time>
+        </th>
+        <td className="whitespace-nowrap px-2 py-2.5 text-right font-black tabular-nums text-[#003366] sm:px-3">
+          {moedaControleOrdem(dia.totalCentavos / 100)}
+        </td>
+        <td className="px-2 py-2.5 text-right sm:px-3">
+          <button
+            type="button"
+            onClick={() => setAberto(atual => !atual)}
+            aria-expanded={aberto}
+            aria-controls={detalhesId}
+            aria-label={`${aberto ? 'Ocultar' : 'Exibir'} detalhes de ${dataFormatada}`}
+            className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 font-bold text-[#003366] hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-[#003366]"
+          >
+            {aberto ? 'Ocultar detalhes' : 'Exibir detalhes'}
+            <ChevronDown aria-hidden="true" className={`hidden h-4 w-4 shrink-0 sm:block ${aberto ? 'rotate-180' : ''}`} />
+          </button>
+        </td>
+      </tr>
+      <tr id={detalhesId} hidden={!aberto}>
+        <td colSpan={3} className="border-t border-slate-100 bg-slate-50 px-2 py-3 sm:px-3">
+          {aberto && (
+            <table className="w-full rounded-lg text-left text-xs">
+              <caption className="pb-2 text-left font-semibold text-slate-600">
+                {quantidade} {quantidade === 1 ? 'ordem' : 'ordens'} com pagamento previsto em {dataFormatada}
+              </caption>
+              <thead className="border-b border-slate-200 text-[#003366]">
+                <tr>
+                  <th scope="col" className="py-1.5">Solicitante</th>
+                  <th scope="col" className="py-1.5 pl-2 text-right">Valor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dia.ordens.map(ordem => (
+                  <tr key={ordem.id} className="border-b border-slate-200/70 text-slate-700 last:border-0">
+                    <td className="py-1.5 [overflow-wrap:anywhere]">{ordem.solicitante?.trim() || '—'}</td>
+                    <td className="whitespace-nowrap py-1.5 pl-2 text-right tabular-nums">
+                      {moedaControleOrdem(valorControleOrdem(ordem.valor))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </td>
+      </tr>
+    </>
+  );
 }
 
 export default function ControleOrdensResumo({
@@ -99,6 +159,8 @@ export default function ControleOrdensResumo({
   }, [empresaId, userEmail, store]);
 
   const pagamentosFuturos = useMemo(() => pagamentosFuturosConcluidos(rows, hoje), [rows, hoje]);
+  const pagamentosPorDia = useMemo(() => agruparPagamentosPorData(pagamentosFuturos), [pagamentosFuturos]);
+  const totalPagamentosFuturos = pagamentosPorDia.reduce((soma, dia) => soma + dia.totalCentavos, 0) / 100;
   const stats = useMemo(() => {
     const map: Record<StatusResumo, { count: number; totalValor: number }> =
       {} as Record<StatusResumo, { count: number; totalValor: number }>;
@@ -109,7 +171,7 @@ export default function ControleOrdensResumo({
 
     map['Concluído'] = {
       count: pagamentosFuturos.length,
-      totalValor: pagamentosFuturos.reduce((sum, row) => sum + valorControleOrdem(row.valor), 0),
+      totalValor: totalPagamentosFuturos,
     };
     let grandCount = pagamentosFuturos.length;
 
@@ -134,7 +196,7 @@ export default function ControleOrdensResumo({
     }).filter(item => item.count > 0 || (item.status === 'Concluído' && rows.length > 0));
 
     return { items, grandCount };
-  }, [rows, pagamentosFuturos]);
+  }, [rows, pagamentosFuturos.length, totalPagamentosFuturos]);
 
   const detalhePagamentos = detailStatus === 'Concluído';
   const detailRows = useMemo(() => {
@@ -143,7 +205,7 @@ export default function ControleOrdensResumo({
       ? ordenarControleOrdensPorData(rows.filter(row => categoriaResumoControleOrdem(row) === detailStatus))
       : [];
   }, [rows, detailStatus, detalhePagamentos, pagamentosFuturos]);
-  const detailTotal = detailRows.reduce((sum, row) => sum + valorControleOrdem(row.valor), 0);
+  const detailTotal = detalhePagamentos ? totalPagamentosFuturos : detailRows.reduce((sum, row) => sum + valorControleOrdem(row.valor), 0);
 
   const exportDetails = async () => {
     if (!detailStatus || !detailRows.length || exporting) return;
@@ -305,26 +367,20 @@ export default function ControleOrdensResumo({
                 </div>
                 {exportError && <p role="alert" className="mb-2 text-xs text-red-700">Não foi possível gerar o PDF. Tente novamente.</p>}
                 {detalhePagamentos ? (
-                  detailRows.length === 0 ? (
+                  pagamentosPorDia.length === 0 ? (
                     <p className="text-sm text-slate-600">Nenhum pagamento futuro previsto.</p>
                   ) : (
                     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
                       <table className="w-full text-left text-xs">
                         <thead className="bg-slate-100 text-[#003366]">
                           <tr>
-                            <th scope="col" className="px-2 py-2">Data prevista</th>
-                            <th scope="col" className="px-2 py-2">Solicitante</th>
-                            <th scope="col" className="px-2 py-2 text-right">Valor</th>
+                            <th scope="col" className="px-2 py-2 sm:px-3">Data prevista</th>
+                            <th scope="col" className="px-2 py-2 text-right sm:px-3">Total do dia</th>
+                            <th scope="col" className="px-2 py-2 text-right sm:px-3"><span className="sr-only">Detalhes</span></th>
                           </tr>
                         </thead>
                         <tbody>
-                          {detailRows.map(row => (
-                            <tr key={row.id} className="border-t border-slate-100 align-top text-slate-700">
-                              <td className="whitespace-nowrap px-2 py-2 font-bold"><time dateTime={row.pagamento}>{dataControleOrdem(row.pagamento)}</time></td>
-                              <td className="px-2 py-2 [overflow-wrap:anywhere]">{row.solicitante?.trim() || '—'}</td>
-                              <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums">{moedaControleOrdem(valorControleOrdem(row.valor))}</td>
-                            </tr>
-                          ))}
+                          {pagamentosPorDia.map(dia => <LinhaPagamentoDia key={dia.data} dia={dia} />)}
                         </tbody>
                       </table>
                     </div>
