@@ -2,7 +2,23 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { STATUS_CONTROLE_ORDEM, atualizarNFControleOrdem, categoriaResumoControleOrdem, emptyControleOrdem, resumoStatusControleOrdens, validateControleOrdem } from '../models/ControleOrdem';
 import { camposPreenchidosPDF, dataControleOrdem, gerarPDFDetalhesControleOrdens, ordenarControleOrdensPorData, valorControleOrdem } from '../utils/controleOrdensReport';
-import { hojePagamentos, pagamentosFuturosConcluidos } from '../utils/controleOrdensPagamentos';
+import { agruparPagamentosPorData, hojePagamentos, pagamentosFuturosConcluidos } from '../utils/controleOrdensPagamentos';
+
+test('groups future payments by day and sums values in cents while keeping each order', () => {
+  const base = { ...emptyControleOrdem('empresa-teste'), status: 'Concluído' as const };
+  const ordens = [
+    { ...base, id: 'later', pagamento: '2026-12-10', valor: '2.192,00' },
+    { ...base, id: 'first', pagamento: '2026-12-01', valor: '1.100,00' },
+    { ...base, id: 'second', pagamento: '2026-12-01', valor: '5.346,97' },
+    { ...base, id: 'past', pagamento: '2026-11-22', valor: '10.000,00' },
+  ];
+  const dias = agruparPagamentosPorData(pagamentosFuturosConcluidos(ordens, '2026-11-23'));
+  assert.deepEqual(dias.map(dia => [dia.data, dia.totalCentavos, dia.ordens.map(ordem => ordem.id)]), [
+    ['2026-12-01', 644697, ['first', 'second']],
+    ['2026-12-10', 219200, ['later']],
+  ]);
+  assert.deepEqual(agruparPagamentosPorData([]), []);
+});
 
 test('lists only future payments of completed orders, soonest first, using the date in Bahia', () => {
   const hoje = hojePagamentos(new Date('2026-11-24T01:30:00Z'));
