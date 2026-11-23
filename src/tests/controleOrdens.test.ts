@@ -2,6 +2,28 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { STATUS_CONTROLE_ORDEM, atualizarNFControleOrdem, categoriaResumoControleOrdem, emptyControleOrdem, resumoStatusControleOrdens, validateControleOrdem } from '../models/ControleOrdem';
 import { camposPreenchidosPDF, dataControleOrdem, gerarPDFDetalhesControleOrdens, ordenarControleOrdensPorData, valorControleOrdem } from '../utils/controleOrdensReport';
+import { hojePagamentos, pagamentosFuturosConcluidos } from '../utils/controleOrdensPagamentos';
+
+test('lists only future payments of completed orders, soonest first, using the date in Bahia', () => {
+  const hoje = hojePagamentos(new Date('2026-11-24T01:30:00Z'));
+  assert.equal(hoje, '2026-11-23');
+  assert.equal(hojePagamentos(new Date('2026-11-24T03:00:00Z')), '2026-11-24');
+
+  const base = { ...emptyControleOrdem('empresa-teste'), status: 'Concluído' as const };
+  const rows = [
+    { ...base, id: 'latest', pagamento: '2026-12-04' },
+    { ...base, id: 'past', pagamento: '2026-11-22' },
+    { ...base, id: 'pending', status: 'Emitir NF' as const, pagamento: '2026-11-25' },
+    { ...base, id: 'today', pagamento: '2026-11-23' },
+    { ...base, id: 'missing' },
+    { ...base, id: 'invalid', pagamento: '2026-11-31' },
+    { ...base, id: 'next', status: 'Emitir NF' as const, nf: 'NF-1', pagamento: '2026-11-24' },
+  ];
+
+  assert.deepEqual(pagamentosFuturosConcluidos(rows, hoje).map(row => row.id), ['next', 'latest']);
+  assert.deepEqual(pagamentosFuturosConcluidos(rows, '2026-11-24').map(row => row.id), ['latest']);
+  assert.equal(rows[0].id, 'latest');
+});
 
 test('PDF includes only filled fields and keeps an explicitly entered zero value', () => {
   const row = { ...emptyControleOrdem('empresa-teste'), data: '2026-10-30', servico: 'Revisão', valor: '  ', frs: '', nf: '' };

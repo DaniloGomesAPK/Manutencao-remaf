@@ -6,6 +6,7 @@ import {
   type ControleOrdem,
 } from '../models/ControleOrdem';
 import type { ControleOrdemStore } from './ControleOrdens';
+import { hojePagamentos, pagamentosFuturosConcluidos } from '../utils/controleOrdensPagamentos';
 import { dataControleOrdem, gerarPDFDetalhesControleOrdens, moedaControleOrdem, ordenarControleOrdensPorData, valorControleOrdem } from '../utils/controleOrdensReport';
 
 interface Props {
@@ -41,6 +42,17 @@ export default function ControleOrdensResumo({
   const [detailStatus, setDetailStatus] = useState<StatusResumo | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState(false);
+  const [hoje, setHoje] = useState(() => hojePagamentos());
+
+  useEffect(() => {
+    const atualizarData = () => setHoje(hojePagamentos());
+    const timer = window.setInterval(atualizarData, 60_000);
+    window.addEventListener('focus', atualizarData);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', atualizarData);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -86,6 +98,7 @@ export default function ControleOrdensResumo({
     };
   }, [empresaId, userEmail, store]);
 
+  const pagamentosFuturos = useMemo(() => pagamentosFuturosConcluidos(rows, hoje), [rows, hoje]);
   const stats = useMemo(() => {
     const map: Record<StatusResumo, { count: number; totalValor: number }> =
       {} as Record<StatusResumo, { count: number; totalValor: number }>;
@@ -94,10 +107,15 @@ export default function ControleOrdensResumo({
       map[st] = { count: 0, totalValor: 0 };
     }
 
-    let grandCount = 0;
+    map['Concluído'] = {
+      count: pagamentosFuturos.length,
+      totalValor: pagamentosFuturos.reduce((sum, row) => sum + valorControleOrdem(row.valor), 0),
+    };
+    let grandCount = pagamentosFuturos.length;
 
     for (const r of rows) {
       const cat = categoriaResumoControleOrdem(r) as StatusResumo;
+      if (cat === 'Concluído') continue;
       const val = valorControleOrdem(r.valor);
       map[cat].count += 1;
       map[cat].totalValor += val;
@@ -113,17 +131,18 @@ export default function ControleOrdensResumo({
         percent,
         totalValor,
       };
-    }).filter(item => item.count > 0);
+    }).filter(item => item.count > 0 || (item.status === 'Concluído' && rows.length > 0));
 
-    return {
-      items,
-      grandCount,
-    };
-  }, [rows]);
+    return { items, grandCount };
+  }, [rows, pagamentosFuturos]);
 
-  const detailRows = useMemo(() => detailStatus
-    ? ordenarControleOrdensPorData(rows.filter(row => categoriaResumoControleOrdem(row) === detailStatus))
-    : [], [rows, detailStatus]);
+  const detalhePagamentos = detailStatus === 'Concluído';
+  const detailRows = useMemo(() => {
+    if (detalhePagamentos) return pagamentosFuturos;
+    return detailStatus
+      ? ordenarControleOrdensPorData(rows.filter(row => categoriaResumoControleOrdem(row) === detailStatus))
+      : [];
+  }, [rows, detailStatus, detalhePagamentos, pagamentosFuturos]);
   const detailTotal = detailRows.reduce((sum, row) => sum + valorControleOrdem(row.valor), 0);
 
   const exportDetails = async () => {
@@ -133,7 +152,7 @@ export default function ControleOrdensResumo({
     try {
       const blob = await gerarPDFDetalhesControleOrdens({
         empresa: companyName || `Empresa ${empresaId}`,
-        status: detailStatus,
+        status: detalhePagamentos ? 'Concluído · Próximos pagamentos' : detailStatus,
         rows: detailRows,
       });
       const url = URL.createObjectURL(blob);
@@ -170,7 +189,7 @@ export default function ControleOrdensResumo({
                 ? 'Não foi possível carregar o resumo'
                 : loading
                 ? 'Carregando…'
-                : `${rows.length} ${rows.length === 1 ? 'registro' : 'registros'} no total`}
+                : `${stats.grandCount} ${stats.grandCount === 1 ? 'registro exibido' : 'registros exibidos'}`}
             </p>
           </div>
         </div>
@@ -211,14 +230,20 @@ export default function ControleOrdensResumo({
         {stats.items.map(({ status, count, percent, totalValor }) => {
           const isSelected = selected === status;
           const barWidth = count > 0 ? Math.max(percent, 2) : 0;
+          const isConcluido = status === 'Concluído';
+          const toggleDetails = () => {
+            setSelected(status);
+            setDetailStatus(current => current === status ? null : status);
+            setExportError(false);
+          };
 
           return (
             <div key={status}>
             <div className="flex items-stretch gap-2">
             <button
               type="button"
-              aria-pressed={isSelected}
-              onClick={() => { setSelected(prev => (prev === status ? 'ALL' : status)); setDetailStatus(null); }}
+              aria-pressed={isConcluido ? detailStatus === status : isSelected}
+              onClick={isConcluido ? toggleDetails : () => { setSelected(prev => (prev === status ? 'ALL' : status)); setDetailStatus(null); }}
               className={`group w-full rounded-xl border p-2.5 text-left transition-all focus:outline-none focus:ring-2 focus:ring-[#003366] focus:ring-offset-1 ${
                 isSelected
                   ? 'border-[#003366] bg-[#003366]/[0.04] shadow-xs'
@@ -233,7 +258,7 @@ export default function ControleOrdensResumo({
                       : 'text-slate-700 group-hover:text-[#003366]'
                   }`}
                 >
-                  {status}
+                  {isConcluido ? 'Concluído · Próximos pagamentos' : status}
                 </span>
 
                 <div className="flex items-center gap-2 tabular-nums">
@@ -259,7 +284,7 @@ export default function ControleOrdensResumo({
               </div>
             </button>
             <button type="button" disabled={loading || loadError}
-              onClick={() => { setSelected(status); setDetailStatus(current => current === status ? null : status); setExportError(false); }}
+              onClick={toggleDetails}
               aria-expanded={detailStatus === status}
               aria-controls={`detalhes-${status.replace(/\s+/g, '-')}`}
               aria-label={`${detailStatus === status ? 'Ocultar' : 'Exibir'} detalhes de ${status}`}
@@ -270,8 +295,8 @@ export default function ControleOrdensResumo({
               <div id={`detalhes-${status.replace(/\s+/g, '-')}`} role="region" aria-label={`Detalhes de ${status}`} className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <h4 className="text-sm font-black text-[#003366]">{status}</h4>
-                    <p className="text-xs text-slate-600">{detailRows.length} {detailRows.length === 1 ? 'ordem' : 'ordens'} · Total: {moedaControleOrdem(detailTotal)}</p>
+                    <h4 className="text-sm font-black text-[#003366]">{detalhePagamentos ? 'Próximos pagamentos' : status}</h4>
+                    <p className="text-xs text-slate-600">{detailRows.length} {detailRows.length === 1 ? 'ordem' : 'ordens'} · {detalhePagamentos ? 'Total previsto' : 'Total'}: {moedaControleOrdem(detailTotal)}</p>
                   </div>
                   <button type="button" onClick={exportDetails} disabled={exporting || !detailRows.length}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-[#003366] px-3 py-2 text-xs font-bold text-white hover:bg-[#002244] focus:outline-none focus:ring-2 focus:ring-[#FF6600] disabled:opacity-50">
@@ -279,14 +304,39 @@ export default function ControleOrdensResumo({
                   </button>
                 </div>
                 {exportError && <p role="alert" className="mb-2 text-xs text-red-700">Não foi possível gerar o PDF. Tente novamente.</p>}
-                <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                {detalhePagamentos ? (
+                  detailRows.length === 0 ? (
+                    <p className="text-sm text-slate-600">Nenhum pagamento futuro previsto.</p>
+                  ) : (
+                    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-100 text-[#003366]">
+                          <tr>
+                            <th scope="col" className="px-2 py-2">Data prevista</th>
+                            <th scope="col" className="px-2 py-2">Solicitante</th>
+                            <th scope="col" className="px-2 py-2 text-right">Valor</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detailRows.map(row => (
+                            <tr key={row.id} className="border-t border-slate-100 align-top text-slate-700">
+                              <td className="whitespace-nowrap px-2 py-2 font-bold"><time dateTime={row.pagamento}>{dataControleOrdem(row.pagamento)}</time></td>
+                              <td className="px-2 py-2 [overflow-wrap:anywhere]">{row.solicitante?.trim() || '—'}</td>
+                              <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums">{moedaControleOrdem(valorControleOrdem(row.valor))}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
+                ) : <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
                   <table className="min-w-[1100px] w-full text-left text-xs">
                     <thead className="bg-slate-100 text-[#003366]"><tr>{['Data', 'Protocolo', 'Equipamento', 'Solicitante', 'Serviço', 'Valor', 'Pedido de compra', 'FRS', 'Tarefa', 'NF', 'Pagamento previsto'].map(label => <th key={label} scope="col" className="px-2 py-2 font-bold">{label}</th>)}</tr></thead>
                     <tbody>{detailRows.map(row => <tr key={row.id} className="border-t border-slate-100 align-top text-slate-700">
                       {[dataControleOrdem(row.data), row.protocolo, row.equipamento, row.solicitante, row.servico, moedaControleOrdem(valorControleOrdem(row.valor)), row.pedidoCompra, row.frs, row.tarefaExtra, row.nf, dataControleOrdem(row.pagamento)].map((value, index) => <td key={index} className="px-2 py-2">{value || '—'}</td>)}
                     </tr>)}</tbody>
                   </table>
-                </div>
+                </div>}
               </div>
             )}
             </div>
