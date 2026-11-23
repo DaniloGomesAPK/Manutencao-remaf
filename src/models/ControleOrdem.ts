@@ -47,6 +47,10 @@ export function categoriaResumoControleOrdem(row: ControleOrdem): string {
   return (STATUS_CONTROLE_ORDEM as readonly string[]).includes(status) ? status : 'Outra tarefa';
 }
 
+export function filtrarOrdensDoDashboard(rows: ControleOrdem[]): ControleOrdem[] {
+  return rows.filter(row => row.status?.trim() !== 'Cancelado');
+}
+
 export function atualizarNFControleOrdem(row: ControleOrdem, nf: string): ControleOrdem {
   return {
     ...row,
