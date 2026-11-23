@@ -1,8 +1,24 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { STATUS_CONTROLE_ORDEM, atualizarNFControleOrdem, categoriaResumoControleOrdem, emptyControleOrdem, resumoStatusControleOrdens, validateControleOrdem } from '../models/ControleOrdem';
+import { STATUS_CONTROLE_ORDEM, atualizarNFControleOrdem, categoriaResumoControleOrdem, emptyControleOrdem, filtrarOrdensDoDashboard, resumoStatusControleOrdens, validateControleOrdem } from '../models/ControleOrdem';
 import { camposPreenchidosPDF, dataControleOrdem, gerarPDFDetalhesControleOrdens, ordenarControleOrdensPorData, valorControleOrdem } from '../utils/controleOrdensReport';
 import { agruparPagamentosPorData, hojePagamentos, pagamentosFuturosConcluidos } from '../utils/controleOrdensPagamentos';
+
+test('excludes cancelled orders from the dashboard, including orders with an invoice and future payment', () => {
+  const base = emptyControleOrdem('empresa-teste');
+  const rows = [
+    { ...base, id: 'aguardando', status: 'Aguardando PC' as const },
+    { ...base, id: 'cancelado', status: 'Cancelado' as const },
+    { ...base, id: 'cancelado-com-nf', status: 'Cancelado' as const, nf: 'NF-1', pagamento: '2026-12-01' },
+    { ...base, id: 'concluido', status: 'Concluído' as const, pagamento: '2026-12-01' },
+  ];
+
+  const exibidas = filtrarOrdensDoDashboard(rows);
+  assert.deepEqual(exibidas.map(row => row.id), ['aguardando', 'concluido']);
+  assert.deepEqual(pagamentosFuturosConcluidos(exibidas, '2026-11-23').map(row => row.id), ['concluido']);
+  assert.deepEqual(filtrarOrdensDoDashboard([rows[1]]), []);
+  assert.equal(rows.length, 4);
+});
 
 test('groups future payments by day and sums values in cents while keeping each order', () => {
   const base = { ...emptyControleOrdem('empresa-teste'), status: 'Concluído' as const };

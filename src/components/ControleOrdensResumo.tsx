@@ -3,6 +3,7 @@ import { ArrowRight, ChevronDown, ClipboardList, Download } from 'lucide-react';
 import {
   STATUS_CONTROLE_ORDEM,
   categoriaResumoControleOrdem,
+  filtrarOrdensDoDashboard,
   type ControleOrdem,
 } from '../models/ControleOrdem';
 import type { ControleOrdemStore } from './ControleOrdens';
@@ -17,7 +18,7 @@ interface Props {
   companyName?: string;
 }
 
-const STATUS_RESUMO = [...STATUS_CONTROLE_ORDEM, 'Outra tarefa', 'Sem status'] as const;
+const STATUS_RESUMO = [...STATUS_CONTROLE_ORDEM.filter(status => status !== 'Cancelado'), 'Outra tarefa', 'Sem status'] as const;
 type StatusResumo = (typeof STATUS_RESUMO)[number];
 type SelectedFilter = 'ALL' | StatusResumo;
 
@@ -128,10 +129,14 @@ export default function ControleOrdensResumo({
       return;
     }
 
+    const atualizarOrdens = (list: ControleOrdem[]) => {
+      setRows(filtrarOrdensDoDashboard(list.filter(row => row.empresaId === empresaId)));
+    };
+
     store
       .getAll(empresaId, userEmail)
       .then(list => {
-        if (active && !receivedSnapshot) setRows(list.filter(row => row.empresaId === empresaId));
+        if (active && !receivedSnapshot) atualizarOrdens(list);
       })
       .catch(() => {
         if (active && !receivedSnapshot) setLoadError(true);
@@ -146,7 +151,7 @@ export default function ControleOrdensResumo({
         if (!active) return;
         receivedSnapshot = true;
         setLoadError(false);
-        setRows(list.filter(row => row.empresaId === empresaId));
+        atualizarOrdens(list);
         setLoading(false);
       },
       userEmail
@@ -287,7 +292,7 @@ export default function ControleOrdensResumo({
         className="space-y-1.5"
       >
         {!loading && !loadError && stats.items.length === 0 && (
-          <p className="rounded-xl border border-slate-100 p-4 text-sm text-slate-500">Nenhuma ordem cadastrada no controle.</p>
+          <p className="rounded-xl border border-slate-100 p-4 text-sm text-slate-500">Nenhuma ordem para exibir no dashboard.</p>
         )}
         {stats.items.map(({ status, count, percent, totalValor }) => {
           const isSelected = selected === status;
