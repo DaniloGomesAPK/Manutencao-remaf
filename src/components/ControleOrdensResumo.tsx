@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, ChevronDown, ClipboardList, Download } from 'lucide-react';
 import {
-  STATUS_CONTROLE_ORDEM,
   categoriaResumoControleOrdem,
   filtrarOrdensDoDashboard,
   type ControleOrdem,
@@ -18,7 +17,16 @@ interface Props {
   companyName?: string;
 }
 
-const STATUS_RESUMO = [...STATUS_CONTROLE_ORDEM.filter(status => status !== 'Cancelado'), 'Outra tarefa', 'Sem status'] as const;
+const STATUS_RESUMO = [
+  'Falta orçamento',
+  'Falta de acordo',
+  'Aguardando PC',
+  'Aguardando FRS',
+  'Concluído',
+  'Emitir NF',
+  'Outra tarefa',
+  'Sem status',
+] as const;
 type StatusResumo = (typeof STATUS_RESUMO)[number];
 type SelectedFilter = 'ALL' | StatusResumo;
 
