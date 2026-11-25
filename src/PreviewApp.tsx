@@ -52,6 +52,17 @@ let demoControleRows: ControleOrdem[] = (() => {
   }
 })();
 const demoListeners = new Set<(rows: ControleOrdem[]) => void>();
+
+function updateDemoControleRows(rows: ControleOrdem[]) {
+  demoControleRows = rows;
+  try {
+    localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(rows));
+  } catch {
+    // A prévia ainda funciona durante a sessão quando o navegador bloqueia o armazenamento.
+  }
+  demoListeners.forEach(listener => listener([...demoControleRows]));
+}
+
 const demoControleStore: ControleOrdemStore = {
   async getAll() { return [...demoControleRows]; },
   async save(row) {
@@ -59,14 +70,15 @@ const demoControleStore: ControleOrdemStore = {
       ...row, id: row.id || `controle-${crypto.randomUUID()}`,
       updatedAt: new Date().toISOString(), sincronizado: true,
     };
-    demoControleRows = [...demoControleRows.filter(item => item.id !== saved.id), saved];
-    localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(demoControleRows));
-    demoListeners.forEach(listener => listener([...demoControleRows]));
+    updateDemoControleRows([...demoControleRows.filter(item => item.id !== saved.id), saved]);
     return saved;
   },
   listen(_empresaId, callback) {
     demoListeners.add(callback);
     return () => { demoListeners.delete(callback); };
+  },
+  async delete(id, empresaId) {
+    updateDemoControleRows(demoControleRows.filter(row => row.id !== id || row.empresaId !== empresaId));
   },
 };
 

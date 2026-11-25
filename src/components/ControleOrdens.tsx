@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArrowLeft, ClipboardList, Download, Save, Search } from 'lucide-react';
+import { ArrowLeft, ClipboardList, Download, Save, Search, Trash2 } from 'lucide-react';
 import {
   ControleOrdem, STATUS_CONTROLE_ORDEM, atualizarNFControleOrdem, categoriaResumoControleOrdem,
   emptyControleOrdem, statusEfetivoControleOrdem, validateControleOrdem,
@@ -9,6 +9,7 @@ import { FILTROS_INICIAIS_CONTROLE_ORDENS, filtrarOrdenarControleOrdens, type Fi
 export interface ControleOrdemStore {
   getAll(empresaId: string, userEmail?: string): Promise<ControleOrdem[]>;
   save(row: ControleOrdem, userEmail?: string): Promise<ControleOrdem>;
+  delete(id: string, empresaId: string, userEmail?: string): Promise<void>;
   listen(empresaId: string, callback: (rows: ControleOrdem[]) => void, userEmail?: string): () => void;
 }
 
@@ -65,11 +66,19 @@ function Field({ label, children, className = '' }: { label: string; children: R
   </label>;
 }
 
-function OrderCard({ row, onChange, onSave, saving, dirty, isNew }: {
+function OrderCard({ row, onChange, onSave, onDelete, deleteConfirmation, saving, deleting = false, dirty, isNew }: {
   row: ControleOrdem;
   onChange: (row: ControleOrdem) => void;
   onSave: () => void;
+  onDelete?: () => void;
+  deleteConfirmation?: {
+    row: ControleOrdem;
+    error: string;
+    onCancel: () => void;
+    onConfirm: () => void;
+  };
   saving: boolean;
+  deleting?: boolean;
   dirty: boolean;
   isNew: boolean;
 }) {
@@ -82,8 +91,36 @@ function OrderCard({ row, onChange, onSave, saving, dirty, isNew }: {
     <article className={`@container min-w-0 rounded-xl border p-3 shadow-xs ${isNew ? 'border-orange-200 bg-orange-50/50' : 'border-slate-200 bg-white'}`}>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h3 className="break-words text-sm font-black text-[#003366]">{isNew ? 'Novo registro' : row.protocolo?.trim() || row.equipamento?.trim() || 'Registro sem protocolo'}</h3>
-        {!isNew && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">{categoriaResumoControleOrdem(row)}</span>}
+        {!isNew && <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">{categoriaResumoControleOrdem(row)}</span>
+          <button type="button" onClick={onDelete} disabled={!onDelete} aria-expanded={Boolean(deleteConfirmation)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-bold text-red-700 hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-red-600 disabled:opacity-50">
+            <Trash2 aria-hidden="true" className="h-4 w-4" />{deleting ? 'Excluindo…' : 'Excluir'}
+          </button>
+        </div>}
       </div>
+      {deleteConfirmation && <div role="group" aria-label="Confirmar exclusão" className="mb-3 space-y-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm">
+        <p className="font-bold text-red-900">Excluir este registro?</p>
+        <p className="break-words text-slate-700">{[
+          deleteConfirmation.row.protocolo?.trim() || 'Registro sem protocolo',
+          deleteConfirmation.row.equipamento,
+          deleteConfirmation.row.solicitante,
+          deleteConfirmation.row.data?.split('-').reverse().join('/'),
+          deleteConfirmation.row.servico,
+        ].filter(Boolean).join(' · ')}</p>
+        <p className="text-slate-700">A exclusão é definitiva.</p>
+        {deleteConfirmation.error && <p role="alert" className="font-medium text-red-900">{deleteConfirmation.error}</p>}
+        <div className="flex flex-wrap gap-2">
+          <button type="button" autoFocus onClick={deleteConfirmation.onCancel} disabled={deleting}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+            Cancelar
+          </button>
+          <button type="button" onClick={deleteConfirmation.onConfirm} disabled={deleting || saving}
+            className="rounded-lg bg-red-700 px-3 py-2 font-bold text-white hover:bg-red-800 disabled:opacity-50">
+            {deleting ? 'Excluindo…' : 'Confirmar exclusão'}
+          </button>
+        </div>
+      </div>}
       <div className="grid min-w-0 grid-cols-1 gap-x-3 gap-y-2 @min-[20rem]:grid-cols-2 @min-[42rem]:grid-cols-4">
         {fields.map(([field, label, type]) => (
           <Field key={field} label={label}>
@@ -121,7 +158,7 @@ function OrderCard({ row, onChange, onSave, saving, dirty, isNew }: {
         </Field>}
       </div>
       {(dirty || isNew) && <div className="mt-3 flex justify-end">
-        <button type="button" disabled={saving} onClick={onSave}
+        <button type="button" disabled={saving || deleting} onClick={onSave}
           className="inline-flex items-center gap-1.5 rounded-lg bg-[#003366] px-4 py-2 text-sm font-bold text-white hover:bg-[#002244] disabled:opacity-50">
           <Save className="h-4 w-4" />{saving ? 'Salvando…' : isNew ? 'Adicionar registro' : 'Salvar registro'}
         </button>
@@ -136,6 +173,9 @@ export default function ControleOrdens({ empresaId, userEmail, store, onBack }: 
   const [newRow, setNewRow] = useState(() => emptyControleOrdem(empresaId));
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState('');
   const [message, setMessage] = useState('');
   const [filtros, setFiltros] = useState<FiltrosControleOrdens>(FILTROS_INICIAIS_CONTROLE_ORDENS);
   const [showNewForm, setShowNewForm] = useState(false);
@@ -149,6 +189,8 @@ export default function ControleOrdens({ empresaId, userEmail, store, onBack }: 
     let active = true;
     setRows([]);
     setDrafts({});
+    setDeleteCandidateId(null);
+    setDeleteError('');
     setNewRow(emptyControleOrdem(empresaId));
     setShowNewForm(false);
     setFiltros(FILTROS_INICIAIS_CONTROLE_ORDENS);
@@ -184,6 +226,7 @@ export default function ControleOrdens({ empresaId, userEmail, store, onBack }: 
   };
 
   const save = async (row: ControleOrdem) => {
+    if (savingId || (row.id && deletingId === row.id)) return;
     const error = validateControleOrdem(row);
     if (error) { setMessage(error); return; }
     const key = row.id || 'new';
@@ -208,6 +251,31 @@ export default function ControleOrdens({ empresaId, userEmail, store, onBack }: 
     }
   };
 
+  const deleteOrder = async (row: ControleOrdem) => {
+    if (deletingId || savingId || row.id !== deleteCandidateId) return;
+
+    setDeletingId(row.id);
+    setDeleteError('');
+    setMessage('');
+    try {
+      await store.delete(row.id, empresaId, userEmail);
+      setRows(current => current.filter(item => item.id !== row.id));
+      setDrafts(current => {
+        const next = { ...current };
+        delete next[row.id];
+        return next;
+      });
+      setDeleteCandidateId(null);
+      setMessage('Registro excluído.');
+    } catch {
+      setDeleteError(navigator.onLine
+        ? 'Não foi possível excluir o registro. Tente novamente.'
+        : 'Conecte-se à internet para excluir o registro.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   return (
     <section className="space-y-5 pb-8">
       <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -222,6 +290,7 @@ export default function ControleOrdens({ empresaId, userEmail, store, onBack }: 
           </div>
         </div>
         <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{rows.length} {rows.length === 1 ? 'registro' : 'registros'}</span>
+        {message && <p role="status" className="basis-full rounded-lg bg-blue-50 px-3 py-2 text-sm font-medium text-[#003366]">{message}</p>}
       </div>
 
       <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
@@ -289,11 +358,21 @@ export default function ControleOrdens({ empresaId, userEmail, store, onBack }: 
         {visibleRows.map(row => {
           const draft = drafts[row.id] || row;
           return <OrderCard key={row.id} row={draft} dirty={Boolean(drafts[row.id])} saving={savingId === row.id}
+            deleting={deletingId === row.id}
+            onDelete={deletingId || savingId ? undefined : () => {
+              setDeleteError('');
+              setDeleteCandidateId(current => current === row.id ? null : row.id);
+            }}
+            deleteConfirmation={deleteCandidateId === row.id ? {
+              row,
+              error: deleteError,
+              onCancel: () => setDeleteCandidateId(null),
+              onConfirm: () => deleteOrder(row),
+            } : undefined}
             onChange={next => setDrafts(current => ({ ...current, [row.id]: next }))}
             onSave={() => save(draft)} isNew={false} />;
         })}
       </div>
-      {message && <p role="status" className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-medium text-[#003366]">{message}</p>}
     </section>
   );
 }

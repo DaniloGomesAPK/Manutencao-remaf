@@ -177,7 +177,8 @@ service cloud.firestore {
           && resource.data.empresaId == empresaId
           && request.resource.data.empresaId == empresaId
           && request.resource.data.id == controleId;
-        allow delete: if false;
+        allow delete: if isTenantMember(empresaId)
+          && (resource == null || resource.data.empresaId == empresaId);
       }
 
       match /ordens_servico/{osId} {

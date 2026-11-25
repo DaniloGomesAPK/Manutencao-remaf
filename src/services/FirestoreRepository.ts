@@ -49,6 +49,13 @@ export interface SyncStatusInfo {
 
 export type MappedCollectionName = StoreName;
 
+const controleOrdensBeingDeleted = new Set<string>();
+
+function isControleOrdemDeletedOrDeleting(empresaId: string, id: string): boolean {
+  return controleOrdensBeingDeleted.has(`${empresaId}/${id}`) ||
+    getDeletedLocallyIds('controle_ordens', empresaId).includes(id);
+}
+
 /**
  * Valida rigorosamente o empresaId para garantir isolamento multiempresa (Tenant Isolation).
  * Lança exceção e registra log de segurança se o empresaId for nulo, indefinido, vazio ou 'emp_default'.
@@ -187,6 +194,9 @@ export const FirestoreRepository = {
     const startTime = performance.now();
     const tenantId = validateEmpresaId(data.empresaId || empresaId, 'add', colecao, userEmail);
     const docId = data.id || 'doc_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
+    if (colecao === 'controle_ordens' && isControleOrdemDeletedOrDeleting(tenantId, docId)) {
+      throw new Error('Este registro já foi excluído ou está sendo excluído.');
+    }
     const timestamp = new Date().toISOString();
 
     const recordWithMeta: T = {
@@ -206,6 +216,9 @@ export const FirestoreRepository = {
 
     // 1. Grava no cache local primeiro (IndexedDB / LocalStorage)
     await saveLocalStoreItem(colecao, recordWithMeta);
+    if (colecao === 'controle_ordens' && isControleOrdemDeletedOrDeleting(tenantId, docId)) {
+      throw new Error('Este registro já foi excluído ou está sendo excluído.');
+    }
 
     // 2. Tenta gravar no Firestore oficial se estiver online
     if (this.isOnline()) {
@@ -317,8 +330,13 @@ export const FirestoreRepository = {
       throw new Error(errorMsg);
     }
     const cleanDocId = docId.trim();
+    const deletingKey = `${validTenantId}/${cleanDocId}`;
+    if (colecao === 'controle_ordens' && controleOrdensBeingDeleted.has(deletingKey)) {
+      throw new Error('Este registro já está sendo excluído.');
+    }
 
     if (this.isOnline()) {
+      if (colecao === 'controle_ordens') controleOrdensBeingDeleted.add(deletingKey);
       try {
         const collectionPath = getTenantCollectionPath(colecao, validTenantId, 'delete');
         const docRef = doc(db, collectionPath, cleanDocId);
@@ -343,6 +361,8 @@ export const FirestoreRepository = {
         console.error(`[FirestoreRepository] Falha ao excluir no Firestore (${colecao}/${cleanDocId}):`, error);
         // Não apaga do armazenamento local e propaga o erro (Fail-Closed)
         throw new Error(error?.message || `Falha ao excluir o documento no Firestore na coleção ${colecao}.`);
+      } finally {
+        if (colecao === 'controle_ordens') controleOrdensBeingDeleted.delete(deletingKey);
       }
     } else {
       const offlineMsg = `Não foi possível excluir no momento: dispositivo sem conexão com o servidor.`;
@@ -457,7 +477,9 @@ export const FirestoreRepository = {
         }
 
         LogService.logOperation(userEmail || 'usuario', colecao, 'all', 'getAll', performance.now() - startTime);
-        return mergedList;
+        if (colecao !== 'controle_ordens') return mergedList;
+        const currentDeletedIds = getDeletedLocallyIds(colecao, validTenantId);
+        return mergedList.filter(item => !currentDeletedIds.includes(item.id));
       } catch (error) {
         LogService.logOperation(userEmail || 'usuario', colecao, 'all', 'getAll', performance.now() - startTime, error);
         console.warn(`[FirestoreRepository] Erro ao buscar da nuvem (${colecao}), usando cache local:`, error);
@@ -581,7 +603,8 @@ export const FirestoreRepository = {
               }
             }));
           }
-          callback(finalList);
+          const currentDeletedIds = colecao === 'controle_ordens' ? getDeletedLocallyIds(colecao, validTenantId) : deletedIds;
+          callback(finalList.filter(item => !currentDeletedIds.includes(item.id)));
         },
         (error) => {
           LogService.logOperation(userEmail || 'usuario', colecao, 'realtime_snapshot', 'listen', performance.now() - startTime, error);
@@ -720,6 +743,7 @@ export const FirestoreRepository = {
             lightData.sincronizado = true;
             lightData.ultimaSincronizacao = now;
 
+            if (storeName === 'controle_ordens' && isControleOrdemDeletedOrDeleting(itemTenantId, item.id)) continue;
             await setDoc(docRef, lightData, { merge: true });
 
             item.sincronizado = true;
@@ -917,7 +941,11 @@ async function getLocalStoreItems<T>(colecao: string, empresaId: string): Promis
  */
 async function saveLocalStoreItem(colecao: string, item: any): Promise<void> {
   const empId = validateEmpresaId(item.empresaId, 'saveLocalStoreItem', colecao);
-  unmarkAsDeletedLocally(colecao, item.id, empId);
+  if (colecao === 'controle_ordens') {
+    if (getDeletedLocallyIds(colecao, empId).includes(item.id)) return;
+  } else {
+    unmarkAsDeletedLocally(colecao, item.id, empId);
+  }
 
   // 1. Grava no IndexedDB (armazenamento de alta capacidade sem limite de 5MB)
   try {
@@ -981,8 +1009,10 @@ async function saveLocalStoreBatch(colecao: string, items: any[], empresaId: str
       if (dbInstance.objectStoreNames.contains(idbName)) {
         const tx = dbInstance.transaction(idbName, 'readwrite');
         const store = tx.objectStore(idbName);
+        const deletedIds = colecao === 'controle_ordens' ? getDeletedLocallyIds(colecao, validTenantId) : [];
         for (const item of items) {
-          unmarkAsDeletedLocally(colecao, item.id, validTenantId);
+          if (deletedIds.includes(item.id)) continue;
+          if (colecao !== 'controle_ordens') unmarkAsDeletedLocally(colecao, item.id, validTenantId);
           store.put(item);
         }
       }
@@ -1036,12 +1066,14 @@ export async function deleteLocalStoreItem(colecao: string, id: string, empresaI
   try {
     const keys = [
       `remaf_cache_${colecao}_${validTenantId}`,
+    ];
+    if (colecao !== 'controle_ordens') keys.push(
       `remaf_cache_ordensServico_${validTenantId}`,
       `remaf_cache_service_orders_${validTenantId}`,
       `remaf_prod_service_orders_cache_${validTenantId}`,
       `remaf_service_orders_${validTenantId}`,
       `remaf_cache_lixeira_${validTenantId}`
-    ];
+    );
 
     for (const key of keys) {
       const cached = safeStorage.getItem(key);
